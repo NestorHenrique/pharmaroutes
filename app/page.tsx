@@ -1,345 +1,502 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { User } from '@supabase/supabase-js';
 import type { Doctor } from '@/types/doctor';
-import { TABS_NAVEGACAO } from '@/constants';
-import { useInstallPrompt } from '@/hooks/useInstallPrompt';
-import InstallBanner from '@/components/InstallBanner';
+import type { DoctorStatus, DoctorStatusType } from '@/types/status';
+import { STATUS_META } from '@/types/status';
+import { TABS_NAVEGACAO, FILTROS_PLANTAO } from '@/constants';
+import { parseDays, isRecentDoctor, getTodayDayCode } from '@/utils';
+
 import LoginScreen from '@/components/LoginScreen';
-import AddDoctorForm from '@/components/AddDoctorForm';
+import InstallBanner from '@/components/InstallBanner';
+import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import DoctorCard from '@/components/DoctorCard';
+import AddDoctorForm from '@/components/AddDoctorForm';
 
-export default function Home() {
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
+/* ── Helpers ── */
 
-  const { showBanner, install, dismiss } = useInstallPrompt();
+const REFRESH_INTERVAL = 30_000; // 30 s
 
-  const [selectedTab, setSelectedTab] = useState('seg');
-  const [selectedCity, setSelectedCity] = useState('ALL');
-  const [selectedShiftFilter, setSelectedShiftFilter] = useState('ALL');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [cities, setCities] = useState<string[]>([]);
+function endOfToday(): string {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
+}
+
+function addMinutes(min: number): string {
+  return new Date(Date.now() + min * 60_000).toISOString();
+}
+
+/* ── Page Component ── */
+
+export default function HomePage() {
+  /* Auth */
+  const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  /* Data */
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [statusMap, setStatusMap] = useState<Record<string, DoctorStatus[]>>({});
   const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+
+  /* Filters */
+  const [selectedTab, setSelectedTab] = useState<string | null>(getTodayDayCode());
+  const [turnoFilter, setTurnoFilter] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  /* UI */
   const [showAddForm, setShowAddForm] = useState(false);
-  const [creating, setCreating] = useState(false);
 
-  const requestId = useRef(0);
+  /* PWA install */
+  const install = useInstallPrompt();
 
-  /* ---------------- Sessão ---------------- */
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setAuthReady(true);
-    });
+  /* Interval ref */
+  const statusInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      setAuthReady(true);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  /* ---------------- Dados ---------------- */
-  const loadCities = useCallback(async () => {
-    const { data, error } = await supabase.from('doctors').select('cidade');
-    if (!error && data) {
-      const unique = Array.from(
-        new Set(data.map((item: { cidade: string | null }) => item.cidade).filter(Boolean)),
-      ).sort();
-      setCities(unique as string[]);
-    }
-  }, []);
+  /* ═══════════════════ Auth ═══════════════════ */
 
   useEffect(() => {
-    if (user) loadCities();
-  }, [user, loadCities]);
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_ev, s) => setSession(s));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  /* ═══════════════════ Fetch Doctors ═══════════════════ */
 
   const fetchDoctors = useCallback(async () => {
-    if (!user) return;
-    const id = ++requestId.current;
+    if (!session) return;
     setLoading(true);
-    setLoadError(null);
 
-    let query = supabase.from('doctors').select('*');
+    try {
+      // Busca a lista completa; filtros de dia/local/busca são aplicados no cliente
+      // (evita erro de coluna inexistente antes da migração e permite filtro estrito por local)
+      const { data, error } = await supabase
+        .from('doctors')
+        .select('*')
+        .order('descricao', { ascending: true });
 
-    if (selectedTab === 'novos') {
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      query = query
-        .gte('created_at', sevenDaysAgo.toISOString())
-        .order('created_at', { ascending: false });
-    } else {
-      query = query
-        .or(`dias_semana.ilike.%${selectedTab}%,dia_semana.ilike.%${selectedTab}%`)
-        .order('bairro', { ascending: true });
+      if (error) {
+        console.error(
+          'Erro ao buscar médicos:',
+          error.message, '|', error.details, '|', error.hint, '|', error.code,
+        );
+      } else {
+        setDoctors(data as Doctor[]);
+      }
+    } finally {
+      setLoading(false);
     }
-
-    if (selectedCity !== 'ALL') query = query.eq('cidade', selectedCity);
-
-    const { data, error } = await query;
-    if (id !== requestId.current) return;
-
-    if (error) setLoadError('Não foi possível carregar o roteiro. Tente novamente.');
-    else setDoctors((data as Doctor[]) ?? []);
-    setLoading(false);
-  }, [user, selectedTab, selectedCity]);
+  }, [session]);
 
   useEffect(() => {
     fetchDoctors();
   }, [fetchDoctors]);
 
-  /* ---------------- Ações ---------------- */
-  const logActivity = useCallback(
-    async (actionType: 'INSERT' | 'UPDATE' | 'DELETE', doctorName: string, details: string) => {
-      if (!user) return;
-      await supabase.from('activity_logs').insert([
-        { user_email: user.email, action_type: actionType, doctor_name: doctorName, details },
-      ]);
-    },
-    [user],
-  );
+  /* ═══════════════════ Fetch Statuses ═══════════════════ */
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
+  const fetchStatuses = useCallback(async () => {
+    if (!session) return;
+    const now = new Date().toISOString();
 
-  const handleDeleteDoctor = useCallback(
-    async (doc: Doctor) => {
-      if (!window.confirm(`Deseja remover "${doc.descricao}"? Esta ação ficará gravada no seu utilizador.`))
-        return;
+    const { data, error } = await supabase
+      .from('doctor_statuses')
+      .select('*')
+      .or(`expires_at.is.null,expires_at.gt.${now}`);
 
-      setDoctors((prev) => prev.filter((d) => d.id !== doc.id));
-      const { error } = await supabase.from('doctors').delete().eq('id', doc.id);
+    if (error) {
+      // Tabela ainda não criada (migração SQL pendente) ou falha temporária: ignora sem quebrar a tela
+      console.warn('Status fetch ignorado:', error.message || error.code);
+      return;
+    }
 
-      if (!error) await logActivity('DELETE', doc.descricao || 'Sem nome', `Removido por ${user?.email}`);
-      else fetchDoctors();
-    },
-    [user, logActivity, fetchDoctors],
-  );
+    const map: Record<string, DoctorStatus[]> = {};
+    for (const s of data as DoctorStatus[]) {
+      if (!map[s.doctor_id]) map[s.doctor_id] = [];
+      map[s.doctor_id].push(s);
+    }
+    setStatusMap(map);
+  }, [session]);
 
-  const handleCreateDoctor = useCallback(
-    async (data: Partial<Doctor>): Promise<boolean> => {
-      setCreating(true);
-      const payload = {
-        ...data,
-        dia_semana: data.dias_semana,
-        created_at: new Date().toISOString(),
-        updated_by: user?.email,
+  // Initial fetch + polling
+  useEffect(() => {
+    fetchStatuses();
+
+    if (statusInterval.current) clearInterval(statusInterval.current);
+    statusInterval.current = setInterval(fetchStatuses, REFRESH_INTERVAL);
+
+    return () => {
+      if (statusInterval.current) clearInterval(statusInterval.current);
+    };
+  }, [fetchStatuses]);
+
+  /* ═══════════════════ Status Actions ═══════════════════ */
+
+  const setDoctorStatus = useCallback(
+    async (
+      doctorId: string,
+      type: DoctorStatusType,
+      opts?: { repName?: string; returnDate?: string },
+    ) => {
+      if (!session) return;
+      const meta = STATUS_META[type];
+
+      let expiresAt: string | null = null;
+      if (meta.duration) {
+        expiresAt = addMinutes(meta.duration);
+      } else if (type === 'nao_veio_hoje' || type === 'visitado_hoje') {
+        expiresAt = endOfToday();
+      } else if (opts?.returnDate) {
+        expiresAt = new Date(opts.returnDate + 'T23:59:59').toISOString();
+      }
+
+      const record = {
+        doctor_id: doctorId,
+        status_type: type,
+        expires_at: expiresAt,
+        return_date: opts?.returnDate || null,
+        rep_name: opts?.repName || null,
+        created_by: session.user.id,
       };
 
-      const { error } = await supabase.from('doctors').insert([payload]);
-      setCreating(false);
-      if (error) return false;
+      // Optimistic update
+      const optimistic: DoctorStatus = {
+        id: crypto.randomUUID(),
+        ...record,
+        created_at: new Date().toISOString(),
+      };
 
-      await logActivity('INSERT', data.descricao || '', `Cadastrado por ${user?.email}`);
-      setShowAddForm(false);
-      fetchDoctors();
-      loadCities();
-      return true;
+      setStatusMap((prev) => {
+        const existing = (prev[doctorId] || []).filter((s) => s.status_type !== type);
+        return { ...prev, [doctorId]: [...existing, optimistic] };
+      });
+
+      const { error } = await supabase
+        .from('doctor_statuses')
+        .upsert(record, { onConflict: 'doctor_id,status_type' });
+
+      if (error) {
+        console.error('Erro ao setar status:', error.message, '|', error.details, '|', error.hint, '|', error.code);
+        // Rollback
+        setStatusMap((prev) => {
+          const rolled = (prev[doctorId] || []).filter((s) => s.id !== optimistic.id);
+          return { ...prev, [doctorId]: rolled };
+        });
+      } else {
+        // Refresh to get server-assigned ID
+        fetchStatuses();
+      }
     },
-    [user, logActivity, fetchDoctors, loadCities],
+    [session, fetchStatuses],
   );
 
-  const handleUpdateShift = useCallback(
+  const clearDoctorStatus = useCallback(
+    async (doctorId: string, type: DoctorStatusType) => {
+      // Optimistic
+      setStatusMap((prev) => {
+        const filtered = (prev[doctorId] || []).filter((s) => s.status_type !== type);
+        return { ...prev, [doctorId]: filtered };
+      });
+
+      const { error } = await supabase
+        .from('doctor_statuses')
+        .delete()
+        .eq('doctor_id', doctorId)
+        .eq('status_type', type);
+
+      if (error) {
+        console.error('Erro ao limpar status:', error);
+        fetchStatuses(); // Refresh on error
+      }
+    },
+    [fetchStatuses],
+  );
+
+  /* ═══════════════════ Doctor CRUD ═══════════════════ */
+
+  const updateShift = useCallback(
     async (docId: string, newTurno: string, docName: string) => {
-      setDoctors((prev) =>
-        prev.map((d) => (d.id === docId ? { ...d, turno: newTurno, updated_by: user?.email } : d)),
-      );
+      // Optimistic
+      setDoctors((prev) => prev.map((d) => (d.id === docId ? { ...d, turno: newTurno } : d)));
 
       const { error } = await supabase
         .from('doctors')
-        .update({ turno: newTurno, updated_by: user?.email })
+        .update({
+          turno: newTurno,
+          updated_by_name: session?.user.email?.split('@')[0] || 'App',
+          change_source: 'app',
+        })
         .eq('id', docId);
 
       if (error) {
+        console.error('Erro ao atualizar turno:', error);
         fetchDoctors();
-        return;
       }
-      await logActivity('UPDATE', docName, `Turno alterado para ${newTurno} por ${user?.email}`);
     },
-    [user, logActivity, fetchDoctors],
+    [session, fetchDoctors],
   );
 
-  const handleUpdateDoctor = useCallback(
+  const updateDoctor = useCallback(
     async (docId: string, data: Partial<Doctor>, docName: string): Promise<boolean> => {
-      const updatedData = { ...data, dia_semana: data.dias_semana, updated_by: user?.email };
-      const { error } = await supabase.from('doctors').update(updatedData).eq('id', docId);
-      if (error) return false;
+      const { error } = await supabase
+        .from('doctors')
+        .update({
+          ...data,
+          updated_by_name: session?.user.email?.split('@')[0] || 'App',
+          change_source: 'app',
+        })
+        .eq('id', docId);
 
-      await logActivity('UPDATE', docName, `Dados atualizados por ${user?.email}`);
-      setDoctors((prev) => prev.map((d) => (d.id === docId ? { ...d, ...updatedData } : d)));
+      if (error) {
+        console.error('Erro ao atualizar médico:', error);
+        return false;
+      }
+      await fetchDoctors();
       return true;
     },
-    [user, logActivity],
+    [session, fetchDoctors],
   );
 
-  /* ---------------- Render ---------------- */
-  if (!authReady) {
+  const addDoctor = useCallback(
+    async (data: Partial<Doctor>): Promise<boolean> => {
+      const { error } = await supabase.from('doctors').insert({
+        ...data,
+        updated_by: session?.user.id || '',
+        updated_by_name: session?.user.email?.split('@')[0] || 'App',
+        change_source: 'app',
+      });
+
+      if (error) {
+        console.error('Erro ao adicionar médico:', error);
+        return false;
+      }
+      setShowAddForm(false);
+      await fetchDoctors();
+      return true;
+    },
+    [session, fetchDoctors],
+  );
+
+  const deleteDoctor = useCallback(
+    async (doc: Doctor) => {
+      if (!confirm(`Excluir ${doc.descricao}?`)) return;
+
+      setDoctors((prev) => prev.filter((d) => d.id !== doc.id));
+
+      const { error } = await supabase.from('doctors').delete().eq('id', doc.id);
+      if (error) {
+        console.error('Erro ao excluir médico:', error);
+        fetchDoctors();
+      }
+    },
+    [fetchDoctors],
+  );
+
+  /* ═══════════════════ Logout ═══════════════════ */
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
+
+  /* ═══════════════════ Sorting (category mode) ═══════════════════ */
+
+  const isCategoryMode = selectedCategory !== null;
+
+  const filteredDoctors = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return doctors.filter((d) => {
+      // Dia (null = sem filtro / lista global)
+      if (selectedTab === 'novos') {
+        if (!isRecentDoctor(d.created_at)) return false;
+      } else if (selectedTab) {
+        const days = parseDays(d.dias_semana || d.dia_semana);
+        if (!days.includes(selectedTab)) return false;
+      }
+
+      // Local estrito: só quem tem PSM/SAMU/Hospital registrado como local de atuação
+      if (selectedCategory) {
+        const places = `${d.complemento || ''} ${d.descricao || ''}`.toLowerCase();
+        const byCategory = d.categoria === selectedCategory;
+        const byName = places.includes(selectedCategory === 'hospital' ? 'hospital' : selectedCategory);
+        if (!byCategory && !byName) return false;
+      }
+
+      // Turno
+      if (turnoFilter) {
+        const t = d.turno || 'Manhã e Tarde';
+        if (t !== turnoFilter && t !== 'Manhã e Tarde') return false;
+      }
+
+      // Busca
+      if (q) {
+        const hay = `${d.descricao} ${d.bairro} ${d.complemento} ${d.crm}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [doctors, selectedTab, selectedCategory, turnoFilter, searchQuery]);
+
+  const sortedDoctors = isCategoryMode
+    ? [...filteredDoctors].sort((a, b) => {
+        const aVisited = (statusMap[a.id] || []).some((s) => s.status_type === 'visitado_hoje');
+        const bVisited = (statusMap[b.id] || []).some((s) => s.status_type === 'visitado_hoje');
+        // Visited goes to the bottom
+        if (aVisited !== bVisited) return aVisited ? 1 : -1;
+        return 0;
+      })
+    : filteredDoctors;
+
+  /* ═══════════════════ Render ═══════════════════ */
+
+  if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-xs text-slate-500">
-        Carregando...
+      <div className="min-h-dvh flex items-center justify-center bg-slate-950">
+        <div className="text-slate-500 text-sm">Carregando...</div>
       </div>
     );
   }
 
-  if (!user) return <LoginScreen />;
-
-  const term = searchTerm.toLowerCase();
-  const filteredDoctors = doctors.filter((doc) => {
-    const textMatch = [doc.descricao, doc.bairro, doc.complemento, doc.observacoes, doc.telefone].some(
-      (v) => v?.toLowerCase().includes(term),
-    );
-    const docShift = doc.turno || 'Manhã e Tarde';
-    const shiftMatch =
-      selectedShiftFilter === 'ALL' || docShift === selectedShiftFilter || docShift === 'Manhã e Tarde';
-    return textMatch && shiftMatch;
-  });
+  if (!session) {
+    return <LoginScreen />;
+  }
 
   return (
-    <div className="min-h-screen">
-      {showBanner && <InstallBanner onInstall={install} onDismiss={dismiss} />}
-
-      {/* Header fixo */}
-      <header
-        className={`border-b border-slate-800 bg-slate-950/90 px-5 py-3 sticky z-10 backdrop-blur-sm ${
-          showBanner ? 'top-[53px]' : 'top-0'
-        }`}
-      >
-        <div className="max-w-[640px] mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="m-0 text-base font-bold text-white">PharmaRoutes</h1>
-            <span className="text-[10px] text-slate-500">{user.email}</span>
-          </div>
-
+    <div className="min-h-dvh bg-slate-950 text-slate-100 pb-6">
+      {/* Header */}
+      <header className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800 px-4 py-3">
+        <div className="flex justify-between items-center mb-2">
+          <h1 className="text-base font-bold text-white m-0">Rota Propagandista</h1>
           <div className="flex gap-2 items-center">
             <button
-              onClick={() => setShowAddForm((v) => !v)}
-              className={`text-white border-none px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${
-                showAddForm ? 'bg-slate-700' : 'bg-blue-600 hover:bg-blue-500'
-              }`}
+              onClick={() => setShowAddForm((p) => !p)}
+              className="bg-blue-600 text-white border-none px-2.5 py-1 rounded text-xs font-semibold hover:bg-blue-500"
             >
-              {showAddForm ? 'Cancelar' : '+ Médico'}
+              + Novo
             </button>
             <button
               onClick={handleLogout}
-              className="bg-transparent text-red-300 border border-slate-700 px-2 py-[5px] rounded-md text-[11px] hover:bg-slate-800"
+              className="bg-transparent border border-slate-700 text-slate-400 px-2 py-1 rounded text-[11px] hover:text-white"
             >
               Sair
             </button>
           </div>
         </div>
-      </header>
 
-      <main className="px-3.5 py-4 max-w-[640px] mx-auto">
-        {showAddForm && (
-          <AddDoctorForm
-            defaultDay={selectedTab !== 'novos' ? selectedTab : 'seg'}
-            defaultCity={selectedCity !== 'ALL' ? selectedCity : 'PARNAIBA'}
-            saving={creating}
-            onSubmit={handleCreateDoctor}
-          />
-        )}
+        {/* Search */}
+        <input
+          type="text"
+          placeholder="Buscar médico, clínica, bairro, CRM..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full box-border p-2 rounded border border-slate-700 bg-slate-900 text-slate-100 text-xs outline-hidden placeholder:text-slate-500 mb-2"
+        />
 
-        {/* Tabs de dias */}
-        <div className="flex gap-1 bg-slate-900 p-[3px] rounded-lg mb-3.5 border border-slate-800">
-          {TABS_NAVEGACAO.map((tab) => {
-            const isNovos = tab.value === 'novos';
-            const isSelected = selectedTab === tab.value;
-            return (
+        {/* Day Tabs */}
+        <div className="flex gap-0.5 overflow-x-auto no-scrollbar">
+          {TABS_NAVEGACAO.map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setSelectedTab(selectedTab === tab.value ? null : tab.value)}
+              className={`px-2.5 py-1.5 rounded text-[10px] font-bold border-none whitespace-nowrap shrink-0 ${
+                selectedTab === tab.value
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-900 text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Category Filter (PSM / SAMU / Hospital) */}
+        <div className="flex gap-1 mt-1.5">
+          {FILTROS_PLANTAO.map((f) => (
+            <button
+              key={f.value}
+              onClick={() => setSelectedCategory(selectedCategory === f.value ? null : f.value)}
+              className={`px-2 py-1 rounded text-[10px] font-semibold border ${
+                selectedCategory === f.value
+                  ? 'border-purple-500 bg-purple-500/20 text-purple-300'
+                  : 'border-slate-700 bg-slate-900 text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {f.emoji} {f.label}
+            </button>
+          ))}
+          {selectedCategory && (
+            <button
+              onClick={() => setSelectedCategory(null)}
+              className="px-2 py-1 rounded text-[10px] border border-slate-700 bg-slate-900 text-slate-500 hover:text-red-400"
+            >
+              ✕ Limpar
+            </button>
+          )}
+
+          {/* Turno filter */}
+          <div className="ml-auto flex gap-0.5">
+            {(['Manhã', 'Tarde'] as const).map((t) => (
               <button
-                key={tab.value}
-                onClick={() => setSelectedTab(tab.value)}
-                className={`flex-1 py-[7px] rounded-md border-none text-[11px] ${
-                  isSelected
-                    ? isNovos
-                      ? 'bg-green-700 text-white font-bold'
-                      : 'bg-blue-600 text-white font-bold'
-                    : isNovos
-                      ? 'bg-transparent text-green-400 font-medium'
-                      : 'bg-transparent text-slate-500 font-medium hover:text-slate-300'
+                key={t}
+                onClick={() => setTurnoFilter(turnoFilter === t ? null : t)}
+                className={`px-2 py-1 rounded text-[10px] font-semibold border ${
+                  turnoFilter === t
+                    ? 'border-sky-500 bg-sky-500/20 text-sky-300'
+                    : 'border-slate-700 bg-slate-900 text-slate-500 hover:text-slate-300'
                 }`}
               >
-                {tab.label}
+                {t === 'Manhã' ? '☀️' : '🌙'} {t}
               </button>
-            );
-          })}
-        </div>
-
-        {/* Filtros */}
-        <div className="grid grid-cols-2 gap-2 mb-2.5">
-          <select
-            value={selectedCity}
-            onChange={(e) => setSelectedCity(e.target.value)}
-            className="w-full px-2.5 py-2 rounded-md border border-slate-800 bg-slate-900 text-slate-300 text-xs outline-hidden"
-          >
-            <option value="ALL">Todas as Cidades</option>
-            {cities.map((city) => (
-              <option key={city} value={city}>
-                {city.toUpperCase()}
-              </option>
             ))}
-          </select>
-
-          <select
-            value={selectedShiftFilter}
-            onChange={(e) => setSelectedShiftFilter(e.target.value)}
-            className="w-full px-2.5 py-2 rounded-md border border-slate-800 bg-slate-900 text-slate-300 text-xs outline-hidden"
-          >
-            <option value="ALL">Todos os Turnos</option>
-            <option value="Manhã">Apenas Manhã</option>
-            <option value="Tarde">Apenas Tarde</option>
-            <option value="Manhã e Tarde">Integral</option>
-          </select>
-        </div>
-
-        {/* Busca */}
-        <div className="mb-3.5">
-          <input
-            type="text"
-            placeholder="Buscar por médico, clínica, bairro ou telefone..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-md border border-slate-800 bg-slate-900 text-slate-100 text-xs outline-hidden box-border placeholder:text-slate-500"
-          />
-        </div>
-
-        {/* Lista */}
-        {loading ? (
-          <div className="text-center py-8 text-slate-500 text-xs">Carregando roteiro...</div>
-        ) : loadError ? (
-          <div
-            role="alert"
-            className="text-center py-8 text-red-300 bg-slate-900 rounded-lg border border-slate-800 text-xs"
-          >
-            {loadError}{' '}
-            <button onClick={fetchDoctors} className="bg-transparent border-none text-blue-400 underline text-xs">
-              Tentar de novo
-            </button>
           </div>
-        ) : filteredDoctors.length === 0 ? (
-          <div className="text-center py-8 text-slate-500 bg-slate-900 rounded-lg border border-slate-800 text-xs">
-            Nenhum médico encontrado.
+        </div>
+      </header>
+
+      {/* Install Banner */}
+      {install.showBanner && (
+        <InstallBanner onInstall={install.install} onDismiss={install.dismiss} />
+      )}
+
+      {/* Main Content */}
+      <main className="px-4 pt-3 flex flex-col gap-2.5">
+        {/* Add Form */}
+        {showAddForm && <AddDoctorForm onAdd={addDoctor} onCancel={() => setShowAddForm(false)} />}
+
+        {/* Stats bar */}
+        <div className="flex justify-between items-center text-[10px] text-slate-500">
+          <span>
+            {sortedDoctors.length} médico{sortedDoctors.length !== 1 ? 's' : ''}
+            {selectedTab && selectedTab !== 'novos' && (
+              <span> · {selectedTab.toUpperCase()}</span>
+            )}
+            {selectedCategory && <span> · {selectedCategory.toUpperCase()}</span>}
+          </span>
+          {loading && <span className="text-blue-400">Atualizando...</span>}
+        </div>
+
+        {/* Doctor Cards */}
+        {sortedDoctors.length === 0 && !loading ? (
+          <div className="text-center text-slate-500 text-sm py-12">
+            Nenhum médico encontrado para o filtro selecionado.
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
-            {filteredDoctors.map((doc) => (
-              <DoctorCard
-                key={doc.id}
-                doc={doc}
-                onUpdateShift={handleUpdateShift}
-                onUpdateDoctor={handleUpdateDoctor}
-                onDeleteDoctor={handleDeleteDoctor}
-              />
-            ))}
-          </div>
+          sortedDoctors.map((doc) => (
+            <DoctorCard
+              key={doc.id}
+              doc={doc}
+              statuses={statusMap[doc.id] || []}
+              categoryMode={isCategoryMode}
+              onUpdateShift={updateShift}
+              onUpdateDoctor={updateDoctor}
+              onDeleteDoctor={deleteDoctor}
+              onSetStatus={setDoctorStatus}
+              onClearStatus={clearDoctorStatus}
+            />
+          ))
         )}
       </main>
     </div>

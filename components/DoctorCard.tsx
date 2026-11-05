@@ -1,22 +1,58 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useState, useEffect } from 'react';
 import type { Doctor } from '@/types/doctor';
-import { OPCOES_DIAS, OPCOES_TURNO } from '@/constants';
-import { buildWhatsAppUrl, isRecentDoctor, parseDays, toggleDay } from '@/utils';
+import type { DoctorStatus, DoctorStatusType } from '@/types/status';
+import { STATUS_META } from '@/types/status';
+import { OPCOES_DIAS, OPCOES_TURNO, CATEGORIAS } from '@/constants';
+import {
+  buildWhatsAppUrl,
+  isRecentDoctor,
+  parseDays,
+  sortDays,
+  toggleDay,
+  formatTime,
+  minutesRemaining,
+  hasSavedDraft,
+  loadDraft,
+  saveDraft,
+  clearDraft,
+} from '@/utils';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import StatusSelector from '@/components/StatusSelector';
+import AuditBadge from '@/components/AuditBadge';
+
+/* ── Props ── */
 
 interface DoctorCardProps {
   doc: Doctor;
+  statuses: DoctorStatus[];
+  categoryMode?: boolean;
   onUpdateShift: (docId: string, newTurno: string, docName: string) => void;
   onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
   onDeleteDoctor: (doc: Doctor) => void;
+  onSetStatus: (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string }) => void;
+  onClearStatus: (doctorId: string, type: DoctorStatusType) => void;
 }
 
 const inputCls =
   'w-full min-w-0 box-border p-1.5 rounded border border-slate-700 bg-slate-800 text-slate-100 text-[11px] outline-hidden placeholder:text-slate-500';
 
-function DoctorCard({ doc, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: DoctorCardProps) {
+/* ── Component ── */
+
+function DoctorCard({
+  doc,
+  statuses,
+  categoryMode,
+  onUpdateShift,
+  onUpdateDoctor,
+  onDeleteDoctor,
+  onSetStatus,
+  onClearStatus,
+}: DoctorCardProps) {
+  const draftKey = `edit_${doc.id}`;
+  const hasDraft = hasSavedDraft(draftKey);
+
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Doctor>>({});
   const [saving, setSaving] = useState(false);
@@ -25,26 +61,60 @@ function DoctorCard({ doc, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: Doct
 
   const currentShift = doc.turno || 'Manhã e Tarde';
   const isRecent = isRecentDoctor(doc.created_at);
-  const dayTags = parseDays(doc.dias_semana || doc.dia_semana).map((d) => d.toUpperCase());
+  const dayTags = sortDays(parseDays(doc.dias_semana || doc.dia_semana)).map((d) => d.toUpperCase());
   const whatsAppUrl = buildWhatsAppUrl(doc.telefone);
+
+  /* ── Status derivados ── */
+  const primaryStatus = statuses.length > 0 ? statuses[0] : null;
+  const statusMeta = primaryStatus ? STATUS_META[primaryStatus.status_type] : null;
+
+  /* ── Card border class com base no status ── */
+  let borderClass = 'border-slate-800';
+  if (statuses.some((s) => s.status_type === 'ultimo_paciente')) borderClass = 'border-red-500';
+  else if (statuses.some((s) => s.status_type === 'representante_no_consultorio')) borderClass = 'border-emerald-500';
+  else if (statuses.some((s) => s.status_type === 'nao_veio_hoje')) borderClass = 'border-slate-600';
+  else if (statuses.some((s) => ['ferias', 'viajando', 'saiu_do_setor'].includes(s.status_type)))
+    borderClass = 'border-amber-500';
+
+  const isAbsent = statuses.some((s) =>
+    ['nao_veio_hoje', 'ferias', 'viajando', 'saiu_do_setor'].includes(s.status_type),
+  );
+
+  /* ── Form persistence para edição ── */
+  useEffect(() => {
+    if (!isEditing) return;
+    const timer = setTimeout(() => saveDraft(draftKey, editForm), 500);
+    return () => clearTimeout(timer);
+  }, [isEditing, editForm, draftKey]);
 
   const setField = <K extends keyof Doctor>(key: K, value: Doctor[K]) =>
     setEditForm((prev) => ({ ...prev, [key]: value }));
 
   const handleStartEdit = () => {
     setFormError(null);
-    setEditForm({
-      dias_semana: doc.dias_semana || doc.dia_semana || '',
-      complemento: doc.complemento || '',
-      endereco: doc.endereco || '',
-      numero: doc.numero || '',
-      bairro: doc.bairro || '',
-      observacoes: doc.observacoes || '',
-      telefone: doc.telefone || '',
-      email: doc.email || '',
-      map_link: doc.map_link || '',
-    });
+    const draft = loadDraft<Partial<Doctor>>(draftKey);
+    if (draft) {
+      setEditForm(draft);
+    } else {
+      setEditForm({
+        dias_semana: doc.dias_semana || doc.dia_semana || '',
+        complemento: doc.complemento || '',
+        endereco: doc.endereco || '',
+        numero: doc.numero || '',
+        bairro: doc.bairro || '',
+        observacoes: doc.observacoes || '',
+        telefone: doc.telefone || '',
+        email: doc.email || '',
+        map_link: doc.map_link || '',
+        categoria: doc.categoria || 'consultorio',
+      });
+    }
     setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    clearDraft(draftKey);
+    setIsEditing(false);
   };
 
   const handleSave = async () => {
@@ -52,8 +122,12 @@ function DoctorCard({ doc, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: Doct
     setFormError(null);
     try {
       const ok = await onUpdateDoctor(doc.id, editForm, doc.descricao || '');
-      if (ok) setIsEditing(false);
-      else setFormError('Não foi possível salvar. Tente novamente.');
+      if (ok) {
+        clearDraft(draftKey);
+        setIsEditing(false);
+      } else {
+        setFormError('Não foi possível salvar. Tente novamente.');
+      }
     } catch {
       setFormError('Erro de conexão ao salvar. Tente novamente.');
     } finally {
@@ -80,58 +154,136 @@ function DoctorCard({ doc, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: Doct
 
   const canNavigate = Boolean(doc.map_link?.trim() || doc.endereco);
 
+  /* ── Render ── */
+
   return (
     <div
-      className={`bg-slate-900 border border-slate-800 rounded-lg px-3.5 py-3 flex flex-col gap-2 ${
+      className={`bg-slate-900 border rounded-lg px-3.5 py-3 flex flex-col gap-2 transition-colors ${borderClass} ${
         isRecent ? 'border-l-[3px] border-l-green-500' : ''
-      }`}
+      } ${isAbsent ? 'opacity-60' : ''}`}
     >
-      {/* Cabeçalho */}
+      {/* ── Status Banner ── */}
+      {statuses.map((s) => {
+        const meta = STATUS_META[s.status_type];
+        const remaining = minutesRemaining(s.expires_at);
+        return (
+          <div
+            key={s.status_type}
+            className={`rounded-md px-2.5 py-1.5 text-[11px] flex items-center justify-between ${meta.bg} ${meta.text} border border-white/10`}
+          >
+            <span>
+              {meta.emoji} <strong>{meta.label}</strong>
+              {s.status_type === 'representante_no_consultorio' && (
+                <span className="text-slate-300"> — às {formatTime(s.created_at)}</span>
+              )}
+              {remaining !== null && remaining > 0 && <span className="text-slate-500"> · {remaining}min restante</span>}
+              {s.return_date && (
+                <span className="text-slate-400">
+                  {' '}
+                  · Retorno: {new Date(s.return_date + 'T00:00:00').toLocaleDateString('pt-BR')}
+                </span>
+              )}
+            </span>
+          </div>
+        );
+      })}
+
+      {/* ── Cabeçalho ── */}
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <h3 className="m-0 text-sm font-semibold text-white uppercase break-words">
-              {doc.descricao}
-            </h3>
+            <h3 className="m-0 text-sm font-semibold text-white uppercase break-words">{doc.descricao}</h3>
             {isRecent && (
-              <span className="text-[9px] bg-green-900 text-green-400 px-[5px] py-px rounded font-bold">
-                NOVO
-              </span>
+              <span className="text-[9px] bg-green-900 text-green-400 px-[5px] py-px rounded font-bold">NOVO</span>
+            )}
+            {/* OCR Status — preparação visual */}
+            {doc.ocr_status && (
+              <span
+                title={
+                  doc.ocr_status === 'confirmado'
+                    ? 'Confirmado'
+                    : doc.ocr_status === 'encaixe'
+                      ? 'Encaixe / Alterações'
+                      : 'Ausente no agenda local'
+                }
+                className={`size-2.5 rounded-full shrink-0 ${
+                  doc.ocr_status === 'confirmado'
+                    ? 'bg-green-500'
+                    : doc.ocr_status === 'encaixe'
+                      ? 'bg-yellow-500'
+                      : 'bg-red-500'
+                }`}
+              />
             )}
           </div>
 
           <div className="flex gap-1.5 items-center mt-[3px] flex-wrap">
             {doc.crm && <span className="text-[11px] text-slate-500">CRM {doc.crm.toUpperCase()}</span>}
             {dayTags.map((tag) => (
-              <span
-                key={tag}
-                className="text-[9px] text-blue-400 bg-blue-900 px-1 py-px rounded-sm font-bold"
-              >
+              <span key={tag} className="text-[9px] text-blue-400 bg-blue-900 px-1 py-px rounded-sm font-bold">
                 {tag}
               </span>
             ))}
+            {doc.categoria && doc.categoria !== 'consultorio' && (
+              <span className="text-[9px] text-purple-400 bg-purple-900 px-1 py-px rounded-sm font-bold">
+                {doc.categoria.toUpperCase()}
+              </span>
+            )}
           </div>
         </div>
 
-        {!isEditing && (
-          <div className="flex gap-1.5 opacity-70">
-            <button
-              onClick={handleStartEdit}
-              className="bg-transparent border-none text-slate-400 text-[11px] px-1 py-0.5 hover:text-white"
-            >
-              Editar
-            </button>
-            <button
-              onClick={() => onDeleteDoctor(doc)}
-              className="bg-transparent border-none text-red-400 text-[11px] px-1 py-0.5 hover:text-red-300"
-            >
-              Excluir
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-1.5">
+          <StatusSelector
+            doctorId={doc.id}
+            statuses={statuses}
+            onSet={onSetStatus}
+            onClear={onClearStatus}
+          />
+
+          {!isEditing && (
+            <div className="flex gap-1.5 opacity-70">
+              <button
+                onClick={handleStartEdit}
+                className={`bg-transparent border-none text-[11px] px-1 py-0.5 hover:text-white ${
+                  hasDraft ? 'text-amber-400' : 'text-slate-400'
+                }`}
+                title={hasDraft ? 'Rascunho salvo — clique para continuar' : 'Editar'}
+              >
+                {hasDraft ? '✏️ Rascunho' : 'Editar'}
+              </button>
+              <button
+                onClick={() => onDeleteDoctor(doc)}
+                className="bg-transparent border-none text-red-400 text-[11px] px-1 py-0.5 hover:text-red-300"
+              >
+                Excluir
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Edição / Visualização */}
+      {/* ── PSM/SAMU/Hospital: botão "Já Visitado" ── */}
+      {categoryMode && !isEditing && (
+        <div className="flex items-center gap-2">
+          {statuses.some((s) => s.status_type === 'visitado_hoje') ? (
+            <button
+              onClick={() => onClearStatus(doc.id, 'visitado_hoje')}
+              className="text-[10px] px-2 py-1 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 font-semibold"
+            >
+              ✅ Visitado — desfazer
+            </button>
+          ) : (
+            <button
+              onClick={() => onSetStatus(doc.id, 'visitado_hoje')}
+              className="text-[10px] px-2 py-1 rounded border border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:border-emerald-500"
+            >
+              Marcar como Visitado
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Edição / Visualização ── */}
       {isEditing ? (
         <div className="bg-slate-950 p-2.5 rounded-md border border-slate-800 flex flex-col gap-2">
           <div>
@@ -187,10 +339,24 @@ function DoctorCard({ doc, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: Doct
 
           <input type="text" placeholder="Observações do Propagandista" value={editForm.observacoes ?? ''} onChange={(e) => setField('observacoes', e.target.value)} className={inputCls} />
 
+          {/* Categoria */}
+          <div>
+            <span className="text-[10px] text-slate-500 block mb-[3px]">Categoria do Local:</span>
+            <select
+              value={editForm.categoria ?? 'consultorio'}
+              onChange={(e) => setField('categoria', e.target.value as Doctor['categoria'])}
+              className={inputCls}
+            >
+              {CATEGORIAS.map((c) => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+
           {formError && <div role="alert" className="text-[11px] text-red-400">{formError}</div>}
 
           <div className="flex gap-1.5 justify-end mt-0.5">
-            <button type="button" onClick={() => setIsEditing(false)} className="px-2.5 py-1 bg-slate-700 text-slate-300 border-none rounded text-[11px] hover:bg-slate-600">
+            <button type="button" onClick={handleCancelEdit} className="px-2.5 py-1 bg-slate-700 text-slate-300 border-none rounded text-[11px] hover:bg-slate-600">
               Cancelar
             </button>
             <button
@@ -217,14 +383,14 @@ function DoctorCard({ doc, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: Doct
         </div>
       )}
 
-      {/* Observações */}
+      {/* ── Observações ── */}
       {!isEditing && doc.observacoes && (
         <div className="border-l-2 border-amber-500 pl-2 text-[11px] text-amber-400 italic mt-0.5">
           <strong className="not-italic">OBS:</strong> {doc.observacoes}
         </div>
       )}
 
-      {/* Rodapé */}
+      {/* ── Rodapé ── */}
       {!isEditing && (
         <div className="flex justify-between items-center pt-1.5 border-t border-slate-800 gap-2 mt-0.5 flex-wrap">
           <div className="flex bg-slate-950 rounded-[5px] p-0.5 border border-slate-800">
@@ -267,6 +433,13 @@ function DoctorCard({ doc, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: Doct
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── Audit Badge ── */}
+      {!isEditing && (doc.updated_at || doc.updated_by_name) && (
+        <div className="mt-0.5">
+          <AuditBadge updatedAt={doc.updated_at} updatedByName={doc.updated_by_name} />
         </div>
       )}
     </div>
