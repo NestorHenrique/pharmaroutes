@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export default function LoginForm() {
@@ -6,55 +6,27 @@ export default function LoginForm() {
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
-  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setAuthLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: authEmail,
-        password: authPassword,
-      });
-      if (error) alert(`Erro ao acessar: ${error.message}`);
-    } finally {
-      setAuthLoading(false);
-    }
+    const { error } = await supabase.auth.signInWithPassword({ email: authEmail, password: authPassword });
+    if (error) alert('Erro ao entrar: ' + error.message);
+    setAuthLoading(false);
   };
 
   return (
-    <main className="login-page">
-      <form className="login-card" onSubmit={handleLogin}>
-        <div className="login-heading">
-          <div className="login-mark" aria-hidden="true">P</div>
-          <span className="doctor-eyebrow">PharmaRoutes</span>
-          <h1>Acesse sua conta</h1>
-          <p>Entre para continuar seu roteiro de visitas.</p>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000' }}>
+      <form onSubmit={handleLogin} style={{ backgroundColor: '#09090b', padding: '30px', borderRadius: '20px', border: '1px solid #27272a', width: '90%', maxWidth: '360px', display: 'flex', flexDirection: 'column', gap: '14px', boxShadow: '0 8px 30px rgba(0,0,0,0.8)' }}>
+        <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+          <h2 style={{ margin: 0, color: '#fff', fontSize: '22px', fontWeight: 800 }}>PharmaRoutes</h2>
+          <p style={{ margin: '5px 0 0 0', color: '#a1a1aa', fontSize: '12px' }}>Acesse sua conta corporativa</p>
         </div>
-        <label className="login-field">
-          E-mail
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            placeholder="voce@empresa.com"
-            value={authEmail}
-            onChange={(event) => setAuthEmail(event.target.value)}
-          />
-        </label>
-        <label className="login-field">
-          Senha
-          <input
-            type="password"
-            required
-            autoComplete="current-password"
-            placeholder="Sua senha"
-            value={authPassword}
-            onChange={(event) => setAuthPassword(event.target.value)}
-          />
-        </label>
-        <button className="login-submit" type="submit" disabled={authLoading}>
-          {authLoading ? 'A entrar...' : 'Entrar na plataforma'}
+        <input type="email" placeholder="Seu email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #27272a', backgroundColor: '#121215', color: '#fff', outline: 'none' }} />
+        <input type="password" placeholder="Sua senha" value={authPassword} onChange={e => setAuthPassword(e.target.value)} style={{ padding: '12px', borderRadius: '10px', border: '1px solid #27272a', backgroundColor: '#121215', color: '#fff', outline: 'none' }} />
+        <button type="submit" disabled={authLoading} style={{ backgroundColor: '#2563eb', color: '#fff', padding: '12px', borderRadius: '10px', border: 'none', fontWeight: 700, marginTop: '8px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(37,99,235,0.4)' }}>
+          {authLoading ? 'Entrando...' : 'Entrar na Plataforma'}
         </button>
       </form>
-    </main>
+    </div>
   );
 }
