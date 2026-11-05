@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light;
-  --background: #f4f6f2;
-  --surface: #ffffff;
-  --foreground: #1d2b23;
-  --muted: #758178;
-  --line: #e5ebe4;
-  --accent: #47745b;
-  --accent-dark: #315940;
-  --accent-soft: #edf4ee;
-  --danger: #b65c53;
+  color-scheme: dark;
+  --background: #000000;
+  --surface: #0a0a0b;
+  --foreground: #ededed;
+  --muted: #85858b;
+  --line: #1a1a1a;
+  --accent: #a7f3d0;
+  --accent-dark: #6ee7b7;
+  --accent-soft: #10251c;
+  --danger: #ff7777;
 }
 
 @theme inline {
@@ -31,9 +31,7 @@ html {
 body {
   min-height: 100vh;
   margin: 0;
-  background:
-    radial-gradient(ellipse at 10% 0%, rgba(218, 233, 220, 0.7), transparent 34rem),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -66,8 +64,8 @@ button {
   position: sticky;
   top: 0;
   z-index: 10;
-  border-bottom: 1px solid rgba(222, 231, 222, 0.8);
-  background: rgba(248, 250, 247, 0.88);
+  border-bottom: 1px solid rgba(26, 26, 26, 0.88);
+  background: rgba(0, 0, 0, 0.88);
   backdrop-filter: blur(16px);
 }
 
@@ -83,7 +81,7 @@ button {
 
 .app-brand {
   margin: 0;
-  color: var(--accent-dark);
+  color: var(--foreground);
   font-size: 19px;
   font-weight: 750;
   letter-spacing: -0.6px;
@@ -101,7 +99,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
-  color: #647269;
+  color: #b8b8bd;
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
@@ -109,8 +107,8 @@ button {
 }
 
 .app-header-logout:hover {
-  border-color: #e9d8d5;
-  background: #fff8f7;
+  border-color: #472323;
+  background: #1c1010;
   color: var(--danger);
 }
 
@@ -128,10 +126,10 @@ button {
   flex-direction: column;
   gap: 16px;
   padding: 32px;
-  border: 1px solid #e3ebe2;
+  border: 1px solid var(--line);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 20px 60px rgba(37, 61, 43, 0.09);
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
 }
 
 .login-heading {
@@ -148,9 +146,9 @@ button {
   height: 52px;
   place-items: center;
   margin-bottom: 16px;
-  border: 1px solid #dce9dc;
+  border: 1px solid #26352d;
   border-radius: 17px;
-  background: linear-gradient(145deg, #eff6ef, #e1eee2);
+  background: #102019;
   color: var(--accent-dark);
   font-size: 23px;
   font-weight: 750;
@@ -158,7 +156,7 @@ button {
 
 .login-heading h1 {
   margin: 4px 0;
-  color: #203027;
+  color: var(--foreground);
   font-size: 23px;
   letter-spacing: -0.7px;
 }
@@ -173,7 +171,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  color: #66746a;
+  color: #a2a2a8;
   font-size: 12px;
   font-weight: 650;
 }
@@ -182,17 +180,17 @@ button {
   width: 100%;
   box-sizing: border-box;
   padding: 12px 14px;
-  border: 1px solid #e0e8df;
+  border: 1px solid var(--line);
   border-radius: 11px;
   outline: none;
-  background: #fff;
-  color: #26352b;
+  background: #050505;
+  color: var(--foreground);
   font-size: 14px;
 }
 
 .login-field input:focus {
-  border-color: #9db99e;
-  box-shadow: 0 0 0 3px rgba(111, 151, 115, 0.12);
+  border-color: var(--accent-dark);
+  box-shadow: 0 0 0 3px rgba(110, 231, 183, 0.12);
 }
 
 .login-submit {
@@ -201,7 +199,7 @@ button {
   border: 0;
   border-radius: 11px;
   background: var(--accent);
-  color: white;
+  color: #03130c;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
@@ -224,9 +222,9 @@ button {
   margin-bottom: 18px;
   padding: 5px;
   overflow-x: auto;
-  border: 1px solid #e4ebe3;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #050505;
 }
 
 .week-tab {
@@ -236,7 +234,7 @@ button {
   border: 0;
   border-radius: 10px;
   background: transparent;
-  color: #78847b;
+  color: #77777e;
   font-size: 11px;
   font-weight: 650;
   cursor: pointer;
@@ -244,14 +242,14 @@ button {
 }
 
 .week-tab:hover {
-  background: #f3f7f2;
-  color: var(--accent-dark);
+  background: #111113;
+  color: var(--foreground);
 }
 
 .week-tab-active {
-  background: #e8f0e7;
-  color: var(--accent-dark);
-  box-shadow: inset 0 0 0 1px #dce8da;
+  background: #17191a;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px #28332d;
 }
 
 .doctor-filters {
@@ -271,18 +269,22 @@ button {
   width: 100%;
   min-width: 0;
   padding: 12px 14px;
-  border: 1px solid #e2e9e1;
+  border: 1px solid var(--line);
   border-radius: 12px;
   outline: none;
-  background: rgba(255, 255, 255, 0.86);
-  color: #24342a;
+  background: #080809;
+  color: var(--foreground);
   font-size: 13px;
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .doctor-filter-input:focus {
-  border-color: #9db99e;
-  box-shadow: 0 0 0 3px rgba(111, 151, 115, 0.12);
+  border-color: var(--accent-dark);
+  box-shadow: 0 0 0 3px rgba(110, 231, 183, 0.12);
+}
+
+select.doctor-filter-input {
+  text-transform: uppercase;
 }
 
 .doctor-list {
@@ -295,17 +297,16 @@ button {
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  border: 1px solid #e6ece5;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 8px 24px rgba(37, 61, 43, 0.045);
+  border: 1px solid #1a1a1a;
+  border-radius: 24px;
+  background: #0a0a0b;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.3);
   transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
 }
 
 .doctor-card:hover {
-  transform: translateY(-2px);
-  border-color: #d7e3d7;
-  box-shadow: 0 14px 34px rgba(37, 61, 43, 0.085);
+  border-color: #292929;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42);
 }
 
 .doctor-card-header {
@@ -320,10 +321,10 @@ button {
   height: 46px;
   flex: 0 0 46px;
   place-items: center;
-  border: 1px solid #dce9dc;
+  border: 1px solid #27352e;
   border-radius: 15px;
-  background: linear-gradient(145deg, #eff6ef, #e1eee2);
-  color: var(--accent-dark);
+  background: #101914;
+  color: var(--accent);
   font-size: 18px;
   font-weight: 750;
 }
@@ -343,18 +344,19 @@ button {
 .doctor-name-row h2,
 .doctor-edit-heading h2 {
   margin: 0;
-  color: #203027;
+  color: #f3f3f4;
   font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.35px;
   line-height: 1.3;
+  text-transform: uppercase;
 }
 
 .doctor-new-badge {
   padding: 4px 8px;
   border-radius: 999px;
-  background: #edf6ed;
-  color: #4a7952;
+  background: #10251b;
+  color: var(--accent);
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
@@ -365,13 +367,13 @@ button {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 5px;
-  color: var(--muted);
+  color: #85858b;
   font-size: 12px;
 }
 
 .doctor-meta span + span::before {
   padding-right: 8px;
-  color: #c1cbc2;
+  color: #49494e;
   content: "·";
 }
 
@@ -390,7 +392,7 @@ button {
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
-  color: #879289;
+  color: #85858b;
   font-size: 20px;
   cursor: pointer;
   transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
@@ -398,8 +400,8 @@ button {
 
 .doctor-icon-button:hover {
   border-color: var(--line);
-  background: #f5f8f4;
-  color: var(--accent-dark);
+  background: #171719;
+  color: var(--foreground);
 }
 
 .doctor-icon-button svg {
@@ -413,8 +415,8 @@ button {
 }
 
 .doctor-delete-button:hover {
-  border-color: #f2dfdc;
-  background: #fff5f3;
+  border-color: #472323;
+  background: #1c1010;
   color: var(--danger);
 }
 
@@ -427,10 +429,10 @@ button {
 
 .doctor-day-chip {
   padding: 4px 8px;
-  border: 1px solid #e0ebe0;
+  border: 1px solid #26352d;
   border-radius: 7px;
-  background: #f6faf5;
-  color: #58735e;
+  background: #101914;
+  color: #b9dec9;
   font-size: 10px;
   font-weight: 700;
 }
@@ -451,28 +453,39 @@ button {
   flex: 0 0 28px;
   place-items: center;
   border-radius: 9px;
-  background: #f2f6f1;
+  background: #121b16;
   color: var(--accent);
   font-size: 18px;
 }
 
 .doctor-address {
-  color: #657369;
+  color: #b7b7bc;
 }
 
 .doctor-locality {
-  color: #77847a;
+  color: #85858b;
   font-size: 12px;
-  text-transform: lowercase;
+  text-transform: uppercase;
+}
+
+.doctor-clinic {
+  margin-bottom: 3px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.035em;
+  line-height: 1.45;
+  text-transform: uppercase;
 }
 
 .doctor-notes {
   margin: -2px 0 0;
   padding: 11px 13px;
-  border-left: 3px solid #9db89b;
-  border-radius: 0 10px 10px 0;
-  background: #f7f9f5;
-  color: #667369;
+  border: 1px solid #263a30;
+  border-left: 3px solid var(--accent-dark);
+  border-radius: 12px;
+  background: #0d1511;
+  color: #c1d5ca;
   font-size: 12px;
   line-height: 1.5;
 }
@@ -483,7 +496,7 @@ button {
   justify-content: space-between;
   gap: 12px;
   padding-top: 14px;
-  border-top: 1px solid #edf0ec;
+  border-top: 1px solid var(--line);
 }
 
 .doctor-shifts {
@@ -491,9 +504,9 @@ button {
   flex-wrap: wrap;
   gap: 3px;
   padding: 3px;
-  border: 1px solid #e9eee8;
+  border: 1px solid var(--line);
   border-radius: 11px;
-  background: #f7f9f6;
+  background: #070708;
 }
 
 .doctor-shifts button {
@@ -501,14 +514,14 @@ button {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #879188;
+  color: #77777e;
   font-size: 11px;
   cursor: pointer;
 }
 
 .doctor-shifts button.doctor-shift-active {
-  background: #e5eee4;
-  color: #385e43;
+  background: #17241d;
+  color: var(--accent);
   font-weight: 700;
 }
 
@@ -522,10 +535,10 @@ button {
 .doctor-primary-button,
 .doctor-whatsapp-button {
   padding: 9px 13px;
-  border: 1px solid #e0e8df;
+  border: 1px solid #29292c;
   border-radius: 10px;
-  background: #fff;
-  color: #526359;
+  background: #111113;
+  color: #d0d0d3;
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
@@ -533,13 +546,33 @@ button {
 }
 
 .doctor-secondary-button:hover {
-  background: #f5f8f4;
+  border-color: #3a3a3e;
+  background: #19191b;
+}
+
+.doctor-secondary-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.doctor-edit-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.doctor-map-button {
+  border-color: #2b4939;
+  background: #102019;
+  color: var(--accent);
 }
 
 .doctor-primary-button {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: #03130c;
 }
 
 .doctor-primary-button:hover {
@@ -553,16 +586,16 @@ button {
 }
 
 .doctor-whatsapp-button {
-  border-color: #d8eadd;
-  background: #f0f8f1;
-  color: #3e7650;
+  border-color: #24513b;
+  background: #0e2117;
+  color: #a7f3d0;
 }
 
 .doctor-empty-state {
   padding: 36px 20px;
-  border: 1px dashed #d6e0d5;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.65);
+  border: 1px dashed #29292c;
+  border-radius: 20px;
+  background: #080809;
   color: var(--muted);
   font-size: 14px;
   text-align: center;
@@ -601,7 +634,7 @@ button {
   min-width: 0;
   flex-direction: column;
   gap: 6px;
-  color: #66746a;
+  color: #a2a2a8;
   font-size: 11px;
   font-weight: 650;
 }
@@ -622,10 +655,10 @@ button {
   gap: 18px;
   margin-bottom: 18px;
   padding: 20px;
-  border: 1px solid #e1e9e0;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 10px 28px rgba(37, 61, 43, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.36);
 }
 
 .doctor-form-heading {
@@ -636,7 +669,7 @@ button {
 
 .doctor-form-heading h2 {
   margin: 0;
-  color: #203027;
+  color: var(--foreground);
   font-size: 18px;
   letter-spacing: -0.4px;
 }
@@ -652,7 +685,7 @@ button {
   min-width: 0;
   flex-direction: column;
   gap: 6px;
-  color: #66746a;
+  color: #a2a2a8;
   font-size: 11px;
   font-weight: 650;
 }
@@ -663,28 +696,39 @@ button {
 
 .doctor-form-field input,
 .doctor-form-field select,
-.doctor-form-field textarea {
+.doctor-form-field textarea,
+.doctor-edit-field input,
+.doctor-edit-field select,
+.doctor-edit-field textarea {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
   padding: 10px 12px;
-  border: 1px solid #e0e8df;
+  border: 1px solid #242427;
   border-radius: 10px;
   outline: none;
-  background: #fff;
-  color: #26352b;
+  background: #050506;
+  color: var(--foreground);
   font-size: 13px;
   font-weight: 400;
 }
 
 .doctor-form-field input:focus,
 .doctor-form-field select:focus,
-.doctor-form-field textarea:focus {
-  border-color: #9db99e;
-  box-shadow: 0 0 0 3px rgba(111, 151, 115, 0.12);
+.doctor-form-field textarea:focus,
+.doctor-edit-field input:focus,
+.doctor-edit-field select:focus,
+.doctor-edit-field textarea:focus {
+  border-color: var(--accent-dark);
+  box-shadow: 0 0 0 3px rgba(110, 231, 183, 0.12);
 }
 
 .doctor-form-field textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.doctor-edit-field textarea {
   min-height: 76px;
   resize: vertical;
 }
@@ -697,19 +741,19 @@ button {
 .doctor-form-day {
   flex: 1;
   padding: 9px 4px;
-  border: 1px solid #e3eae2;
+  border: 1px solid #29292c;
   border-radius: 9px;
-  background: #fff;
-  color: #758178;
+  background: #111113;
+  color: #85858b;
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .doctor-form-day-active {
-  border-color: #cbdcca;
-  background: #edf4ec;
-  color: #42684a;
+  border-color: #3b644d;
+  background: #14251b;
+  color: var(--accent);
 }
 
 .doctor-form-actions {
@@ -725,9 +769,9 @@ button {
   justify-content: space-between;
   gap: 12px;
   padding: 10px max(16px, calc((100% - 760px) / 2));
-  border-bottom: 1px solid #dce8db;
-  background: #edf5ec;
-  color: #44634a;
+  border-bottom: 1px solid var(--line);
+  background: #080809;
+  color: #a9d8bd;
   font-size: 12px;
   font-weight: 650;
 }
@@ -737,7 +781,7 @@ button {
   border: 0;
   border-radius: 999px;
   background: var(--accent);
-  color: white;
+  color: #03130c;
   font-size: 11px;
   font-weight: 700;
   cursor: pointer;
@@ -754,9 +798,9 @@ button {
   place-items: center;
   border: 0;
   border-radius: 18px;
-  background: var(--accent);
-  box-shadow: 0 10px 24px rgba(58, 97, 68, 0.28);
-  color: white;
+  background: var(--accent-dark);
+  box-shadow: 0 10px 32px rgba(110, 231, 183, 0.16);
+  color: #03130c;
   font-size: 28px;
   cursor: pointer;
   transition: transform 180ms ease, background 180ms ease;
@@ -764,7 +808,7 @@ button {
 
 .add-doctor-fab:hover {
   transform: translateY(-2px);
-  background: var(--accent-dark);
+  background: var(--accent);
 }
 
 @media (max-width: 540px) {
@@ -781,7 +825,7 @@ button {
   .doctor-card {
     gap: 14px;
     padding: 16px;
-    border-radius: 17px;
+    border-radius: 24px;
   }
 
   .doctor-card-header {
@@ -832,7 +876,7 @@ button {
 
   .doctor-form {
     padding: 16px;
-    border-radius: 17px;
+    border-radius: 24px;
   }
 }
 

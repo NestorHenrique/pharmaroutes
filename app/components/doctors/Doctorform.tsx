@@ -1,20 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import type { Doctor } from '@/types/doctor';
 import { OPCOES_DIAS, OPCOES_TURNO } from '@/constants';
+import { toggleDaySelection } from '@/utils/doctor';
 
 interface DoctorFormProps {
   onAddDoctor: (doc: Partial<Doctor>) => Promise<boolean>;
   onClose: () => void;
   defaultTab: string;
   defaultCity: string;
-}
-
-function toggleDaySelection(currentDays = '', dayValue: string) {
-  const days = currentDays.toLowerCase().split(',').map((day) => day.trim()).filter(Boolean);
-  return (days.includes(dayValue)
-    ? days.filter((day) => day !== dayValue)
-    : [...days, dayValue]
-  ).join(', ');
 }
 
 export default function DoctorForm({ onAddDoctor, onClose, defaultTab, defaultCity }: DoctorFormProps) {

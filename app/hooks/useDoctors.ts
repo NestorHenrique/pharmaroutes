@@ -78,7 +78,10 @@ export function useDoctors(user: User | null, selectedTab: string, selectedCity:
   };
 
   const updateDoctor = async (docId: string, updatedData: Partial<Doctor>, docName: string) => {
-    const payload = { ...updatedData, dia_semana: updatedData.dias_semana, updated_by: user?.email };
+    const payload: Partial<Doctor> = { ...updatedData, updated_by: user?.email };
+    if (updatedData.dias_semana !== undefined) {
+      payload.dia_semana = updatedData.dias_semana;
+    }
     const { error } = await supabase.from('doctors').update(payload).eq('id', docId);
 
     if (!error) {

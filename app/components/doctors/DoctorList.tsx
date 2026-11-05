@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import type { Doctor } from '@/types/doctor';
-import { OPCOES_TURNO } from '@/constants';
+import { OPCOES_DIAS, OPCOES_TURNO } from '@/constants';
 import { isRecentDoctor } from '@/utils';
+import { toggleDaySelection } from '@/utils/doctor';
 
 interface DoctorListProps {
   doctors: Doctor[];
@@ -12,32 +13,6 @@ interface DoctorListProps {
   onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
   onDeleteDoctor: (doc: Doctor) => void;
 }
-
-const iconButtonStyle = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '6px',
-  padding: '7px 10px',
-  border: '1px solid #e4e9e3',
-  borderRadius: '10px',
-  background: '#fff',
-  color: '#59685e',
-  fontSize: '12px',
-  fontWeight: 600,
-  cursor: 'pointer',
-};
-
-const inputStyle = {
-  width: '100%',
-  boxSizing: 'border-box' as const,
-  padding: '10px 12px',
-  border: '1px solid #dfe7df',
-  borderRadius: '10px',
-  background: '#fff',
-  color: '#17251f',
-  fontSize: '14px',
-  outlineColor: '#4d8065',
-};
 
 export default function DoctorList({
   doctors,
@@ -51,6 +26,7 @@ export default function DoctorList({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<Partial<Doctor>>({});
   const [saving, setSaving] = useState(false);
+  const [locatingId, setLocatingId] = useState<string | null>(null);
 
   const term = searchTerm.trim().toLocaleLowerCase('pt-BR');
   const filteredDoctors = doctors.filter((doctor) => {
@@ -112,12 +88,64 @@ export default function DoctorList({
   };
 
   const openNavigation = (doctor: Doctor) => {
-    const destination =
-      doctor.map_link?.trim() ||
-      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
-        `${doctor.endereco || ''}, ${doctor.numero || 'SN'}, ${doctor.bairro || ''}, ${doctor.cidade || ''}`
-      )}`;
-    window.open(destination, '_blank', 'noopener,noreferrer');
+    const mapLink = doctor.map_link?.trim();
+    if (mapLink) {
+      window.open(mapLink, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      alert('A geolocalização não é suportada neste dispositivo.');
+      return;
+    }
+
+    const mapWindow = window.open('about:blank', '_blank');
+    if (mapWindow) mapWindow.opener = null;
+    setLocatingId(doctor.id);
+
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        const latitude = coords.latitude;
+        const longitude = coords.longitude;
+        const capturedMapLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+
+        try {
+          const saved = await onUpdateDoctor(
+            doctor.id,
+            { map_link: capturedMapLink },
+            doctor.descricao || ''
+          );
+          if (!saved) {
+            mapWindow?.close();
+            alert('Não foi possível salvar as coordenadas do médico.');
+            return;
+          }
+
+          if (mapWindow) {
+            mapWindow.location.replace(capturedMapLink);
+          } else {
+            alert(`Coordenadas salvas: ${latitude}, ${longitude}`);
+          }
+        } catch {
+          mapWindow?.close();
+          alert('Ocorreu um erro ao salvar as coordenadas do médico.');
+        } finally {
+          setLocatingId(null);
+        }
+      },
+      (error) => {
+        mapWindow?.close();
+        setLocatingId(null);
+        const message =
+          error.code === error.PERMISSION_DENIED
+            ? 'Permita o acesso à localização para capturar as coordenadas.'
+            : error.code === error.TIMEOUT
+              ? 'A localização demorou demais para responder. Tente novamente.'
+              : 'Não foi possível obter sua localização.';
+        alert(message);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   const openWhatsApp = (phone?: string) => {
@@ -179,7 +207,6 @@ export default function DoctorList({
                     Nome
                     <input
                       required
-                      style={inputStyle}
                       value={editForm.descricao || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, descricao: event.target.value })
@@ -189,7 +216,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field">
                     CRM
                     <input
-                      style={inputStyle}
                       value={editForm.crm || ''}
                       onChange={(event) => setEditForm({ ...editForm, crm: event.target.value })}
                     />
@@ -197,7 +223,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field">
                     Telefone
                     <input
-                      style={inputStyle}
                       value={editForm.telefone || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, telefone: event.target.value })
@@ -208,7 +233,6 @@ export default function DoctorList({
                     E-mail
                     <input
                       type="email"
-                      style={inputStyle}
                       value={editForm.email || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, email: event.target.value })
@@ -218,7 +242,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field">
                     Clínica / local
                     <input
-                      style={inputStyle}
                       value={editForm.complemento || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, complemento: event.target.value })
@@ -228,7 +251,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field">
                     Turno
                     <select
-                      style={inputStyle}
                       value={editForm.turno || 'Manhã e Tarde'}
                       onChange={(event) =>
                         setEditForm({ ...editForm, turno: event.target.value })
@@ -242,7 +264,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field">
                     Cidade / estado
                     <input
-                      style={inputStyle}
                       value={editForm.cidade || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, cidade: event.target.value })
@@ -252,7 +273,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field">
                     Bairro
                     <input
-                      style={inputStyle}
                       value={editForm.bairro || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, bairro: event.target.value })
@@ -262,7 +282,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field">
                     Endereço
                     <input
-                      style={inputStyle}
                       value={editForm.endereco || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, endereco: event.target.value })
@@ -272,7 +291,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field">
                     Número
                     <input
-                      style={inputStyle}
                       value={editForm.numero || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, numero: event.target.value })
@@ -281,19 +299,37 @@ export default function DoctorList({
                   </label>
                   <label className="doctor-edit-field doctor-edit-field-wide">
                     Dias de atendimento
-                    <input
-                      style={inputStyle}
-                      placeholder="seg, qua, sex"
-                      value={editForm.dias_semana || ''}
-                      onChange={(event) =>
-                        setEditForm({ ...editForm, dias_semana: event.target.value })
-                      }
-                    />
+                    <div className="doctor-form-days">
+                      {OPCOES_DIAS.map((day) => {
+                        const selected = (editForm.dias_semana || '')
+                          .toLowerCase()
+                          .split(',')
+                          .map((value) => value.trim())
+                          .includes(day.value);
+                        return (
+                          <button
+                            type="button"
+                            key={day.value}
+                            className={
+                              selected
+                                ? 'doctor-form-day doctor-form-day-active'
+                                : 'doctor-form-day'
+                            }
+                            aria-pressed={selected}
+                            onClick={() => setEditForm((current) => ({
+                              ...current,
+                              dias_semana: toggleDaySelection(current.dias_semana, day.value),
+                            }))}
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </label>
                   <label className="doctor-edit-field doctor-edit-field-wide">
                     Link do mapa
                     <input
-                      style={inputStyle}
                       value={editForm.map_link || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, map_link: event.target.value })
@@ -303,7 +339,6 @@ export default function DoctorList({
                   <label className="doctor-edit-field doctor-edit-field-wide">
                     Observações
                     <textarea
-                      style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
                       value={editForm.observacoes || ''}
                       onChange={(event) =>
                         setEditForm({ ...editForm, observacoes: event.target.value })
@@ -337,13 +372,12 @@ export default function DoctorList({
                     </div>
                     <div className="doctor-meta">
                       {doctor.crm && <span>CRM {doctor.crm}</span>}
-                      {doctor.complemento && <span>{doctor.complemento}</span>}
                     </div>
                   </div>
                   <div className="doctor-card-actions">
                     <button
                       type="button"
-                      style={iconButtonStyle}
+                      className="doctor-secondary-button doctor-edit-button"
                       onClick={() => startEditing(doctor)}
                       aria-label={`Editar ${doctor.descricao || 'médico'}`}
                     >
@@ -381,6 +415,9 @@ export default function DoctorList({
                 <div className="doctor-location">
                   <span className="doctor-location-icon" aria-hidden="true">⌖</span>
                   <div>
+                    {doctor.complemento && (
+                      <div className="doctor-clinic">{doctor.complemento}</div>
+                    )}
                     {(doctor.endereco || doctor.numero) && (
                       <div className="doctor-address">
                         {[doctor.endereco, doctor.numero].filter(Boolean).join(', ')}
@@ -389,7 +426,6 @@ export default function DoctorList({
                     <div className="doctor-locality">
                       {[doctor.bairro, doctor.cidade]
                         .filter(Boolean)
-                        .map((value) => value?.toLocaleLowerCase('pt-BR'))
                         .join(' · ') || 'Localização não informada'}
                     </div>
                   </div>
@@ -415,10 +451,15 @@ export default function DoctorList({
                   <div className="doctor-contact-actions">
                     <button
                       type="button"
-                      className="doctor-secondary-button"
+                      className="doctor-secondary-button doctor-map-button"
+                      disabled={locatingId !== null}
                       onClick={() => openNavigation(doctor)}
                     >
-                      Ver rota
+                      {locatingId === doctor.id
+                        ? 'Obtendo GPS...'
+                        : doctor.map_link?.trim()
+                          ? 'Abrir mapa'
+                          : 'Capturar GPS'}
                     </button>
                     {doctor.telefone && (
                       <button
