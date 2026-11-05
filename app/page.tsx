@@ -45,6 +45,7 @@ export default function HomePage() {
   const [turnoFilter, setTurnoFilter] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCity, setSelectedCity] = useState<string>('');
 
   /* UI */
   const [showAddForm, setShowAddForm] = useState(false);
@@ -209,7 +210,7 @@ export default function HomePage() {
         .eq('status_type', type);
 
       if (error) {
-        console.error('Erro ao limpar status:', error);
+        console.error('Erro ao limpar status:', error.message, '|', error.details, '|', error.hint, '|', error.code);
         fetchStatuses(); // Refresh on error
       }
     },
@@ -307,6 +308,15 @@ export default function HomePage() {
 
   const isCategoryMode = selectedCategory !== null;
 
+  // Cidades disponíveis (dos médicos cadastrados)
+  const cities = useMemo(
+    () =>
+      Array.from(
+        new Set(doctors.map((d) => (d.cidade || '').trim()).filter(Boolean)),
+      ).sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [doctors],
+  );
+
   const filteredDoctors = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return doctors.filter((d) => {
@@ -326,6 +336,9 @@ export default function HomePage() {
         if (!byCategory && !byName) return false;
       }
 
+      // Cidade
+      if (selectedCity && (d.cidade || '').trim() !== selectedCity) return false;
+
       // Turno
       if (turnoFilter) {
         const t = d.turno || 'Manhã e Tarde';
@@ -339,7 +352,7 @@ export default function HomePage() {
       }
       return true;
     });
-  }, [doctors, selectedTab, selectedCategory, turnoFilter, searchQuery]);
+  }, [doctors, selectedTab, selectedCategory, selectedCity, turnoFilter, searchQuery]);
 
   const sortedDoctors = isCategoryMode
     ? [...filteredDoctors].sort((a, b) => {
@@ -395,6 +408,21 @@ export default function HomePage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full box-border p-2 rounded border border-slate-700 bg-slate-900 text-slate-100 text-xs outline-hidden placeholder:text-slate-500 mb-2"
         />
+
+        {/* Filtro de cidade */}
+        <select
+          value={selectedCity}
+          onChange={(e) => setSelectedCity(e.target.value)}
+          aria-label="Filtrar por cidade"
+          className="w-full box-border p-2 rounded border border-slate-700 bg-slate-900 text-slate-100 text-xs outline-hidden mb-2"
+        >
+          <option value="">Todas as cidades</option>
+          {cities.map((c) => (
+            <option key={c} value={c}>
+              {c.toUpperCase()}
+            </option>
+          ))}
+        </select>
 
         {/* Day Tabs */}
         <div className="flex gap-0.5 overflow-x-auto no-scrollbar">
@@ -474,6 +502,7 @@ export default function HomePage() {
               <span> · {selectedTab.toUpperCase()}</span>
             )}
             {selectedCategory && <span> · {selectedCategory.toUpperCase()}</span>}
+            {selectedCity && <span> · {selectedCity.toUpperCase()}</span>}
           </span>
           {loading && <span className="text-blue-400">Atualizando...</span>}
         </div>
