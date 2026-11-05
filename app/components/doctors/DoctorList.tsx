@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Doctor } from '@/types/doctor';
-import { OPCOES_DIAS, OPCOES_TURNO } from '@/constants';
+import { useState, type FormEvent } from 'react';
+import type { Doctor } from '@/types/doctor';
+import { OPCOES_TURNO } from '@/constants';
 import { isRecentDoctor } from '@/utils';
 
 interface DoctorListProps {
@@ -13,75 +13,427 @@ interface DoctorListProps {
   onDeleteDoctor: (doc: Doctor) => void;
 }
 
-export default function DoctorList({ doctors, searchTerm, selectedShiftFilter, loading, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: DoctorListProps) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  
-  if (loading) return <div style={{ textAlign: 'center', padding: '40px', color: '#71717A', fontSize: '14px', fontWeight: 500 }}>Buscando médicos...</div>;
-  if (doctors.length === 0) return <div style={{ textAlign: 'center', padding: '40px', color: '#71717A', backgroundColor: '#0A0A0B', borderRadius: '24px', border: '1px dashed #27272A', fontSize: '14px' }}>Nenhum médico encontrado.</div>;
+const iconButtonStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  padding: '7px 10px',
+  border: '1px solid #e4e9e3',
+  borderRadius: '10px',
+  background: '#fff',
+  color: '#59685e',
+  fontSize: '12px',
+  fontWeight: 600,
+  cursor: 'pointer',
+};
 
-  const openNav = (doc: Doctor) => window.open(doc.map_link?.trim() || `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${doc.endereco}, ${doc.numero || 'SN'}, ${doc.bairro || ''}, ${doc.cidade || ''}`)}`, '_blank');
-  const openWpp = (phone?: string) => phone && window.open(`https://wa.me/${phone.replace(/\D/g, '').startsWith('55') ? phone.replace(/\D/g, '') : `55${phone.replace(/\D/g, '')}`}`, '_blank');
+const inputStyle = {
+  width: '100%',
+  boxSizing: 'border-box' as const,
+  padding: '10px 12px',
+  border: '1px solid #dfe7df',
+  borderRadius: '10px',
+  background: '#fff',
+  color: '#17251f',
+  fontSize: '14px',
+  outlineColor: '#4d8065',
+};
+
+export default function DoctorList({
+  doctors,
+  searchTerm,
+  selectedShiftFilter,
+  loading,
+  onUpdateShift,
+  onUpdateDoctor,
+  onDeleteDoctor,
+}: DoctorListProps) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Doctor>>({});
+  const [saving, setSaving] = useState(false);
+
+  const term = searchTerm.trim().toLocaleLowerCase('pt-BR');
+  const filteredDoctors = doctors.filter((doctor) => {
+    const searchableText = [
+      doctor.descricao,
+      doctor.crm,
+      doctor.bairro,
+      doctor.complemento,
+      doctor.endereco,
+      doctor.cidade,
+      doctor.observacoes,
+      doctor.telefone,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase('pt-BR');
+    const shift = doctor.turno || 'Manhã e Tarde';
+    const matchesShift =
+      selectedShiftFilter === 'ALL' ||
+      shift === selectedShiftFilter ||
+      shift === 'Manhã e Tarde';
+
+    return searchableText.includes(term) && matchesShift;
+  });
+
+  const startEditing = (doctor: Doctor) => {
+    setEditingId(doctor.id);
+    setEditForm({
+      descricao: doctor.descricao || '',
+      crm: doctor.crm || '',
+      dias_semana: doctor.dias_semana || doctor.dia_semana || '',
+      cidade: doctor.cidade || '',
+      bairro: doctor.bairro || '',
+      endereco: doctor.endereco || '',
+      numero: doctor.numero || '',
+      complemento: doctor.complemento || '',
+      turno: doctor.turno || 'Manhã e Tarde',
+      observacoes: doctor.observacoes || '',
+      telefone: doctor.telefone || '',
+      email: doctor.email || '',
+      map_link: doctor.map_link || '',
+    });
+  };
+
+  const saveEditing = async (event: FormEvent<HTMLFormElement>, doctor: Doctor) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      const saved = await onUpdateDoctor(
+        doctor.id,
+        editForm,
+        editForm.descricao || doctor.descricao || ''
+      );
+      if (saved) setEditingId(null);
+      else alert('Não foi possível salvar as alterações do médico.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openNavigation = (doctor: Doctor) => {
+    const destination =
+      doctor.map_link?.trim() ||
+      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(
+        `${doctor.endereco || ''}, ${doctor.numero || 'SN'}, ${doctor.bairro || ''}, ${doctor.cidade || ''}`
+      )}`;
+    window.open(destination, '_blank', 'noopener,noreferrer');
+  };
+
+  const openWhatsApp = (phone?: string) => {
+    if (!phone) return;
+    const number = phone.replace(/\D/g, '');
+    window.open(
+      `https://wa.me/${number.startsWith('55') ? number : `55${number}`}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  if (loading) {
+    return <div className="doctor-empty-state">Carregando médicos...</div>;
+  }
+
+  if (filteredDoctors.length === 0) {
+    return (
+      <div className="doctor-empty-state">
+        {doctors.length > 0
+          ? 'Nenhum médico corresponde aos filtros selecionados.'
+          : 'Nenhum médico encontrado.'}
+      </div>
+    );
+  }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {doctors.map((doc) => {
-        const isRecent = isRecentDoctor(doc.created_at);
-        const days = (doc.dias_semana || doc.dia_semana || '').toUpperCase().split(',').map(d => d.trim()).filter(Boolean);
-        const shift = doc.turno || 'Manhã e Tarde';
+    <div className="doctor-list">
+      {filteredDoctors.map((doctor) => {
+        const isEditing = editingId === doctor.id;
+        const isRecent = isRecentDoctor(doctor.created_at);
+        const days = (doctor.dias_semana || doctor.dia_semana || '')
+          .toUpperCase()
+          .split(',')
+          .map((day) => day.trim())
+          .filter(Boolean);
+        const shift = doctor.turno || 'Manhã e Tarde';
 
         return (
-          <div key={doc.id} style={{ backgroundColor: '#0A0A0B', border: '1px solid #1A1A1A', borderRadius: '24px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: 700, color: '#FAFAFA', letterSpacing: '-0.3px', textTransform: 'capitalize' }}>{doc.descricao?.toLowerCase()}</h3>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                  {isRecent && <span style={{ fontSize: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10B981', padding: '4px 8px', borderRadius: '100px', fontWeight: 700 }}>NOVO</span>}
-                  {doc.crm && <span style={{ fontSize: '11px', color: '#A1A1AA', fontWeight: 500 }}>CRM {doc.crm}</span>}
-                </div>
-              </div>
-              <button onClick={() => { if(window.confirm(`Excluir ${doc.descricao}?`)) onDeleteDoctor(doc); }} style={{ background: 'none', border: 'none', color: '#52525B', fontSize: '18px', cursor: 'pointer', padding: '4px' }}>✕</button>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <div style={{ color: '#E4E4E7', fontWeight: 500, fontSize: '14px' }}>{doc.complemento || 'Consultório Próprio'}</div>
-              <div style={{ color: '#71717A', fontSize: '13px', lineHeight: '1.5' }}>
-                {doc.endereco}{doc.numero && `, ${doc.numero}`} <br/>
-                {doc.bairro && <span>{doc.bairro} — </span>} <span style={{ color: '#A1A1AA' }}>{doc.cidade}</span>
-              </div>
-            </div>
-
-            {doc.observacoes && (
-              <div style={{ backgroundColor: '#1A1A1A', padding: '12px', borderRadius: '12px', fontSize: '13px', color: '#D4D4D8', borderLeft: '3px solid #4F46E5' }}>
-                {doc.observacoes}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '16px', borderTop: '1px solid #1A1A1A', flexWrap: 'wrap', gap: '12px' }}>
-              <div style={{ display: 'flex', backgroundColor: '#141414', borderRadius: '100px', padding: '4px', border: '1px solid #27272A' }}>
-                {OPCOES_TURNO.map((opcao) => {
-                  const isSelected = shift === opcao;
-                  return (
-                    <button key={opcao} onClick={() => onUpdateShift(doc.id, opcao, doc.descricao || '')} style={{ padding: '6px 12px', borderRadius: '100px', border: 'none', backgroundColor: isSelected ? '#27272A' : 'transparent', color: isSelected ? '#FAFAFA' : '#71717A', fontSize: '11px', fontWeight: isSelected ? 600 : 500, cursor: 'pointer', transition: 'all 0.2s' }}>
-                      {opcao === 'Manhã e Tarde' ? 'Integral' : opcao}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => openNav(doc)} style={{ padding: '10px 16px', background: '#FAFAFA', color: '#000', border: 'none', borderRadius: '100px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                  GPS
-                </button>
-                {doc.telefone && (
-                  <button onClick={() => openWpp(doc.telefone)} style={{ padding: '10px 16px', background: 'rgba(16, 185, 129, 0.1)', color: '#10B981', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '100px', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-                    WhatsApp
+          <article className="doctor-card" key={doctor.id}>
+            {isEditing ? (
+              <form className="doctor-edit-form" onSubmit={(event) => saveEditing(event, doctor)}>
+                <div className="doctor-edit-heading">
+                  <div>
+                    <span className="doctor-eyebrow">Cadastro</span>
+                    <h2>Editar médico</h2>
+                  </div>
+                  <button
+                    type="button"
+                    className="doctor-icon-button"
+                    aria-label="Cancelar edição"
+                    onClick={() => setEditingId(null)}
+                  >
+                    ×
                   </button>
-                )}
-              </div>
-            </div>
+                </div>
+                <div className="doctor-edit-grid">
+                  <label className="doctor-edit-field doctor-edit-field-wide">
+                    Nome
+                    <input
+                      required
+                      style={inputStyle}
+                      value={editForm.descricao || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, descricao: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field">
+                    CRM
+                    <input
+                      style={inputStyle}
+                      value={editForm.crm || ''}
+                      onChange={(event) => setEditForm({ ...editForm, crm: event.target.value })}
+                    />
+                  </label>
+                  <label className="doctor-edit-field">
+                    Telefone
+                    <input
+                      style={inputStyle}
+                      value={editForm.telefone || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, telefone: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field">
+                    E-mail
+                    <input
+                      type="email"
+                      style={inputStyle}
+                      value={editForm.email || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, email: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field">
+                    Clínica / local
+                    <input
+                      style={inputStyle}
+                      value={editForm.complemento || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, complemento: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field">
+                    Turno
+                    <select
+                      style={inputStyle}
+                      value={editForm.turno || 'Manhã e Tarde'}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, turno: event.target.value })
+                      }
+                    >
+                      {OPCOES_TURNO.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="doctor-edit-field">
+                    Cidade / estado
+                    <input
+                      style={inputStyle}
+                      value={editForm.cidade || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, cidade: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field">
+                    Bairro
+                    <input
+                      style={inputStyle}
+                      value={editForm.bairro || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, bairro: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field">
+                    Endereço
+                    <input
+                      style={inputStyle}
+                      value={editForm.endereco || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, endereco: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field">
+                    Número
+                    <input
+                      style={inputStyle}
+                      value={editForm.numero || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, numero: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field doctor-edit-field-wide">
+                    Dias de atendimento
+                    <input
+                      style={inputStyle}
+                      placeholder="seg, qua, sex"
+                      value={editForm.dias_semana || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, dias_semana: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field doctor-edit-field-wide">
+                    Link do mapa
+                    <input
+                      style={inputStyle}
+                      value={editForm.map_link || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, map_link: event.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="doctor-edit-field doctor-edit-field-wide">
+                    Observações
+                    <textarea
+                      style={{ ...inputStyle, minHeight: '80px', resize: 'vertical' }}
+                      value={editForm.observacoes || ''}
+                      onChange={(event) =>
+                        setEditForm({ ...editForm, observacoes: event.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="doctor-edit-actions">
+                  <button
+                    type="button"
+                    className="doctor-secondary-button"
+                    onClick={() => setEditingId(null)}
+                  >
+                    Cancelar
+                  </button>
+                  <button type="submit" className="doctor-primary-button" disabled={saving}>
+                    {saving ? 'Salvando...' : 'Salvar alterações'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <>
+                <div className="doctor-card-header">
+                  <div className="doctor-avatar" aria-hidden="true">
+                    {(doctor.descricao || 'M').trim().charAt(0).toLocaleUpperCase('pt-BR')}
+                  </div>
+                  <div className="doctor-title">
+                    <div className="doctor-name-row">
+                      <h2>{doctor.descricao || 'Médico sem nome'}</h2>
+                      {isRecent && <span className="doctor-new-badge">Novo</span>}
+                    </div>
+                    <div className="doctor-meta">
+                      {doctor.crm && <span>CRM {doctor.crm}</span>}
+                      {doctor.complemento && <span>{doctor.complemento}</span>}
+                    </div>
+                  </div>
+                  <div className="doctor-card-actions">
+                    <button
+                      type="button"
+                      style={iconButtonStyle}
+                      onClick={() => startEditing(doctor)}
+                      aria-label={`Editar ${doctor.descricao || 'médico'}`}
+                    >
+                      <span aria-hidden="true">✎</span>
+                      <span>Editar</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="doctor-icon-button doctor-delete-button"
+                      onClick={() => {
+                        if (window.confirm(`Excluir ${doctor.descricao || 'este médico'}?`)) {
+                          onDeleteDoctor(doctor);
+                        }
+                      }}
+                      aria-label={`Excluir ${doctor.descricao || 'médico'}`}
+                      title="Excluir médico"
+                    >
+                      <svg viewBox="0 0 20 20" aria-hidden="true">
+                        <path d="M4.5 6h11l-.8 10.1a1.5 1.5 0 0 1-1.5 1.4H6.8a1.5 1.5 0 0 1-1.5-1.4L4.5 6Zm2-2h7l1 2h-9l1-2Zm1.7 4v6m3.6-6v6" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
 
-          </div>
+                {days.length > 0 && (
+                  <div className="doctor-days">
+                    {days.map((day) => (
+                      <span className="doctor-day-chip" key={day}>
+                        {day}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="doctor-location">
+                  <span className="doctor-location-icon" aria-hidden="true">⌖</span>
+                  <div>
+                    {(doctor.endereco || doctor.numero) && (
+                      <div className="doctor-address">
+                        {[doctor.endereco, doctor.numero].filter(Boolean).join(', ')}
+                      </div>
+                    )}
+                    <div className="doctor-locality">
+                      {[doctor.bairro, doctor.cidade]
+                        .filter(Boolean)
+                        .map((value) => value?.toLocaleLowerCase('pt-BR'))
+                        .join(' · ') || 'Localização não informada'}
+                    </div>
+                  </div>
+                </div>
+
+                {doctor.observacoes && (
+                  <p className="doctor-notes">{doctor.observacoes}</p>
+                )}
+
+                <div className="doctor-card-footer">
+                  <div className="doctor-shifts" aria-label="Turno de atendimento">
+                    {OPCOES_TURNO.map((option) => (
+                      <button
+                        type="button"
+                        key={option}
+                        className={shift === option ? 'doctor-shift-active' : ''}
+                        onClick={() => onUpdateShift(doctor.id, option, doctor.descricao || '')}
+                      >
+                        {option === 'Manhã e Tarde' ? 'Integral' : option}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="doctor-contact-actions">
+                    <button
+                      type="button"
+                      className="doctor-secondary-button"
+                      onClick={() => openNavigation(doctor)}
+                    >
+                      Ver rota
+                    </button>
+                    {doctor.telefone && (
+                      <button
+                        type="button"
+                        className="doctor-whatsapp-button"
+                        onClick={() => openWhatsApp(doctor.telefone)}
+                      >
+                        WhatsApp
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </article>
         );
       })}
     </div>

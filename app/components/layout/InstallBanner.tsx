@@ -41,9 +41,9 @@ export default function InstallBanner() {
   if (!showInstallBanner) return null;
 
   return (
-    <div style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', backdropFilter: 'blur(8px)', borderBottom: '1px solid rgba(255,255,255,0.1)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 20 }}>
-      <div style={{ fontSize: '12px', fontWeight: 700, color: '#e2e8f0' }}>Instale o PharmaRoutes</div>
-      <button onClick={handleInstallClick} style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: 600, boxShadow: '0 2px 10px rgba(37,99,235,0.3)' }}>Salvar na Tela</button>
+    <div className="install-banner">
+      <div>Instale o PharmaRoutes</div>
+      <button onClick={handleInstallClick}>Salvar na tela</button>
     </div>
   );
 }

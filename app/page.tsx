@@ -23,16 +23,22 @@ export default function Home() {
 
   const { doctors, cities, loading: doctorsLoading, addDoctor, updateDoctor, updateShift, deleteDoctor } = useDoctors(user, selectedTab, selectedCity);
 
-  if (authLoading) return null; 
+  if (authLoading) {
+    return (
+      <div className="auth-loading" role="status">
+        Carregando PharmaRoutes...
+      </div>
+    );
+  }
   if (!user) return <LoginForm />;
 
   return (
-    <div style={{ backgroundColor: '#000000', minHeight: '100vh', color: '#FAFAFA', fontFamily: 'Inter, -apple-system, sans-serif', paddingBottom: '80px' }}>
+    <div className="app-shell">
       
       <InstallBanner />
       <AppHeader userEmail={user.email} />
 
-      <main style={{ padding: '16px', maxWidth: '640px', margin: '0 auto' }}>
+      <main className="app-main">
         
         {showAddForm && (
           <DoctorForm 
@@ -67,19 +73,10 @@ export default function Home() {
 
       </main>
 
-      {/* Botão Flutuante (FAB) - Ergonomia Mobile */}
       <button 
         onClick={() => setShowAddForm(!showAddForm)}
-        style={{
-          position: 'fixed', bottom: '24px', right: '24px', zIndex: 50,
-          width: '60px', height: '60px', borderRadius: '30px',
-          background: showAddForm ? '#27272A' : '#4F46E5', // Indigo moderno
-          color: '#FFF', fontSize: '28px', fontWeight: 300,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: showAddForm ? 'none' : '0 12px 32px rgba(79, 70, 229, 0.4)',
-          cursor: 'pointer', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-        }}
+        className="add-doctor-fab"
+        aria-label={showAddForm ? 'Fechar cadastro de médico' : 'Adicionar médico'}
       >
         {showAddForm ? '✕' : '+'}
       </button>

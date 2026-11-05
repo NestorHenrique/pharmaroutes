@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Doctor } from '@/types/doctor';
-import { OPCOES_DIAS } from '@/constants';
+import { useState, type FormEvent } from 'react';
+import type { Doctor } from '@/types/doctor';
+import { OPCOES_DIAS, OPCOES_TURNO } from '@/constants';
 
 interface DoctorFormProps {
   onAddDoctor: (doc: Partial<Doctor>) => Promise<boolean>;
@@ -9,68 +9,168 @@ interface DoctorFormProps {
   defaultCity: string;
 }
 
-const toggleDaySelection = (currentDaysString: string = '', dayValue: string) => {
-  const daysArray = currentDaysString.toLowerCase().split(',').map(d => d.trim()).filter(Boolean);
-  const updatedArray = daysArray.includes(dayValue)
-    ? daysArray.filter(d => d !== dayValue)
-    : [...daysArray, dayValue];
-  return updatedArray.join(', ');
-};
+function toggleDaySelection(currentDays = '', dayValue: string) {
+  const days = currentDays.toLowerCase().split(',').map((day) => day.trim()).filter(Boolean);
+  return (days.includes(dayValue)
+    ? days.filter((day) => day !== dayValue)
+    : [...days, dayValue]
+  ).join(', ');
+}
 
 export default function DoctorForm({ onAddDoctor, onClose, defaultTab, defaultCity }: DoctorFormProps) {
   const [newDoctor, setNewDoctor] = useState<Partial<Doctor>>({
-    descricao: '', crm: '', dias_semana: defaultTab, cidade: defaultCity, bairro: '', endereco: '', numero: '', complemento: '', turno: 'Manhã e Tarde', observacoes: '', telefone: '', email: '', map_link: '',
+    descricao: '',
+    crm: '',
+    dias_semana: defaultTab,
+    cidade: defaultCity,
+    bairro: '',
+    endereco: '',
+    numero: '',
+    complemento: '',
+    turno: 'Manhã e Tarde',
+    observacoes: '',
+    telefone: '',
+    email: '',
+    map_link: '',
   });
   const [gettingLocation, setGettingLocation] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const updateField = <K extends keyof Doctor>(field: K, value: Doctor[K]) => {
+    setNewDoctor((current) => ({ ...current, [field]: value }));
+  };
 
   const getCurrentLocation = (onSuccess: (url: string) => void) => {
-    if (!navigator.geolocation) return alert('Geolocalização não suportada.');
+    if (!navigator.geolocation) {
+      alert('Geolocalização não suportada.');
+      return;
+    }
+
     setGettingLocation(true);
     navigator.geolocation.getCurrentPosition(
       (position) => {
         onSuccess(`https://www.google.com/maps?q=${position.coords.latitude},${position.coords.longitude}`);
         setGettingLocation(false);
       },
-      () => setGettingLocation(false),
+      () => {
+        alert('Não foi possível obter sua localização.');
+        setGettingLocation(false);
+      },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
-  const handleCreateDoctor = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDoctor.descricao) return;
-    const success = await onAddDoctor(newDoctor);
-    if (success) onClose();
+  const handleCreateDoctor = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!newDoctor.descricao?.trim()) return;
+
+    setSaving(true);
+    try {
+      const success = await onAddDoctor(newDoctor);
+      if (success) onClose();
+      else alert('Não foi possível cadastrar o médico.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <form onSubmit={handleCreateDoctor} style={{ backgroundColor: 'rgba(24, 24, 27, 0.6)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '18px', marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
-      <h3 style={{ margin: '0 0 4px 0', fontSize: '14px', color: '#fff', fontWeight: 600 }}>Novo Cadastro</h3>
-      <input type="text" required placeholder="Nome do Médico *" value={newDoctor.descricao} onChange={e => setNewDoctor({...newDoctor, descricao: e.target.value})} style={{ padding: '10px 14px', backgroundColor: 'rgba(0,0,0,0.2)', color: '#fff', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', fontSize: '13px' }} />
-      
-      <div style={{ display: 'flex', gap: '6px' }}>
-        {OPCOES_DIAS.map(d => {
-          const isChecked = (newDoctor.dias_semana || '').toLowerCase().includes(d.value);
-          return <button type="button" key={d.value} onClick={() => setNewDoctor({ ...newDoctor, dias_semana: toggleDaySelection(newDoctor.dias_semana, d.value) })} style={{ flex: 1, padding: '8px 0', borderRadius: '8px', border: isChecked ? '1px solid #60a5fa' : '1px solid rgba(255,255,255,0.05)', backgroundColor: isChecked ? 'rgba(59, 130, 246, 0.2)' : 'rgba(0,0,0,0.2)', color: isChecked ? '#60a5fa' : '#a1a1aa', fontSize: '11px', fontWeight: 600, transition: 'all 0.2s' }}>{d.label}</button>
-        })}
+    <form className="doctor-form" onSubmit={handleCreateDoctor}>
+      <div className="doctor-form-heading">
+        <div>
+          <span className="doctor-eyebrow">Novo cadastro</span>
+          <h2>Adicionar médico</h2>
+        </div>
+        <button type="button" className="doctor-icon-button" onClick={onClose} aria-label="Fechar cadastro">
+          ×
+        </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-        <input type="text" placeholder="CRM" value={newDoctor.crm} onChange={e => setNewDoctor({...newDoctor, crm: e.target.value})} style={{ padding: '10px', backgroundColor: 'rgba(0,0,0,0.2)', color: '#fff', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', fontSize: '12px' }} />
-        <input type="text" placeholder="Telefone" value={newDoctor.telefone} onChange={e => setNewDoctor({...newDoctor, telefone: e.target.value})} style={{ padding: '10px', backgroundColor: 'rgba(0,0,0,0.2)', color: '#fff', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', fontSize: '12px' }} />
+      <div className="doctor-form-grid">
+        <label className="doctor-form-field doctor-form-field-wide">
+          Nome do médico
+          <input required value={newDoctor.descricao || ''} onChange={(event) => updateField('descricao', event.target.value)} placeholder="Nome completo" />
+        </label>
+        <label className="doctor-form-field">
+          CRM
+          <input value={newDoctor.crm || ''} onChange={(event) => updateField('crm', event.target.value)} placeholder="Número do CRM" />
+        </label>
+        <label className="doctor-form-field">
+          Telefone
+          <input value={newDoctor.telefone || ''} onChange={(event) => updateField('telefone', event.target.value)} placeholder="(00) 00000-0000" />
+        </label>
+        <label className="doctor-form-field">
+          E-mail
+          <input type="email" value={newDoctor.email || ''} onChange={(event) => updateField('email', event.target.value)} placeholder="contato@clinica.com" />
+        </label>
+        <label className="doctor-form-field doctor-form-field-wide">
+          Dias de atendimento
+          <div className="doctor-form-days">
+            {OPCOES_DIAS.map((day) => {
+              const selected = (newDoctor.dias_semana || '').toLowerCase().split(',').map((value) => value.trim()).includes(day.value);
+              return (
+                <button
+                  type="button"
+                  key={day.value}
+                  className={selected ? 'doctor-form-day doctor-form-day-active' : 'doctor-form-day'}
+                  aria-pressed={selected}
+                  onClick={() => updateField('dias_semana', toggleDaySelection(newDoctor.dias_semana, day.value))}
+                >
+                  {day.label}
+                </button>
+              );
+            })}
+          </div>
+        </label>
+        <label className="doctor-form-field">
+          Turno
+          <select value={newDoctor.turno || 'Manhã e Tarde'} onChange={(event) => updateField('turno', event.target.value)}>
+            {OPCOES_TURNO.map((shift) => <option key={shift} value={shift}>{shift}</option>)}
+          </select>
+        </label>
+        <label className="doctor-form-field">
+          Clínica / local
+          <input value={newDoctor.complemento || ''} onChange={(event) => updateField('complemento', event.target.value)} placeholder="Nome da clínica" />
+        </label>
+        <label className="doctor-form-field">
+          Cidade / estado
+          <input value={newDoctor.cidade || ''} onChange={(event) => updateField('cidade', event.target.value)} placeholder="Cidade - UF" />
+        </label>
+        <label className="doctor-form-field">
+          Bairro
+          <input value={newDoctor.bairro || ''} onChange={(event) => updateField('bairro', event.target.value)} placeholder="Bairro" />
+        </label>
+        <label className="doctor-form-field doctor-form-field-wide">
+          Endereço
+          <input value={newDoctor.endereco || ''} onChange={(event) => updateField('endereco', event.target.value)} placeholder="Rua ou avenida" />
+        </label>
+        <label className="doctor-form-field">
+          Número
+          <input value={newDoctor.numero || ''} onChange={(event) => updateField('numero', event.target.value)} placeholder="Nº" />
+        </label>
+        <label className="doctor-form-field">
+          Link do mapa
+          <input value={newDoctor.map_link || ''} onChange={(event) => updateField('map_link', event.target.value)} placeholder="https://..." />
+        </label>
+        <label className="doctor-form-field doctor-form-field-wide">
+          Observações
+          <textarea value={newDoctor.observacoes || ''} onChange={(event) => updateField('observacoes', event.target.value)} placeholder="Informações úteis para a visita" />
+        </label>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-        <input type="text" placeholder="Bairro" value={newDoctor.bairro} onChange={e => setNewDoctor({...newDoctor, bairro: e.target.value})} style={{ padding: '10px', backgroundColor: 'rgba(0,0,0,0.2)', color: '#fff', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', fontSize: '12px' }} />
-        <input type="text" placeholder="Clínica" value={newDoctor.complemento} onChange={e => setNewDoctor({...newDoctor, complemento: e.target.value})} style={{ padding: '10px', backgroundColor: 'rgba(0,0,0,0.2)', color: '#fff', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', fontSize: '12px' }} />
+      <div className="doctor-form-actions">
+        <button
+          type="button"
+          className="doctor-secondary-button"
+          disabled={gettingLocation}
+          onClick={() => getCurrentLocation((url) => updateField('map_link', url))}
+        >
+          {gettingLocation ? 'Obtendo localização...' : 'Usar minha localização'}
+        </button>
+        <button type="submit" className="doctor-primary-button" disabled={saving}>
+          {saving ? 'Salvando...' : 'Salvar médico'}
+        </button>
       </div>
-
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <input type="text" placeholder="Link do Maps" value={newDoctor.map_link} onChange={e => setNewDoctor({...newDoctor, map_link: e.target.value})} style={{ flex: 1, padding: '10px', backgroundColor: 'rgba(0,0,0,0.2)', color: '#fff', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', outline: 'none', fontSize: '12px' }} />
-        <button type="button" onClick={() => getCurrentLocation(url => setNewDoctor(p => ({...p, map_link: url})))} style={{ padding: '0 12px', background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '8px', fontSize: '11px', fontWeight: 600 }}>{gettingLocation ? '...' : 'Pegar GPS'}</button>
-      </div>
-
-      <button type="submit" style={{ padding: '12px', background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 600, marginTop: '4px', cursor: 'pointer', boxShadow: '0 4px 12px rgba(37,99,235,0.2)' }}>Salvar Cadastro</button>
     </form>
   );
 }
