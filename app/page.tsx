@@ -390,7 +390,6 @@ export default function Home() {
       </div>
     );
   }
-
   const filteredDoctors = doctors.filter((doc) => {
     const term = searchTerm.toLowerCase();
     const nameMatch = doc.descricao?.toLowerCase().includes(term);
