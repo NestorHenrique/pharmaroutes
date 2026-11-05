@@ -1,17 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { useDoctors } from '@/hooks/useDoctors';
+import { TABS_NAVEGACAO } from '@/constants';
+import { useAuth } from '@/app/hooks/useAuth';
+import { useDoctors } from '@/app/hooks/useDoctors';
+import { toggleDaySelection } from '@/utils/doctor';
 
-// Importação dos seus componentes
-import LoginForm from '@/components/auth/LoginForm';
-import InstallBanner from '@/components/layout/InstallBanner';
-import AppHeader from '@/components/layout/AppHeader';
-import DoctorForm from '@/components/doctors/DoctorForm';
-import WeekTabs from '@/components/doctors/WeekTabs';
-import DoctorFilters from '@/components/doctors/DoctorFilters';
-import DoctorList from '@/components/doctors/DoctorList';
+import LoginForm from '@/app/components/auth/LoginForm';
+import InstallBanner from '@/app/components/layout/InstallBanner';
+import AppHeader from '@/app/components/layout/AppHeader';
+import DoctorForm from '@/app/components/doctors/Doctorform';
+import DoctorFilters from '@/app/components/doctors/DoctorFilters';
+import DoctorList from '@/app/components/doctors/DoctorList';
 
 export default function Home() {
   // O hook useAuth agora cuida de toda a lógica do Supabase (login, sessão, loading)
@@ -35,11 +35,26 @@ export default function Home() {
     deleteDoctor 
   } = useDoctors(user, selectedTab, selectedCity);
 
-  // Se estiver carregando a sessão, não mostra nada (ou pode colocar um LoadingSpinner)
-  if (authLoading) return null; 
+  if (authLoading) return null;
 
-  // Se não tiver usuário logado, renderiza apenas o componente de Login
   if (!user) return <LoginForm />;
+
+  const filteredDoctors = doctors.filter((doctor) => {
+    const term = searchTerm.toLowerCase();
+    const matchesSearch =
+      doctor.descricao?.toLowerCase().includes(term) ||
+      doctor.bairro?.toLowerCase().includes(term) ||
+      doctor.complemento?.toLowerCase().includes(term) ||
+      doctor.observacoes?.toLowerCase().includes(term) ||
+      doctor.telefone?.toLowerCase().includes(term);
+    const doctorShift = doctor.turno || 'Manhã e Tarde';
+    const matchesShift =
+      selectedShiftFilter === 'ALL' ||
+      doctorShift === selectedShiftFilter ||
+      doctorShift === 'Manhã e Tarde';
+
+    return matchesSearch && matchesShift;
+  });
 
   return (
     <div style={{ background: 'radial-gradient(circle at top left, #1e1b4b 0%, #09090b 40%)', minHeight: '100vh', color: '#f4f4f5', fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -63,10 +78,18 @@ export default function Home() {
           />
         )}
 
-        <WeekTabs 
-          selectedTab={selectedTab} 
-          setSelectedTab={setSelectedTab} 
-        />
+        <div style={{ display: 'flex', gap: '4px', backgroundColor: 'rgba(24, 24, 27, 0.6)', padding: '4px', borderRadius: '10px', marginBottom: '14px' }}>
+          {TABS_NAVEGACAO.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setSelectedTab(tab.value)}
+              style={{ flex: 1, padding: '8px 0', borderRadius: '7px', border: 'none', backgroundColor: selectedTab === tab.value ? '#2563eb' : 'transparent', color: selectedTab === tab.value ? '#fff' : '#a1a1aa', cursor: 'pointer' }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         <DoctorFilters 
           cities={cities}
@@ -78,15 +101,19 @@ export default function Home() {
           setSearchTerm={setSearchTerm}
         />
 
-        <DoctorList 
-          doctors={doctors}
-          searchTerm={searchTerm}
-          selectedShiftFilter={selectedShiftFilter}
-          loading={doctorsLoading}
-          onUpdateShift={updateShift}
-          onUpdateDoctor={updateDoctor}
-          onDeleteDoctor={deleteDoctor}
-        />
+        {doctorsLoading ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: '#a1a1aa' }}>Carregando roteiro...</div>
+        ) : filteredDoctors.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: '#a1a1aa' }}>Nenhum médico encontrado.</div>
+        ) : (
+          <DoctorList
+            doctors={filteredDoctors}
+            onUpdateShift={updateShift}
+            onUpdateDoctor={updateDoctor}
+            onDeleteDoctor={deleteDoctor}
+            toggleDaySelection={toggleDaySelection}
+          />
+        )}
 
       </main>
     </div>
