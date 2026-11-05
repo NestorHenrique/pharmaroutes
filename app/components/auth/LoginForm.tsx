@@ -18,7 +18,7 @@ export default function LoginForm() {
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'radial-gradient(circle at top, #1f2937 0%, #09090b 100%)' }}>
       <form onSubmit={handleLogin} style={{ backgroundColor: 'rgba(24, 24, 27, 0.6)', backdropFilter: 'blur(16px)', padding: '30px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', width: '90%', maxWidth: '360px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <div style={{ textAlign: 'center', marginBottom: '10px' }}>
-          <h2 style={{ margin: 0, color: '#fff', fontSize: '20px', fontWeight: 700 }}>PharmaRoutes</h2>
+          <h2 style={{ margin: 0, color: '#fff', fontSize: '20px', fontWeight: 700 }}>Rota Propagandista</h2>
           <p style={{ margin: '5px 0 0 0', color: '#a1a1aa', fontSize: '12px' }}>Acesse sua conta</p>
         </div>
         <input type="email" placeholder="Email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)', backgroundColor: 'rgba(0,0,0,0.2)', color: '#fff', outline: 'none' }} />

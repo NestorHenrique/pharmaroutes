@@ -1,16 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { useDoctors } from '@/hooks/useDoctors';
+import { useAuth } from '@/app/hooks/useAuth';
+import { useDoctors } from '@/app/hooks/useDoctors';
 
-import LoginForm from '@/components/auth/LoginForm';
-import InstallBanner from '@/components/layout/InstallBanner';
-import AppHeader from '@/components/layout/AppHeader';
-import DoctorForm from '@/components/doctors/DoctorForm';
-import WeekTabs from '@/components/doctors/WeekTabs';
-import DoctorFilters from '@/components/doctors/DoctorFilters';
-import DoctorList from '@/components/doctors/DoctorList';
+import LoginForm from '@/app/components/auth/LoginForm';
+import InstallBanner from '@/app/components/layout/InstallBanner';
+import AppHeader from '@/app/components/layout/AppHeader';
+import DoctorForm from '@/app/components/doctors/Doctorform';
+import WeekTabs from '@/app/components/doctors/WeekTabs';
+import DoctorFilters from '@/app/components/doctors/DoctorFilters';
+import DoctorList from '@/app/components/doctors/DoctorList';
 
 export default function Home() {
   const { user, authLoading } = useAuth();
