@@ -1,65 +1,83 @@
-'use client';
+import { Doctor } from '@/types/doctor';
+import DoctorCard from './DoctorCard';
+import { SearchIcon } from '../ui/Icons';
 
-import React from 'react';
+interface DoctorListProps {
+  doctors: Doctor[];
+  searchTerm: string;
+  selectedShiftFilter: string;
+  loading: boolean;
+  onUpdateShift: (docId: string, newTurno: string, docName: string) => void;
+  onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
+  onDeleteDoctor: (doc: Doctor) => void;
+}
 
-export default function DoctorList({ doctors = [] }: { doctors: any[] }) {
-  return (
-    <div className="w-full space-y-3">
-      {doctors.map((doctor, index) => {
-        // Verifica se o médico é recente (criado há menos de 2 dias)
-        const isRecent = doctor.created_at 
-          ? (Math.abs(new Date().getTime() - new Date(doctor.created_at).getTime()) / (1000 * 60 * 60 * 24)) <= 2
-          : false;
-
-        return (
-          <div 
-            key={doctor.id || index}
-            className="group relative bg-gradient-to-br from-slate-900/90 via-slate-900/60 to-slate-950/90 backdrop-blur-xl border border-slate-800/80 hover:border-blue-500/50 p-5 rounded-2xl shadow-xl transition-all duration-300 hover:shadow-blue-500/10"
+export default function DoctorList({ doctors, loading, onUpdateShift, onUpdateDoctor, onDeleteDoctor }: DoctorListProps) {
+  if (loading) {
+    return (
+      <div role="status" aria-live="polite" aria-busy="true" className="flex flex-col gap-4">
+        <span className="sr-only">Carregando roteiro...</span>
+        {[0, 1, 2].map((item) => (
+          <div
+            key={item}
+            aria-hidden="true"
+            className="flex flex-col gap-4 rounded-2xl border border-slate-800/80 bg-slate-900/80 p-4 backdrop-blur-xl motion-safe:animate-pulse sm:p-5"
           >
-            {/* Brilho superior subtil ao passar o rato / tocar */}
-            <div className="absolute top-0 left-6 right-6 h-[1px] bg-gradient-to-r from-transparent via-blue-500/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-
-            <div className="flex items-start justify-between">
-              <div className="flex items-center space-x-3.5">
-                
-                {/* Ícone Minimalista Moderno (Substitui emojis antigos) */}
-                <div className="h-10 w-10 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                </div>
-
-                <div>
-                  <h3 className="text-white font-semibold text-base tracking-tight">{doctor.nome}</h3>
-                  <p className="text-xs text-slate-400">{doctor.especialidade || 'Especialidade não informada'}</p>
-                </div>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 space-y-2.5">
+                <div className="h-5 w-2/3 rounded-md bg-slate-800" />
+                <div className="h-3.5 w-1/3 rounded-md bg-slate-800/70" />
               </div>
-
-              {/* Tag de Status "Novo" com Design de Brilho */}
-              {isRecent && (
-                <span className="px-2.5 py-1 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm">
-                  Novo
-                </span>
-              )}
+              <div className="h-10 w-20 rounded-xl bg-slate-800/70" />
             </div>
-
-            {/* Informações Secundárias */}
-            <div className="mt-4 pt-3 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
-              <div className="flex items-center space-x-1.5">
-                <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span>{doctor.endereco || 'Local não definido'}</span>
-              </div>
-
-              <div className="font-medium text-slate-300">
-                {doctor.turno || 'Matutino'}
-              </div>
+            <div className="space-y-2">
+              <div className="h-4 w-1/2 rounded-md bg-slate-800/70" />
+              <div className="h-3.5 w-4/5 rounded-md bg-slate-800/50" />
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-slate-800/80 pt-3.5">
+              <div className="h-9 w-40 rounded-full bg-slate-800/70" />
+              <div className="h-9 w-24 rounded-full bg-slate-800/70" />
             </div>
           </div>
-        );
-      })}
-    </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (doctors.length === 0) {
+    return (
+      <div
+        role="status"
+        className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-slate-700 bg-slate-900/50 px-6 py-10 text-center backdrop-blur-xl"
+      >
+        <span
+          aria-hidden="true"
+          className="grid size-12 place-items-center rounded-2xl border border-slate-800 bg-slate-900 text-slate-500"
+        >
+          <SearchIcon className="size-5" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-slate-200">Nenhum médico encontrado.</p>
+          <p className="mt-1 text-xs text-slate-400">
+            Troque o dia ou a cidade, ou cadastre um médico no botão de adicionar.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ul role="list" className="flex flex-col gap-4">
+      {doctors.map((doc) => (
+        <li key={doc.id}>
+          <DoctorCard
+            doc={doc}
+            onUpdateShift={onUpdateShift}
+            onUpdateDoctor={onUpdateDoctor}
+            onDeleteDoctor={onDeleteDoctor}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }

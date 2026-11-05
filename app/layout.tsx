@@ -1,12 +1,12 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
-// 🔹 Coloque isto aqui para evitar o zoom automático no telemóvel
+// Não bloqueamos o zoom do usuário (acessibilidade, WCAG 1.4.4).
+// O zoom automático do iOS ao focar campos é evitado com inputs de 16px no mobile.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  themeColor: '#020617',
 };
 
 export const metadata: Metadata = {
@@ -20,8 +20,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt">
-      <body>{children}</body>
+    <html lang="pt-BR" className="bg-slate-950">
+      <body className="min-h-dvh bg-slate-950 text-slate-100 antialiased">{children}</body>
     </html>
   );
 }
