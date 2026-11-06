@@ -2,11 +2,19 @@
 
 import { useState, useCallback } from 'react';
 import type { AddDoctorResult, AgendaEntry, Doctor } from '@/types/doctor';
-import { CATEGORIAS } from '@/constants';
+import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
 import { sortAgenda, specialtyCode } from '@/utils';
 import { useFormPersistence } from '@/hooks/useFormPersistence';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import AgendaEditor from '@/components/AgendaEditor';
+import ComboBox from '@/components/ComboBox';
+import type { ComboOption } from '@/components/ComboBox';
+
+const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
+  value: e.label,
+  label: e.label,
+  hint: e.code,
+}));
 
 /* ── Types ── */
 
@@ -15,6 +23,8 @@ interface AddDoctorFormProps {
   onLinkPortfolio: (doctorId: string) => Promise<boolean>;
   isInPortfolio: (doctorId: string) => boolean;
   onCancel: () => void;
+  /** cidades da base (grafia oficial) */
+  cityOptions: ComboOption[];
 }
 
 type FormState = {
@@ -58,7 +68,7 @@ const inputCls =
 
 /* ── Component ── */
 
-export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, onCancel }: AddDoctorFormProps) {
+export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, onCancel, cityOptions }: AddDoctorFormProps) {
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,13 +194,11 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
 
       {/* Especialidade + sigla */}
       <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
-        <input
-          type="text"
-          placeholder="Especialidade (ex.: Cardiologia)"
+        <ComboBox
           value={form.especialidade}
-          onChange={(e) => setField('especialidade', e.target.value)}
-          className={inputCls}
-          list="lista-especialidades"
+          onChange={(v) => setField('especialidade', v)}
+          options={SPECIALTY_OPTIONS}
+          placeholder="Especialidade"
         />
         <span className="text-[10px] px-1.5 py-1 rounded-sm font-bold bg-rose-900 text-rose-200 min-w-9 text-center">
           {code ?? '—'}
@@ -234,7 +242,12 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
       {/* Bairro + Cidade */}
       <div className="grid grid-cols-2 gap-1.5">
         <input type="text" placeholder="Bairro" value={form.bairro} onChange={(e) => setField('bairro', e.target.value)} className={inputCls} />
-        <input type="text" placeholder="Cidade" value={form.cidade} onChange={(e) => setField('cidade', e.target.value)} className={inputCls} />
+        <ComboBox
+          value={form.cidade}
+          onChange={(v) => setField('cidade', v)}
+          options={cityOptions}
+          placeholder="Cidade"
+        />
       </div>
 
       {/* Telefone + Email */}

@@ -1,28 +1,44 @@
 /* Service Worker — Rota Propagandista
  * Recebe Web Push (Último Paciente / Rep. no Consultório) e abre o app ao tocar.
- * Se o projeto já tiver um service worker próprio, copie só os dois listeners
- * 'push' e 'notificationclick' para ele em vez de usar este arquivo.
+ * Funciona no Android (Chrome) e no iPhone com o app instalado na Tela de Início (iOS 16.4+).
  */
+
+const DEFAULT_TITLE = 'Rota Propagandista';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
-self.addEventListener('push', (event) => {
-  let data = {};
+/** Lê o payload em qualquer formato: JSON, texto puro ou vazio */
+function parsePayload(event) {
+  if (!event.data) return {};
   try {
-    data = event.data ? event.data.json() : {};
+    const data = event.data.json();
+    return data && typeof data === 'object' ? data : { body: String(data) };
   } catch {
-    data = { title: 'Rota Propagandista', body: event.data ? event.data.text() : '' };
+    try {
+      return { body: event.data.text() };
+    } catch {
+      return {};
+    }
   }
+}
 
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Rota Propagandista', {
-      body: data.body || '',
-      tag: data.tag,
-      renotify: Boolean(data.tag),
-      data: { url: data.url || '/' },
-    }),
-  );
+self.addEventListener('push', (event) => {
+  const data = parsePayload(event);
+
+  const options = {
+    body: data.body || '',
+    tag: data.tag || undefined,
+    renotify: Boolean(data.tag),
+    timestamp: Date.now(),
+    vibrate: [200, 100, 200],
+    data: { url: data.url || '/' },
+  };
+  if (data.icon) options.icon = data.icon;
+
+  // O iOS cancela a inscrição se um push chegar sem mostrar notificação:
+  // por isso sempre exibimos algo, mesmo com payload vazio.
+  event.waitUntil(self.registration.showNotification(data.title || DEFAULT_TITLE, options));
 });
 
 self.addEventListener('notificationclick', (event) => {

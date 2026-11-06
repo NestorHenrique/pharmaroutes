@@ -176,6 +176,127 @@ export function isNewDoctor(doc: Pick<Doctor, 'created_via' | 'created_at'>): bo
   return doc.created_via === 'APP_FIELD' && isRecentDoctor(doc.created_at);
 }
 
+/* ── Cidades: "Parnaíba" e "Parnaiba" viram uma só ── */
+
+export interface CityOption {
+  /** chave sem acento (cityKey) */
+  value: string;
+  /** grafia exibida: a mais usada; em empate, a com acento */
+  label: string;
+  count: number;
+}
+
+export function buildCityOptions(names: (string | null | undefined)[]): CityOption[] {
+  const groups = new Map<string, Map<string, number>>();
+  for (const raw of names) {
+    const name = (raw || '').trim().replace(/\s+/g, ' ');
+    if (!name) continue;
+    const key = cityKey(name);
+    const variants = groups.get(key) ?? new Map<string, number>();
+    variants.set(name, (variants.get(name) ?? 0) + 1);
+    groups.set(key, variants);
+  }
+
+  const options: CityOption[] = [];
+  for (const [key, variants] of groups) {
+    let best = '';
+    let bestN = -1;
+    let total = 0;
+    for (const [name, n] of variants) {
+      total += n;
+      const accented = normalizeText(name) !== name.toLowerCase();
+      const bestAccented = best ? normalizeText(best) !== best.toLowerCase() : false;
+      if (n > bestN || (n === bestN && accented && !bestAccented)) {
+        best = name;
+        bestN = n;
+      }
+    }
+    options.push({ value: key, label: best, count: total });
+  }
+  return options.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+}
+
+/** Grafia oficial da cidade, se já existir na base; senão o texto limpo */
+export function canonicalCity(name: string | null | undefined, options: CityOption[]): string {
+  const clean = (name || '').trim().replace(/\s+/g, ' ');
+  if (!clean) return '';
+  const key = cityKey(clean);
+  return options.find((o) => o.value === key)?.label ?? clean;
+}
+
+/* ── Rota: média móvel de horários ── */
+
+const DAY_INDEX: Record<string, number> = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
+
+/** Quantas ocorrências do mesmo dia da semana entram na média */
+export const ROUTE_SAMPLES_SAME_DAY = 4;
+/** Janela de histórico considerada */
+export const ROUTE_HISTORY_DAYS = 28;
+/** Sem histórico no mesmo dia da semana: usa a última semana inteira */
+export const ROUTE_FALLBACK_DAYS = 7;
+
+export interface ExpectedTime {
+  /** minutos desde 00:00 */
+  minutes: number;
+  /** quantos dias entraram na média */
+  samples: number;
+  /** true = média do mesmo dia da semana; false = média da última semana */
+  sameWeekday: boolean;
+}
+
+/**
+ * Horário esperado de cada médico no dia `day` (seg..dom).
+ * Para cada dia com registro pega o primeiro clique (início da janela de visita),
+ * depois faz a média das últimas ocorrências do mesmo dia da semana.
+ * Sem dados desse dia da semana, usa a média da última semana.
+ */
+export function computeExpectedTimes(
+  events: { doctor_id: string; event_at: string }[],
+  day: string,
+  nowMs: number,
+): Map<string, ExpectedTime> {
+  const target = DAY_INDEX[day] ?? new Date(nowMs).getDay();
+  const oldest = nowMs - ROUTE_HISTORY_DAYS * 86_400_000;
+
+  // doctor → data → primeiro horário do dia
+  const perDoctor = new Map<string, Map<string, { minutes: number; weekday: number; ts: number }>>();
+  for (const e of events) {
+    const d = new Date(e.event_at);
+    const ts = d.getTime();
+    if (Number.isNaN(ts) || ts < oldest || ts > nowMs) continue;
+    const dateKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const minutes = d.getHours() * 60 + d.getMinutes();
+    const days = perDoctor.get(e.doctor_id) ?? new Map();
+    const prev = days.get(dateKey);
+    if (!prev || minutes < prev.minutes) days.set(dateKey, { minutes, weekday: d.getDay(), ts });
+    perDoctor.set(e.doctor_id, days);
+  }
+
+  const result = new Map<string, ExpectedTime>();
+  const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
+
+  for (const [doctorId, days] of perDoctor) {
+    const list = Array.from(days.values()).sort((a, b) => b.ts - a.ts);
+    const same = list.filter((x) => x.weekday === target).slice(0, ROUTE_SAMPLES_SAME_DAY);
+    if (same.length > 0) {
+      result.set(doctorId, { minutes: avg(same.map((x) => x.minutes)), samples: same.length, sameWeekday: true });
+      continue;
+    }
+    const recent = list.filter((x) => x.ts >= nowMs - ROUTE_FALLBACK_DAYS * 86_400_000);
+    if (recent.length > 0) {
+      result.set(doctorId, { minutes: avg(recent.map((x) => x.minutes)), samples: recent.length, sameWeekday: false });
+    }
+  }
+  return result;
+}
+
+/** 845 → "14:05" */
+export function formatMinutes(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 /* ── WhatsApp ── */
 
 export function buildWhatsAppUrl(telefone: string | null | undefined): string | null {

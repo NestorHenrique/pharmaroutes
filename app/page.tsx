@@ -1,13 +1,18 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { AddDoctorResult, Doctor, Shift } from '@/types/doctor';
-import type { DoctorStatus, DoctorStatusType } from '@/types/status';
-import { STATUS_META } from '@/types/status';
-import { TABS_NAVEGACAO, FILTROS_PLANTAO, FILTROS_TURNO, OPCOES_DIAS, ESPECIALIDADES } from '@/constants';
+import type { DoctorStatus, DoctorStatusEvent, DoctorStatusType } from '@/types/status';
+import { STATUS_META, PINNED_STATUSES, ROUTING_STATUSES } from '@/types/status';
+import { TABS_NAVEGACAO, FILTROS_PLANTAO, FILTROS_TURNO, OPCOES_DIAS } from '@/constants';
 import {
   agendaToDias,
+  buildCityOptions,
+  canonicalCity,
+  cityKey,
+  computeExpectedTimes,
   getAgenda,
   getTodayDayCode,
   isNewDoctor,
@@ -15,8 +20,9 @@ import {
   normalizeCrm,
   shiftCovers,
   specialtyCode,
+  ROUTE_HISTORY_DAYS,
 } from '@/utils';
-import { notifyCity } from '@/lib/push';
+import { ensureServiceWorker, notifyCity } from '@/lib/push';
 
 import LoginScreen from '@/components/LoginScreen';
 import InstallBanner from '@/components/InstallBanner';
@@ -25,14 +31,19 @@ import { useRepProfile } from '@/hooks/useRepProfile';
 import DoctorCard from '@/components/DoctorCard';
 import AddDoctorForm from '@/components/AddDoctorForm';
 import ProfileSettings from '@/components/ProfileSettings';
+import CityFilter from '@/components/CityFilter';
+import type { ComboOption } from '@/components/ComboBox';
 
 /* ── Helpers ── */
 
-const REFRESH_INTERVAL = 30_000; // 30 s
+/** Polling só como reserva: o normal é o Realtime entregar na hora */
+const FALLBACK_POLL_MS = 60_000;
+/** Relógio da tela: some com status vencidos sem esperar o servidor */
+const CLOCK_TICK_MS = 15_000;
 const DUPLICATE_MSG = 'Médico já cadastrado na base de dados';
+const SORT_MODE_KEY = 'pharma_sort_mode';
 
-/** Status que fixam o card no topo e disparam push para a cidade */
-const PINNED_STATUSES: DoctorStatusType[] = ['ultimo_paciente', 'representante_no_consultorio'];
+type SortMode = 'historico' | 'manual';
 
 function endOfToday(): string {
   const d = new Date();
@@ -49,9 +60,14 @@ function initialTab(): string | null {
   return OPCOES_DIAS.some((d) => d.value === today) ? today : null;
 }
 
-/** Mantém dias_semana (coluna antiga) igual à agenda */
-function withDerivedDays(data: Partial<Doctor>): Partial<Doctor> {
-  return data.agenda ? { ...data, dias_semana: agendaToDias(data.agenda) } : data;
+function isLive(s: Pick<DoctorStatus, 'expires_at'>, nowMs: number): boolean {
+  return !s.expires_at || new Date(s.expires_at).getTime() > nowMs;
+}
+
+/** Insere ou troca o status (um por médico + tipo) */
+function upsertStatus(map: Record<string, DoctorStatus[]>, s: DoctorStatus): Record<string, DoctorStatus[]> {
+  const others = (map[s.doctor_id] || []).filter((x) => x.status_type !== s.status_type);
+  return { ...map, [s.doctor_id]: [...others, s] };
 }
 
 /* ── Page Component ── */
@@ -64,15 +80,18 @@ export default function HomePage() {
   /* Data */
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [statusMap, setStatusMap] = useState<Record<string, DoctorStatus[]>>({});
+  const [events, setEvents] = useState<DoctorStatusEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [realtimeOn, setRealtimeOn] = useState(false);
 
   /* Filters */
   const [selectedTab, setSelectedTab] = useState<string | null>(initialTab);
   const [turnoFilter, setTurnoFilter] = useState<Shift | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedCity, setSelectedCity] = useState<string>('');
+  const [selectedCities, setSelectedCities] = useState<string[]>([]);
+  const [sortMode, setSortMode] = useState<SortMode>('historico');
 
   /* UI */
   const [showAddForm, setShowAddForm] = useState(false);
@@ -81,13 +100,12 @@ export default function HomePage() {
   /* PWA install */
   const install = useInstallPrompt();
 
-  /* Perfil / carteira */
+  /* Perfil / carteira / ordem manual */
   const userId = session?.user.id ?? null;
-  const { profile, portfolio, saveProfile, linkDoctor } = useRepProfile(userId);
+  const { profile, portfolio, saveProfile, linkDoctor, routeOrder, saveRouteOrder } = useRepProfile(userId);
   const actorName = profile?.display_name?.trim() || session?.user.email?.split('@')[0] || 'App';
 
-  /* Interval ref */
-  const statusInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* ═══════════════════ Auth ═══════════════════ */
 
@@ -100,24 +118,35 @@ export default function HomePage() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  /* Service worker de push sempre atualizado + modo de ordenação salvo no aparelho */
+  useEffect(() => {
+    ensureServiceWorker();
+    try {
+      const saved = localStorage.getItem(SORT_MODE_KEY);
+      if (saved === 'historico' || saved === 'manual') setSortMode(saved);
+    } catch { /* ignore */ }
+  }, []);
+
+  const changeSortMode = (mode: SortMode) => {
+    setSortMode(mode);
+    try {
+      localStorage.setItem(SORT_MODE_KEY, mode);
+    } catch { /* ignore */ }
+  };
+
   /* ═══════════════════ Fetch Doctors ═══════════════════ */
 
   const fetchDoctors = useCallback(async () => {
     if (!session) return;
     setLoading(true);
-
     try {
-      // Lista completa; filtros rodam no cliente
       const { data, error } = await supabase
         .from('doctors')
         .select('*')
         .order('descricao', { ascending: true });
 
       if (error) {
-        console.error(
-          'Erro ao buscar médicos:',
-          error.message, '|', error.details, '|', error.hint, '|', error.code,
-        );
+        console.error('Erro ao buscar médicos:', error.message, '|', error.details, '|', error.hint, '|', error.code);
       } else {
         setDoctors(data as Doctor[]);
       }
@@ -130,24 +159,21 @@ export default function HomePage() {
     fetchDoctors();
   }, [fetchDoctors]);
 
-  /* ═══════════════════ Fetch Statuses ═══════════════════ */
+  /* ═══════════════════ Statuses: Realtime + reserva ═══════════════════ */
 
   const fetchStatuses = useCallback(async () => {
     if (!session) return;
     const nowIso = new Date().toISOString();
-
     const { data, error } = await supabase
       .from('doctor_statuses')
       .select('*')
       .or(`expires_at.is.null,expires_at.gt.${nowIso}`);
 
     setNow(Date.now());
-
     if (error) {
       console.warn('Status fetch ignorado:', error.message || error.code);
       return;
     }
-
     const map: Record<string, DoctorStatus[]> = {};
     for (const s of data as DoctorStatus[]) {
       if (!map[s.doctor_id]) map[s.doctor_id] = [];
@@ -156,43 +182,119 @@ export default function HomePage() {
     setStatusMap(map);
   }, [session]);
 
-  // Busca inicial + polling
-  useEffect(() => {
-    fetchStatuses();
+  // Histórico para a média móvel
+  const fetchEvents = useCallback(async () => {
+    if (!session) return;
+    const since = new Date(Date.now() - ROUTE_HISTORY_DAYS * 86_400_000).toISOString();
+    const { data, error } = await supabase
+      .from('doctor_status_events')
+      .select('doctor_id, status_type, event_at')
+      .in('status_type', ROUTING_STATUSES)
+      .gte('event_at', since)
+      .order('event_at', { ascending: false })
+      .limit(5000);
+    if (error) {
+      console.warn('Histórico indisponível:', error.message);
+      return;
+    }
+    setEvents(data as DoctorStatusEvent[]);
+  }, [session]);
 
-    if (statusInterval.current) clearInterval(statusInterval.current);
-    statusInterval.current = setInterval(fetchStatuses, REFRESH_INTERVAL);
+  useEffect(() => {
+    fetchEvents();
+  }, [fetchEvents]);
+
+  // Realtime: qualquer mudança em doctor_statuses chega em ~1 s para todos
+  useEffect(() => {
+    if (!session) return;
+
+    const channel = supabase
+      .channel('doctor_statuses_live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'doctor_statuses' },
+        (payload: RealtimePostgresChangesPayload<DoctorStatus>) => {
+          if (payload.eventType === 'DELETE') {
+            const old = payload.old as Partial<DoctorStatus>;
+            setStatusMap((prev) => {
+              const next: Record<string, DoctorStatus[]> = {};
+              for (const [docId, list] of Object.entries(prev)) {
+                next[docId] = list.filter((s) =>
+                  old.doctor_id && old.status_type
+                    ? !(s.doctor_id === old.doctor_id && s.status_type === old.status_type)
+                    : s.id !== old.id,
+                );
+              }
+              return next;
+            });
+            return;
+          }
+
+          const row = payload.new as DoctorStatus;
+          if (!row?.doctor_id) return;
+          setStatusMap((prev) => upsertStatus(prev, row));
+          if (ROUTING_STATUSES.includes(row.status_type)) {
+            setEvents((prev) => [
+              { doctor_id: row.doctor_id, status_type: row.status_type, event_at: row.created_at },
+              ...prev,
+            ]);
+          }
+        },
+      )
+      .subscribe((state: string) => {
+        setRealtimeOn(state === 'SUBSCRIBED');
+        // Ao (re)conectar, sincroniza o que pode ter mudado enquanto estava fora
+        if (state === 'SUBSCRIBED') fetchStatuses();
+      });
 
     return () => {
-      if (statusInterval.current) clearInterval(statusInterval.current);
+      supabase.removeChannel(channel);
     };
-  }, [fetchStatuses]);
+  }, [session, fetchStatuses]);
 
-  /* ═══════════════════ Status Actions ═══════════════════ */
+  // Reserva: busca completa a cada 60 s e ao voltar para o app
+  useEffect(() => {
+    fetchStatuses();
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(fetchStatuses, FALLBACK_POLL_MS);
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        fetchStatuses();
+        fetchEvents();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [fetchStatuses, fetchEvents]);
+
+  // Relógio da tela (status de 10/20/30 min somem no horário certo)
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
+    return () => clearInterval(t);
+  }, []);
+
+  /* ═══════════════════ Status Actions (otimistas) ═══════════════════ */
 
   const setDoctorStatus = useCallback(
-    async (
-      doctorId: string,
-      type: DoctorStatusType,
-      opts?: { repName?: string; returnDate?: string },
-    ) => {
+    async (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string }) => {
       if (!session) return;
       const meta = STATUS_META[type];
 
       let expiresAt: string | null = null;
-      if (meta.duration) {
-        expiresAt = addMinutes(meta.duration);
-      } else if (type === 'nao_veio_hoje' || type === 'visitado_hoje') {
-        expiresAt = endOfToday();
-      } else if (opts?.returnDate) {
-        expiresAt = new Date(opts.returnDate + 'T23:59:59').toISOString();
-      }
+      if (meta.duration) expiresAt = addMinutes(meta.duration);
+      else if (meta.untilMidnight) expiresAt = endOfToday();
+      else if (opts?.returnDate) expiresAt = new Date(opts.returnDate + 'T23:59:59').toISOString();
 
       const createdAt = new Date().toISOString();
       const record = {
         doctor_id: doctorId,
         status_type: type,
-        // created_at explícito: no upsert de um status já existente o horário precisa renovar
+        // created_at explícito: ao remarcar, o horário precisa renovar
         created_at: createdAt,
         expires_at: expiresAt,
         return_date: opts?.returnDate || null,
@@ -200,14 +302,16 @@ export default function HomePage() {
         created_by: session.user.id,
       };
 
+      // 1) Tela atualiza na hora
       const optimistic: DoctorStatus = { id: crypto.randomUUID(), ...record };
-
-      setStatusMap((prev) => {
-        const existing = (prev[doctorId] || []).filter((s) => s.status_type !== type);
-        return { ...prev, [doctorId]: [...existing, optimistic] };
-      });
+      const previous = (statusMap[doctorId] || []).find((s) => s.status_type === type);
+      setStatusMap((prev) => upsertStatus(prev, optimistic));
       setNow(Date.now());
+      if (ROUTING_STATUSES.includes(type)) {
+        setEvents((prev) => [{ doctor_id: doctorId, status_type: type, event_at: createdAt }, ...prev]);
+      }
 
+      // 2) Grava; o Realtime avisa os outros aparelhos
       const { error } = await supabase
         .from('doctor_statuses')
         .upsert(record, { onConflict: 'doctor_id,status_type' });
@@ -215,24 +319,24 @@ export default function HomePage() {
       if (error) {
         console.error('Erro ao setar status:', error.message, '|', error.details, '|', error.hint, '|', error.code);
         setStatusMap((prev) => {
-          const rolled = (prev[doctorId] || []).filter((s) => s.id !== optimistic.id);
-          return { ...prev, [doctorId]: rolled };
+          const others = (prev[doctorId] || []).filter((s) => s.id !== optimistic.id);
+          return { ...prev, [doctorId]: previous ? [...others, previous] : others };
         });
         return;
       }
 
-      fetchStatuses();
       if (PINNED_STATUSES.includes(type)) notifyCity(doctorId, type);
     },
-    [session, actorName, fetchStatuses],
+    [session, actorName, statusMap],
   );
 
   const clearDoctorStatus = useCallback(
     async (doctorId: string, type: DoctorStatusType) => {
-      setStatusMap((prev) => {
-        const filtered = (prev[doctorId] || []).filter((s) => s.status_type !== type);
-        return { ...prev, [doctorId]: filtered };
-      });
+      const previous = (statusMap[doctorId] || []).find((s) => s.status_type === type);
+      setStatusMap((prev) => ({
+        ...prev,
+        [doctorId]: (prev[doctorId] || []).filter((s) => s.status_type !== type),
+      }));
 
       const { error } = await supabase
         .from('doctor_statuses')
@@ -242,10 +346,30 @@ export default function HomePage() {
 
       if (error) {
         console.error('Erro ao limpar status:', error.message, '|', error.details, '|', error.hint, '|', error.code);
-        fetchStatuses();
+        if (previous) setStatusMap((prev) => upsertStatus(prev, previous));
       }
     },
-    [fetchStatuses],
+    [statusMap],
+  );
+
+  /* ═══════════════════ Cidades ═══════════════════ */
+
+  const cityOptions = useMemo(() => buildCityOptions(doctors.map((d) => d.cidade)), [doctors]);
+  const cityComboOptions: ComboOption[] = useMemo(
+    () => cityOptions.map((o) => ({ value: o.label, label: o.label, hint: String(o.count) })),
+    [cityOptions],
+  );
+  const cityLabels = useMemo(() => cityOptions.map((o) => o.label), [cityOptions]);
+
+  /** Mantém dias_semana igual à agenda e grava a cidade na grafia oficial */
+  const prepare = useCallback(
+    (data: Partial<Doctor>): Partial<Doctor> => {
+      const out: Partial<Doctor> = { ...data };
+      if (data.agenda) out.dias_semana = agendaToDias(data.agenda);
+      if (data.cidade !== undefined) out.cidade = canonicalCity(data.cidade, cityOptions);
+      return out;
+    },
+    [cityOptions],
   );
 
   /* ═══════════════════ Doctor CRUD ═══════════════════ */
@@ -254,11 +378,7 @@ export default function HomePage() {
     async (docId: string, data: Partial<Doctor>, _docName: string): Promise<boolean> => {
       const { error } = await supabase
         .from('doctors')
-        .update({
-          ...withDerivedDays(data),
-          updated_by_name: actorName,
-          change_source: 'app',
-        })
+        .update({ ...prepare(data), updated_by_name: actorName, change_source: 'app' })
         .eq('id', docId);
 
       if (error) {
@@ -268,7 +388,7 @@ export default function HomePage() {
       await fetchDoctors();
       return true;
     },
-    [actorName, fetchDoctors],
+    [prepare, actorName, fetchDoctors],
   );
 
   const findDuplicate = useCallback(
@@ -285,13 +405,11 @@ export default function HomePage() {
 
   const addDoctor = useCallback(
     async (data: Partial<Doctor>): Promise<AddDoctorResult> => {
-      // 1) Checagem local (lista completa já está carregada)
       const dup = findDuplicate(data.crm, data.uf);
       if (dup) return { ok: false, error: DUPLICATE_MSG, duplicate: dup };
 
-      // 2) Insert — o índice único CRM+UF no banco é a garantia final
       const { error } = await supabase.from('doctors').insert({
-        ...withDerivedDays(data),
+        ...prepare(data),
         created_via: 'APP_FIELD',
         updated_by: session?.user.id || '',
         updated_by_name: actorName,
@@ -307,8 +425,7 @@ export default function HomePage() {
             .eq('uf', (data.uf || 'PI').toUpperCase())
             .ilike('crm', `%${normalizeCrm(data.crm)}%`)
             .limit(1);
-          const found = (rows as Doctor[] | null)?.[0];
-          return { ok: false, error: DUPLICATE_MSG, duplicate: found };
+          return { ok: false, error: DUPLICATE_MSG, duplicate: (rows as Doctor[] | null)?.[0] };
         }
         console.error('Erro ao adicionar médico:', error.message, '|', error.details, '|', error.code);
         return { ok: false, error: `Não foi possível adicionar: ${error.message}` };
@@ -318,15 +435,13 @@ export default function HomePage() {
       await fetchDoctors();
       return { ok: true };
     },
-    [findDuplicate, session, actorName, fetchDoctors],
+    [findDuplicate, prepare, session, actorName, fetchDoctors],
   );
 
   const deleteDoctor = useCallback(
     async (doc: Doctor) => {
       if (!confirm(`Excluir ${doc.descricao}?`)) return;
-
       setDoctors((prev) => prev.filter((d) => d.id !== doc.id));
-
       const { error } = await supabase.from('doctors').delete().eq('id', doc.id);
       if (error) {
         console.error('Erro ao excluir médico:', error.message);
@@ -348,18 +463,21 @@ export default function HomePage() {
   /* ═══════════════════ Filtros ═══════════════════ */
 
   const isCategoryMode = selectedCategory !== null;
+  const routeDay = selectedTab && selectedTab !== 'novos' ? selectedTab : getTodayDayCode();
+  const orderKey = selectedTab && selectedTab !== 'novos' ? selectedTab : 'geral';
 
-  const cities = useMemo(
-    () =>
-      Array.from(new Set(doctors.map((d) => (d.cidade || '').trim()).filter(Boolean))).sort((a, b) =>
-        a.localeCompare(b, 'pt-BR'),
-      ),
-    [doctors],
-  );
+  /** Só status ainda válidos (some na hora certa, sem esperar o servidor) */
+  const liveStatusMap = useMemo(() => {
+    const out: Record<string, DoctorStatus[]> = {};
+    for (const [docId, list] of Object.entries(statusMap)) {
+      const live = list.filter((s) => isLive(s, now));
+      if (live.length) out[docId] = live;
+    }
+    return out;
+  }, [statusMap, now]);
 
   const newCount = useMemo(() => doctors.filter((d) => isNewDoctor(d)).length, [doctors]);
 
-  // Carteira: especialidades escolhidas + médicos vinculados manualmente
   const mySpecialties = profile?.specialties ?? [];
   const portfolioConfigured = mySpecialties.length > 0 || portfolio.size > 0;
   const portfolioActive = Boolean(profile && !profile.show_all && portfolioConfigured);
@@ -367,73 +485,112 @@ export default function HomePage() {
   const filteredDoctors = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const specSet = new Set(profile?.specialties ?? []);
+    const citySet = new Set(selectedCities);
 
     return doctors.filter((d) => {
       const agenda = getAgenda(d);
 
-      // Dia (null = lista global, sem filtro de dia)
       if (selectedTab === 'novos') {
         if (!isNewDoctor(d)) return false;
       } else if (selectedTab) {
         if (!agenda.some((e) => e.day === selectedTab)) return false;
       }
 
-      // Local estrito: categoria ou campo de local; nunca o nome do médico
       if (selectedCategory && !matchesLocation(d, selectedCategory)) return false;
 
-      // Cidade
-      if (selectedCity && (d.cidade || '').trim() !== selectedCity) return false;
+      // Cidade: compara sem acento ("Parnaiba" = "Parnaíba")
+      if (citySet.size > 0 && !citySet.has(cityKey(d.cidade))) return false;
 
-      // Turno: se há dia selecionado, vale o turno daquele dia
       if (turnoFilter) {
         const entries =
           selectedTab && selectedTab !== 'novos' ? agenda.filter((e) => e.day === selectedTab) : agenda;
         if (!entries.some((e) => shiftCovers(e.shift, turnoFilter))) return false;
       }
 
-      // Minha carteira
       if (portfolioActive) {
         const code = specialtyCode(d.especialidade);
         if (!portfolio.has(d.id) && !(code && specSet.has(code))) return false;
       }
 
-      // Busca
       if (q) {
         const hay = `${d.descricao} ${d.bairro} ${d.complemento} ${d.crm} ${d.especialidade ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [doctors, selectedTab, selectedCategory, selectedCity, turnoFilter, searchQuery, portfolioActive, profile, portfolio]);
+  }, [doctors, selectedTab, selectedCategory, selectedCities, turnoFilter, searchQuery, portfolioActive, profile, portfolio]);
 
   /* ═══════════════════ Ordenação ═══════════════════
-   * 0. Último Paciente / Rep. no Consultório ativos (mais recente primeiro)
-   * 1. Visitados — só nas abas PSM/SAMU/Hospitais (mais recente primeiro)
-   * 2. Restante, em ordem alfabética
+   * Sempre no topo: Último Paciente / Rep. no Consultório ativos (mais recente primeiro).
+   * Depois, nas abas PSM/SAMU/Hospitais: visitados.
+   * Restante:
+   *   - Média histórica: pelo horário esperado (média móvel); sem histórico vai para o fim.
+   *   - Ordem manual: na ordem que você definiu com ▲▼ para este dia.
    */
-  const sortedDoctors = useMemo(() => {
-    const rankOf = (d: Doctor): { rank: number; ts: number } => {
-      const live = (statusMap[d.id] || []).filter(
-        (s) => !s.expires_at || new Date(s.expires_at).getTime() > now,
-      );
+  const expectedTimes = useMemo(() => computeExpectedTimes(events, routeDay, now), [events, routeDay, now]);
+  const manualOrder = routeOrder[orderKey];
+
+  const { sortedDoctors, restIds } = useMemo(() => {
+    const manualIndex = new Map((manualOrder ?? []).map((id, i) => [id, i]));
+
+    const head: { d: Doctor; rank: number; ts: number }[] = [];
+    const rest: Doctor[] = [];
+
+    for (const d of filteredDoctors) {
+      const live = liveStatusMap[d.id] || [];
       const pinned = live.filter((s) => PINNED_STATUSES.includes(s.status_type));
       if (pinned.length > 0) {
-        return { rank: 0, ts: Math.max(...pinned.map((s) => new Date(s.created_at).getTime())) };
+        head.push({ d, rank: 0, ts: Math.max(...pinned.map((s) => new Date(s.created_at).getTime())) });
+        continue;
       }
       const visited = live.find((s) => s.status_type === 'visitado_hoje');
-      if (isCategoryMode && visited) return { rank: 1, ts: new Date(visited.created_at).getTime() };
-      return { rank: 2, ts: 0 };
-    };
+      if (isCategoryMode && visited) {
+        head.push({ d, rank: 1, ts: new Date(visited.created_at).getTime() });
+        continue;
+      }
+      rest.push(d);
+    }
 
-    return filteredDoctors
-      .map((d) => ({ d, ...rankOf(d) }))
-      .sort((a, b) => a.rank - b.rank || b.ts - a.ts)
-      .map((x) => x.d);
-  }, [filteredDoctors, statusMap, isCategoryMode, now]);
+    head.sort((a, b) => a.rank - b.rank || b.ts - a.ts);
+
+    if (sortMode === 'historico') {
+      rest.sort((a, b) => {
+        const ea = expectedTimes.get(a.id)?.minutes ?? Number.POSITIVE_INFINITY;
+        const eb = expectedTimes.get(b.id)?.minutes ?? Number.POSITIVE_INFINITY;
+        return ea - eb; // empate/sem histórico: mantém ordem alfabética
+      });
+    } else {
+      rest.sort((a, b) => {
+        const ia = manualIndex.get(a.id) ?? Number.POSITIVE_INFINITY;
+        const ib = manualIndex.get(b.id) ?? Number.POSITIVE_INFINITY;
+        return ia - ib;
+      });
+    }
+
+    return { sortedDoctors: [...head.map((x) => x.d), ...rest], restIds: rest.map((d) => d.id) };
+  }, [filteredDoctors, liveStatusMap, isCategoryMode, sortMode, expectedTimes, manualOrder]);
+
+  const moveDoctor = useCallback(
+    (docId: string, dir: -1 | 1) => {
+      const idx = restIds.indexOf(docId);
+      const target = idx + dir;
+      if (idx < 0 || target < 0 || target >= restIds.length) return;
+      const visible = [...restIds];
+      [visible[idx], visible[target]] = [visible[target], visible[idx]];
+      // Mantém a posição salva de médicos que estão fora do filtro atual
+      const hidden = (manualOrder ?? []).filter((id) => !visible.includes(id));
+      saveRouteOrder(orderKey, [...visible, ...hidden]);
+    },
+    [restIds, manualOrder, orderKey, saveRouteOrder],
+  );
+
+  const restIndex = useMemo(() => new Map(restIds.map((id, i) => [id, i])), [restIds]);
 
   const visitedCount = isCategoryMode
-    ? sortedDoctors.filter((d) => (statusMap[d.id] || []).some((s) => s.status_type === 'visitado_hoje')).length
+    ? sortedDoctors.filter((d) => (liveStatusMap[d.id] || []).some((s) => s.status_type === 'visitado_hoje')).length
     : 0;
+
+  const cityLabelOf = (key: string) => cityOptions.find((o) => o.value === key)?.label ?? key;
 
   /* ═══════════════════ Render ═══════════════════ */
 
@@ -451,17 +608,16 @@ export default function HomePage() {
 
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-100 pb-6">
-      {/* Sugestões de especialidade para os formulários */}
-      <datalist id="lista-especialidades">
-        {ESPECIALIDADES.map((e) => (
-          <option key={e.code} value={e.label} />
-        ))}
-      </datalist>
-
       {/* Header */}
       <header className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur-sm border-b border-slate-800 px-4 py-3">
         <div className="flex justify-between items-center mb-2">
-          <h1 className="text-base font-bold text-white m-0">Rota Propagandista</h1>
+          <h1 className="text-base font-bold text-white m-0 flex items-center gap-1.5">
+            Rota Propagandista
+            <span
+              title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 60 s)'}
+              className={`size-2 rounded-full ${realtimeOn ? 'bg-emerald-500' : 'bg-slate-600'}`}
+            />
+          </h1>
           <div className="flex gap-2 items-center">
             <button
               onClick={() => setShowAddForm((p) => !p)}
@@ -494,20 +650,8 @@ export default function HomePage() {
           className="w-full box-border p-2 rounded border border-slate-700 bg-slate-900 text-slate-100 text-xs outline-hidden placeholder:text-slate-500 mb-2"
         />
 
-        {/* Cidade */}
-        <select
-          value={selectedCity}
-          onChange={(e) => setSelectedCity(e.target.value)}
-          aria-label="Filtrar por cidade"
-          className="w-full box-border p-2 rounded border border-slate-700 bg-slate-900 text-slate-100 text-xs outline-hidden mb-2"
-        >
-          <option value="">Todas as cidades</option>
-          {cities.map((c) => (
-            <option key={c} value={c}>
-              {c.toUpperCase()}
-            </option>
-          ))}
-        </select>
+        {/* Cidades (busca + caixas de marcar) */}
+        <CityFilter options={cityOptions} selected={selectedCities} onChange={setSelectedCities} />
 
         {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
         <div className="flex gap-0.5 overflow-x-auto no-scrollbar">
@@ -590,16 +734,14 @@ export default function HomePage() {
       </header>
 
       {/* Install Banner */}
-      {install.showBanner && (
-        <InstallBanner onInstall={install.install} onDismiss={install.dismiss} />
-      )}
+      {install.showBanner && <InstallBanner onInstall={install.install} onDismiss={install.dismiss} />}
 
       {/* Perfil */}
       {showProfile && profile && userId && (
         <ProfileSettings
           userId={userId}
           profile={profile}
-          cities={cities}
+          cities={cityLabels}
           onSave={saveProfile}
           onClose={() => setShowProfile(false)}
         />
@@ -613,39 +755,77 @@ export default function HomePage() {
             onLinkPortfolio={linkDoctor}
             isInPortfolio={isInPortfolio}
             onCancel={() => setShowAddForm(false)}
+            cityOptions={cityComboOptions}
           />
         )}
 
-        {/* Barra de contagem */}
-        <div className="flex justify-between items-center text-[10px] text-slate-500">
+        {/* Contagem + modo de ordenação */}
+        <div className="flex justify-between items-center gap-2 text-[10px] text-slate-500 flex-wrap">
           <span>
             {sortedDoctors.length} médico{sortedDoctors.length !== 1 ? 's' : ''}
             {selectedTab && selectedTab !== 'novos' && <span> · {selectedTab.toUpperCase()}</span>}
             {selectedCategory && <span> · {selectedCategory.toUpperCase()}</span>}
-            {selectedCity && <span> · {selectedCity.toUpperCase()}</span>}
-            {isCategoryMode && <span className="text-emerald-400"> · {visitedCount} visitado{visitedCount !== 1 ? 's' : ''}</span>}
+            {selectedCities.length > 0 && (
+              <span> · {selectedCities.map((k) => cityLabelOf(k).toUpperCase()).join(', ')}</span>
+            )}
+            {isCategoryMode && (
+              <span className="text-emerald-400">
+                {' '}
+                · {visitedCount} visitado{visitedCount !== 1 ? 's' : ''}
+              </span>
+            )}
+            {loading && <span className="text-blue-400"> · Atualizando...</span>}
           </span>
-          {loading && <span className="text-blue-400">Atualizando...</span>}
+
+          <div className="flex rounded-[5px] border border-slate-800 bg-slate-950 p-0.5" role="group" aria-label="Ordenação">
+            <button
+              onClick={() => changeSortMode('historico')}
+              aria-pressed={sortMode === 'historico'}
+              title="Ordena pelo horário médio em que o médico costuma atender (Último Paciente / Rep. no Consultório)"
+              className={`px-2 py-[3px] rounded-sm text-[10px] ${
+                sortMode === 'historico' ? 'bg-sky-600 text-white font-semibold' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              ⏱ Média histórica
+            </button>
+            <button
+              onClick={() => changeSortMode('manual')}
+              aria-pressed={sortMode === 'manual'}
+              title="Ordem que você define com ▲▼, salva por dia da semana"
+              className={`px-2 py-[3px] rounded-sm text-[10px] ${
+                sortMode === 'manual' ? 'bg-sky-600 text-white font-semibold' : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              ✋ Ordem manual
+            </button>
+          </div>
         </div>
 
         {/* Cards */}
         {sortedDoctors.length === 0 && !loading ? (
-          <div className="text-center text-slate-500 text-sm py-12">
-            Nenhum médico encontrado para o filtro selecionado.
-          </div>
+          <div className="text-center text-slate-500 text-sm py-12">Nenhum médico encontrado para o filtro selecionado.</div>
         ) : (
-          sortedDoctors.map((doc) => (
-            <DoctorCard
-              key={doc.id}
-              doc={doc}
-              statuses={statusMap[doc.id] || []}
-              categoryMode={isCategoryMode}
-              onUpdateDoctor={updateDoctor}
-              onDeleteDoctor={deleteDoctor}
-              onSetStatus={setDoctorStatus}
-              onClearStatus={clearDoctorStatus}
-            />
-          ))
+          sortedDoctors.map((doc) => {
+            const pos = restIndex.get(doc.id);
+            const manual = sortMode === 'manual' && pos !== undefined;
+            return (
+              <DoctorCard
+                key={doc.id}
+                doc={doc}
+                statuses={liveStatusMap[doc.id] || []}
+                categoryMode={isCategoryMode}
+                onUpdateDoctor={updateDoctor}
+                onDeleteDoctor={deleteDoctor}
+                onSetStatus={setDoctorStatus}
+                onClearStatus={clearDoctorStatus}
+                cityOptions={cityComboOptions}
+                expected={sortMode === 'historico' ? expectedTimes.get(doc.id) ?? null : null}
+                onMove={manual ? moveDoctor : undefined}
+                isFirst={manual && pos === 0}
+                isLast={manual && pos === restIds.length - 1}
+              />
+            );
+          })
         )}
       </main>
     </div>

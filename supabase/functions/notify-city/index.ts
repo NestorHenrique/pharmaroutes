@@ -2,6 +2,7 @@
 //
 // Envia Web Push para os representantes inscritos na cidade do médico quando
 // alguém marca "Último Paciente" ou "Rep. no Consultório".
+// Com { test: true } envia um push de teste só para os aparelhos de quem chamou.
 //
 // Secrets necessários (npx supabase secrets set ...):
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (ex.: mailto:voce@dominio.com)
@@ -37,6 +38,35 @@ function cityKey(city: string): string {
     .replace(/\s+/g, ' ');
 }
 
+type Sub = { id: string; endpoint: string; p256dh: string; auth: string };
+
+async function sendAll(admin, subs: Sub[], payload: string, ttl: number) {
+  let sent = 0;
+  const stale: string[] = [];
+  const errors: string[] = [];
+  await Promise.all(
+    subs.map(async (s) => {
+      try {
+        await webpush.sendNotification(
+          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+          payload,
+          // urgency high: o Android entrega mesmo com o aparelho em economia de bateria
+          { TTL: ttl, urgency: 'high' },
+        );
+        sent++;
+      } catch (err) {
+        if (err?.statusCode === 404 || err?.statusCode === 410) stale.push(s.id);
+        else {
+          console.error('push error', err?.statusCode, err?.body);
+          errors.push(`${err?.statusCode ?? '?'}: ${String(err?.body ?? err?.message ?? '').slice(0, 120)}`);
+        }
+      }
+    }),
+  );
+  if (stale.length) await admin.from('push_subscriptions').delete().in('id', stale);
+  return { sent, removed: stale.length, errors };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
@@ -49,7 +79,7 @@ Deno.serve(async (req) => {
   const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:admin@example.com';
 
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return json({ error: 'VAPID keys not configured' }, 500);
-  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, VAPID_PRIVATE);
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC.trim(), VAPID_PRIVATE.trim());
 
   // Quem está chamando
   const userClient = createClient(SUPABASE_URL, ANON_KEY, {
@@ -60,31 +90,47 @@ Deno.serve(async (req) => {
   } = await userClient.auth.getUser();
   if (!user) return json({ error: 'unauthorized' }, 401);
 
-  let body: { doctor_id?: string; status_type?: string };
+  let body: { doctor_id?: string; status_type?: string; test?: boolean };
   try {
     body = await req.json();
   } catch {
     return json({ error: 'invalid body' }, 400);
   }
+
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
+  // ── Teste: só para os aparelhos do próprio usuário ──
+  if (body?.test) {
+    const { data: mine } = await admin
+      .from('push_subscriptions')
+      .select('id, endpoint, p256dh, auth')
+      .eq('user_id', user.id);
+    const payload = JSON.stringify({
+      title: '🔔 Teste de notificação',
+      body: 'Se você está vendo isto, as notificações estão funcionando.',
+      tag: `test:${user.id}`,
+      url: '/',
+    });
+    return json(await sendAll(admin, mine ?? [], payload, 60));
+  }
+
   const { doctor_id, status_type } = body ?? {};
   if (!doctor_id || !status_type || !(status_type in TITLES)) {
     return json({ error: 'invalid params' }, 400);
   }
 
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY);
-
-  // Anti-spam: só notifica status marcado por este usuário nos últimos 2 minutos
+  // Anti-spam: só notifica se este usuário marcou o status nos últimos 2 minutos.
+  // Usa o horário do servidor (doctor_status_events), não o relógio do celular.
   const since = new Date(Date.now() - 2 * 60_000).toISOString();
-  const { data: status } = await admin
-    .from('doctor_statuses')
-    .select('created_at, created_by')
+  const { data: recent } = await admin
+    .from('doctor_status_events')
+    .select('id')
     .eq('doctor_id', doctor_id)
     .eq('status_type', status_type)
-    .gte('created_at', since)
-    .maybeSingle();
-  if (!status || status.created_by !== user.id) {
-    return json({ sent: 0, reason: 'status not recent' });
-  }
+    .eq('created_by', user.id)
+    .gte('event_at', since)
+    .limit(1);
+  if (!recent || recent.length === 0) return json({ sent: 0, reason: 'status not recent' });
 
   const { data: doctor } = await admin
     .from('doctors')
@@ -106,25 +152,6 @@ Deno.serve(async (req) => {
     url: '/',
   });
 
-  let sent = 0;
-  const stale: string[] = [];
-  await Promise.all(
-    (subs ?? []).map(async (s) => {
-      try {
-        await webpush.sendNotification(
-          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          payload,
-          { TTL: status_type === 'ultimo_paciente' ? 1200 : 600 },
-        );
-        sent++;
-      } catch (err) {
-        if (err?.statusCode === 404 || err?.statusCode === 410) stale.push(s.id);
-        else console.error('push error', err?.statusCode, err?.body);
-      }
-    }),
-  );
-
-  if (stale.length) await admin.from('push_subscriptions').delete().in('id', stale);
-
-  return json({ sent, removed: stale.length });
+  const ttl = status_type === 'ultimo_paciente' ? 1200 : 600;
+  return json(await sendAll(admin, subs ?? [], payload, ttl));
 });

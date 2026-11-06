@@ -3,8 +3,8 @@
 import { memo, useState, useEffect } from 'react';
 import type { AgendaEntry, Doctor } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
-import { STATUS_META } from '@/types/status';
-import { CATEGORIAS } from '@/constants';
+import { STATUS_META, UNAVAILABLE_STATUSES } from '@/types/status';
+import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
 import {
   buildWhatsAppUrl,
   isNewDoctor,
@@ -18,11 +18,15 @@ import {
   loadDraft,
   saveDraft,
   clearDraft,
+  formatMinutes,
 } from '@/utils';
+import type { ExpectedTime } from '@/utils';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
 import AgendaEditor from '@/components/AgendaEditor';
+import ComboBox from '@/components/ComboBox';
+import type { ComboOption } from '@/components/ComboBox';
 
 /* ── Props ── */
 
@@ -34,7 +38,21 @@ interface DoctorCardProps {
   onDeleteDoctor: (doc: Doctor) => void;
   onSetStatus: (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string }) => void;
   onClearStatus: (doctorId: string, type: DoctorStatusType) => void;
+  /** cidades da base (grafia oficial) para o campo Cidade da edição */
+  cityOptions: ComboOption[];
+  /** horário esperado pela média móvel (modo "Média histórica") */
+  expected?: ExpectedTime | null;
+  /** modo "Ordem manual": setas para subir/descer na rota */
+  onMove?: (docId: string, dir: -1 | 1) => void;
+  isFirst?: boolean;
+  isLast?: boolean;
 }
+
+const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
+  value: e.label,
+  label: e.label,
+  hint: e.code,
+}));
 
 type EditForm = Partial<Doctor> & { agenda: AgendaEntry[] };
 
@@ -54,6 +72,11 @@ function DoctorCard({
   onDeleteDoctor,
   onSetStatus,
   onClearStatus,
+  cityOptions,
+  expected,
+  onMove,
+  isFirst,
+  isLast,
 }: DoctorCardProps) {
   const draftKey = `edit_${doc.id}`;
   const hasDraft = hasSavedDraft(draftKey);
@@ -72,17 +95,15 @@ function DoctorCard({
   /* ── Status derivados ── */
   const has = (t: DoctorStatusType) => statuses.some((s) => s.status_type === t);
   const visited = statuses.find((s) => s.status_type === 'visitado_hoje');
-  const isAbsent = statuses.some((s) =>
-    ['nao_veio_hoje', 'ferias', 'viajando', 'saiu_do_setor'].includes(s.status_type),
-  );
+  const isAbsent = statuses.some((s) => UNAVAILABLE_STATUSES.includes(s.status_type));
 
   let highlightCls = 'border-slate-800 bg-slate-900';
   if (has('ultimo_paciente')) highlightCls = 'border-red-500 bg-red-950/40 shadow-[0_0_0_1px_rgba(239,68,68,0.35)]';
   else if (has('representante_no_consultorio')) highlightCls = 'border-emerald-500 bg-emerald-950/30';
   else if (visited) highlightCls = 'border-emerald-500 bg-emerald-950/40';
-  else if (has('nao_veio_hoje')) highlightCls = 'border-slate-600 bg-slate-900';
-  else if (statuses.some((s) => ['ferias', 'viajando', 'saiu_do_setor'].includes(s.status_type)))
-    highlightCls = 'border-amber-500 bg-slate-900';
+  else if (has('aguardando_medico')) highlightCls = 'border-sky-500 bg-sky-950/30';
+  else if (has('nao_veio_hoje') || has('finalizou_atendimento')) highlightCls = 'border-slate-600 bg-slate-900';
+  else if (has('ferias') || has('viajando')) highlightCls = 'border-amber-500 bg-slate-900';
 
   /* ── Rascunho da edição ── */
   useEffect(() => {
@@ -104,6 +125,7 @@ function DoctorCard({
       endereco: doc.endereco || '',
       numero: doc.numero || '',
       bairro: doc.bairro || '',
+      cidade: doc.cidade || '',
       observacoes: doc.observacoes || '',
       telefone: doc.telefone || '',
       email: doc.email || '',
@@ -131,6 +153,7 @@ function DoctorCard({
         endereco: editForm.endereco ?? '',
         numero: editForm.numero ?? '',
         bairro: editForm.bairro ?? '',
+        cidade: (editForm.cidade ?? '').trim(),
         observacoes: editForm.observacoes ?? '',
         telefone: editForm.telefone ?? '',
         email: editForm.email ?? '',
@@ -183,6 +206,7 @@ function DoctorCard({
         const meta = STATUS_META[s.status_type];
         const remaining = minutesRemaining(s.expires_at);
         const isVisit = s.status_type === 'visitado_hoje';
+        const showTime = meta.showTime;
         return (
           <div
             key={s.status_type}
@@ -190,9 +214,7 @@ function DoctorCard({
           >
             <span>
               {meta.emoji} <strong>{isVisit ? 'Visitado' : meta.label}</strong>
-              {(s.status_type === 'representante_no_consultorio' || isVisit) && (
-                <span className="text-slate-300"> — às {formatTime(s.created_at)}</span>
-              )}
+              {showTime && <span className="text-slate-300"> — às {formatTime(s.created_at)}</span>}
               {isVisit && s.rep_name && <span className="text-slate-400"> · {s.rep_name}</span>}
               {meta.duration !== null && remaining !== null && remaining > 0 && (
                 <span className="text-slate-500"> · {remaining}min restante</span>
@@ -244,6 +266,18 @@ function DoctorCard({
                 {specCode}
               </span>
             )}
+            {expected && (
+              <span
+                title={
+                  expected.sameWeekday
+                    ? `Média dos últimos ${expected.samples} registro(s) neste dia da semana`
+                    : `Média de ${expected.samples} registro(s) na última semana`
+                }
+                className={`${tagCls} bg-sky-900 text-sky-200`}
+              >
+                ⏱ ~{formatMinutes(expected.minutes)}
+              </span>
+            )}
             {isNew && <span className={`${tagCls} bg-green-900 text-green-400`}>NOVO</span>}
             {visited && <span className={`${tagCls} bg-emerald-600 text-white`}>✅ VISITADO</span>}
             {doc.categoria && doc.categoria !== 'consultorio' && (
@@ -271,6 +305,28 @@ function DoctorCard({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {onMove && !isEditing && (
+            <div className="flex flex-col">
+              <button
+                type="button"
+                aria-label="Subir na rota"
+                disabled={isFirst}
+                onClick={() => onMove(doc.id, -1)}
+                className="rounded-t border border-slate-700 bg-slate-800 px-1.5 text-[10px] leading-4 text-slate-300 hover:text-white disabled:opacity-30"
+              >
+                ▲
+              </button>
+              <button
+                type="button"
+                aria-label="Descer na rota"
+                disabled={isLast}
+                onClick={() => onMove(doc.id, 1)}
+                className="rounded-b border border-t-0 border-slate-700 bg-slate-800 px-1.5 text-[10px] leading-4 text-slate-300 hover:text-white disabled:opacity-30"
+              >
+                ▼
+              </button>
+            </div>
+          )}
           <StatusSelector doctorId={doc.id} statuses={statuses} onSet={onSetStatus} onClear={onClearStatus} />
 
           {!isEditing && (
@@ -322,13 +378,12 @@ function DoctorCard({
           <AgendaEditor value={editForm.agenda} onChange={(a) => setField('agenda', a)} />
 
           <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
-            <input
-              type="text"
-              placeholder="Especialidade (ex.: Cardiologia)"
+            <ComboBox
+              size="sm"
               value={editForm.especialidade ?? ''}
-              onChange={(e) => setField('especialidade', e.target.value)}
-              className={inputCls}
-              list="lista-especialidades"
+              onChange={(v) => setField('especialidade', v)}
+              options={SPECIALTY_OPTIONS}
+              placeholder="Especialidade"
             />
             <span className={`${tagCls} text-[10px] bg-rose-900 text-rose-200 min-w-8 text-center`}>
               {specialtyCode(editForm.especialidade) ?? '—'}
@@ -342,7 +397,18 @@ function DoctorCard({
 
           <div className="grid grid-cols-[2fr_1fr] gap-1.5">
             <input type="text" placeholder="Endereço" value={editForm.endereco ?? ''} onChange={(e) => setField('endereco', e.target.value)} className={inputCls} />
+            <input type="text" placeholder="Número" value={editForm.numero ?? ''} onChange={(e) => setField('numero', e.target.value)} className={inputCls} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5">
             <input type="text" placeholder="Bairro" value={editForm.bairro ?? ''} onChange={(e) => setField('bairro', e.target.value)} className={inputCls} />
+            <ComboBox
+              size="sm"
+              value={editForm.cidade ?? ''}
+              onChange={(v) => setField('cidade', v)}
+              options={cityOptions}
+              placeholder="Cidade"
+            />
           </div>
 
           <div className="flex gap-1.5">

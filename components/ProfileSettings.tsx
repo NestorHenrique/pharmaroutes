@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { RepProfile } from '@/types/doctor';
 import { ESPECIALIDADES } from '@/constants';
-import { getPushCity, getPushSupport, subscribeToCity, unsubscribePush } from '@/lib/push';
+import { getPushCity, getPushSupport, sendTestPush, subscribeToCity, unsubscribePush } from '@/lib/push';
 
 interface ProfileSettingsProps {
   userId: string;
@@ -53,6 +53,13 @@ export default function ProfileSettings({ userId, profile, cities, onSave, onClo
     setPushBusy(false);
     setPushMsg(r.message);
     if (r.ok) setPushCity(cityChoice.trim());
+  };
+
+  const handleTest = async () => {
+    setPushBusy(true);
+    const r = await sendTestPush();
+    setPushBusy(false);
+    setPushMsg(r.message);
   };
 
   const handleUnsubscribe = async () => {
@@ -183,6 +190,15 @@ export default function ProfileSettings({ userId, profile, cities, onSave, onClo
                 >
                   {pushCity ? 'Trocar cidade' : '🔔 Ativar notificações'}
                 </button>
+                {pushCity && (
+                  <button
+                    onClick={handleTest}
+                    disabled={pushBusy}
+                    className="px-3 py-1.5 bg-sky-700 text-white border-none rounded text-xs hover:bg-sky-600 disabled:opacity-50"
+                  >
+                    Enviar teste
+                  </button>
+                )}
                 {pushCity && (
                   <button
                     onClick={handleUnsubscribe}

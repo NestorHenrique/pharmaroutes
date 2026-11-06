@@ -65,12 +65,23 @@ function sameKey(a: ArrayBuffer | null | undefined, b: Uint8Array): boolean {
   return x.length === b.length && x.every((v, i) => v === b[i]);
 }
 
-/** Usa o service worker que já existir; senão registra /sw.js */
+/**
+ * Registra sempre o /sw.js (é ele que tem o listener de push).
+ * Se havia outro service worker no mesmo escopo, este o substitui — antes, o app
+ * reaproveitava um SW sem listener de push e as notificações sumiam no Android.
+ * updateViaCache: 'none' evita que o Cloudflare/navegador sirva um sw.js antigo.
+ */
 async function getRegistration(): Promise<ServiceWorkerRegistration> {
-  const existing = await navigator.serviceWorker.getRegistration();
-  if (existing) return existing;
-  await navigator.serviceWorker.register('/sw.js');
-  return navigator.serviceWorker.ready;
+  const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' });
+  reg.update().catch(() => {});
+  await navigator.serviceWorker.ready;
+  return reg;
+}
+
+/** Chame ao abrir o app: mantém o service worker de push atualizado */
+export function ensureServiceWorker(): void {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  getRegistration().catch((err) => console.warn('Service worker não registrado:', (err as Error).message));
 }
 
 async function currentSubscription(): Promise<PushSubscription | null> {
@@ -170,6 +181,20 @@ export async function unsubscribePush(): Promise<{ ok: boolean; message: string 
     return { ok: true, message: 'Notificações desativadas neste aparelho.' };
   } catch (err) {
     return { ok: false, message: `Erro ao desativar: ${(err as Error).message}` };
+  }
+}
+
+/** Envia um push de teste só para os aparelhos do próprio usuário */
+export async function sendTestPush(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke('notify-city', { body: { test: true } });
+    if (error) return { ok: false, message: `Falha no envio: ${error.message}. A função notify-city foi publicada?` };
+    const sent = (data as { sent?: number } | null)?.sent ?? 0;
+    return sent > 0
+      ? { ok: true, message: 'Teste enviado. A notificação deve chegar em alguns segundos.' }
+      : { ok: false, message: 'Nenhum aparelho seu inscrito. Ative as notificações primeiro.' };
+  } catch (err) {
+    return { ok: false, message: `Falha no envio: ${(err as Error).message}` };
   }
 }
 

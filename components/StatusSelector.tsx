@@ -167,7 +167,11 @@ export default function StatusSelector({ doctorId, statuses, onSet, onClear }: S
                     >
                       <span>{meta.emoji}</span>
                       {meta.label}
-                      {meta.duration && <span className="text-slate-600 ml-auto">({meta.duration}min)</span>}
+                      {meta.duration ? (
+                        <span className="text-slate-600 ml-auto">({meta.duration}min)</span>
+                      ) : meta.untilMidnight ? (
+                        <span className="text-slate-600 ml-auto">(até 00h)</span>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -185,7 +189,11 @@ export default function StatusSelector({ doctorId, statuses, onSet, onClear }: S
                     >
                       <span>{meta.emoji}</span>
                       {meta.label}
-                      {meta.duration && <span className="text-slate-600 ml-auto">({meta.duration}min)</span>}
+                      {meta.duration ? (
+                        <span className="text-slate-600 ml-auto">({meta.duration}min)</span>
+                      ) : meta.untilMidnight ? (
+                        <span className="text-slate-600 ml-auto">(até 00h)</span>
+                      ) : null}
                     </button>
                   );
                 })}
