@@ -1,25 +1,28 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import type { Doctor } from '@/types/doctor';
-import { OPCOES_DIAS, CATEGORIAS } from '@/constants';
-import { parseDays, toggleDay } from '@/utils';
+import type { AddDoctorResult, AgendaEntry, Doctor } from '@/types/doctor';
+import { CATEGORIAS } from '@/constants';
+import { sortAgenda, specialtyCode } from '@/utils';
 import { useFormPersistence } from '@/hooks/useFormPersistence';
 import { useGeolocation } from '@/hooks/useGeolocation';
+import AgendaEditor from '@/components/AgendaEditor';
 
 /* ── Types ── */
 
 interface AddDoctorFormProps {
-  onAdd: (data: Partial<Doctor>) => Promise<boolean>;
+  onAdd: (data: Partial<Doctor>) => Promise<AddDoctorResult>;
+  onLinkPortfolio: (doctorId: string) => Promise<boolean>;
+  isInPortfolio: (doctorId: string) => boolean;
   onCancel: () => void;
 }
 
 type FormState = {
   descricao: string;
   crm: string;
+  uf: string;
   especialidade: string;
-  dias_semana: string;
-  turno: string;
+  agenda: AgendaEntry[];
   complemento: string;
   endereco: string;
   numero: string;
@@ -35,9 +38,9 @@ type FormState = {
 const DEFAULTS: FormState = {
   descricao: '',
   crm: '',
+  uf: 'PI',
   especialidade: '',
-  dias_semana: '',
-  turno: 'Manhã e Tarde',
+  agenda: [],
   complemento: '',
   endereco: '',
   numero: '',
@@ -55,17 +58,24 @@ const inputCls =
 
 /* ── Component ── */
 
-export default function AddDoctorForm({ onAdd, onCancel }: AddDoctorFormProps) {
+export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, onCancel }: AddDoctorFormProps) {
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [duplicate, setDuplicate] = useState<Doctor | null>(null);
+  const [linkMsg, setLinkMsg] = useState<string | null>(null);
   const gps = useGeolocation();
 
   const { clearSaved, restored } = useFormPersistence('add_doctor', form, setForm, DEFAULTS);
 
   const setField = useCallback(
-    <K extends keyof FormState>(key: K, value: FormState[K]) =>
-      setForm((prev) => ({ ...prev, [key]: value })),
+    <K extends keyof FormState>(key: K, value: FormState[K]) => {
+      setForm((prev) => ({ ...prev, [key]: value }));
+      if (key === 'crm' || key === 'uf') {
+        setDuplicate(null);
+        setLinkMsg(null);
+      }
+    },
     [],
   );
 
@@ -76,13 +86,35 @@ export default function AddDoctorForm({ onAdd, onCancel }: AddDoctorFormProps) {
     }
     setSaving(true);
     setError(null);
+    setDuplicate(null);
+    setLinkMsg(null);
+
+    const payload: Partial<Doctor> = {
+      descricao: form.descricao.trim(),
+      crm: form.crm.trim(),
+      uf: form.uf.trim().toUpperCase() || 'PI',
+      especialidade: form.especialidade.trim() || null,
+      agenda: sortAgenda(form.agenda || []),
+      complemento: form.complemento.trim(),
+      endereco: form.endereco.trim(),
+      numero: form.numero.trim(),
+      bairro: form.bairro.trim(),
+      cidade: form.cidade.trim(),
+      telefone: form.telefone.trim(),
+      email: form.email.trim(),
+      map_link: form.map_link.trim(),
+      observacoes: form.observacoes.trim(),
+      categoria: form.categoria as Doctor['categoria'],
+    };
+
     try {
-      const ok = await onAdd(form as Partial<Doctor>);
-      if (ok) {
+      const result = await onAdd(payload);
+      if (result.ok) {
         clearSaved();
         setForm(DEFAULTS);
       } else {
-        setError('Não foi possível adicionar. Tente novamente.');
+        setError(result.error);
+        if (result.duplicate) setDuplicate(result.duplicate);
       }
     } catch {
       setError('Erro de conexão. Tente novamente.');
@@ -91,10 +123,23 @@ export default function AddDoctorForm({ onAdd, onCancel }: AddDoctorFormProps) {
     }
   };
 
+  const handleLink = async () => {
+    if (!duplicate) return;
+    const ok = await onLinkPortfolio(duplicate.id);
+    if (ok) {
+      clearSaved();
+      setLinkMsg('Vinculado à sua carteira. Ele já aparece na sua lista.');
+    } else {
+      setLinkMsg('Não foi possível vincular. A migração v3 já foi rodada?');
+    }
+  };
+
   const handleCancel = () => {
     clearSaved();
     onCancel();
   };
+
+  const code = specialtyCode(form.especialidade);
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-lg p-3.5 flex flex-col gap-2.5">
@@ -107,33 +152,50 @@ export default function AddDoctorForm({ onAdd, onCancel }: AddDoctorFormProps) {
         )}
       </div>
 
-      {/* Nome e CRM */}
+      {/* Nome */}
+      <input
+        type="text"
+        placeholder="Nome do Médico *"
+        value={form.descricao}
+        onChange={(e) => setField('descricao', e.target.value)}
+        className={inputCls}
+        autoFocus
+      />
+
+      {/* CRM + UF */}
       <div className="grid grid-cols-[2fr_1fr] gap-1.5">
         <input
           type="text"
-          placeholder="Nome do Médico *"
-          value={form.descricao}
-          onChange={(e) => setField('descricao', e.target.value)}
-          className={inputCls}
-          autoFocus
-        />
-        <input
-          type="text"
+          inputMode="numeric"
           placeholder="CRM"
           value={form.crm}
           onChange={(e) => setField('crm', e.target.value)}
           className={inputCls}
         />
+        <input
+          type="text"
+          placeholder="UF"
+          maxLength={2}
+          value={form.uf}
+          onChange={(e) => setField('uf', e.target.value.toUpperCase())}
+          className={`${inputCls} uppercase`}
+        />
       </div>
 
-      {/* Especialidade */}
-      <input
-        type="text"
-        placeholder="Especialidade"
-        value={form.especialidade}
-        onChange={(e) => setField('especialidade', e.target.value)}
-        className={inputCls}
-      />
+      {/* Especialidade + sigla */}
+      <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
+        <input
+          type="text"
+          placeholder="Especialidade (ex.: Cardiologia)"
+          value={form.especialidade}
+          onChange={(e) => setField('especialidade', e.target.value)}
+          className={inputCls}
+          list="lista-especialidades"
+        />
+        <span className="text-[10px] px-1.5 py-1 rounded-sm font-bold bg-rose-900 text-rose-200 min-w-9 text-center">
+          {code ?? '—'}
+        </span>
+      </div>
 
       {/* Categoria do Local */}
       <div>
@@ -151,35 +213,13 @@ export default function AddDoctorForm({ onAdd, onCancel }: AddDoctorFormProps) {
         </select>
       </div>
 
-      {/* Dias de Atendimento */}
-      <div>
-        <span className="text-[10px] text-slate-500 block mb-[3px]">Dias de Atendimento:</span>
-        <div className="flex gap-1">
-          {OPCOES_DIAS.map((d) => {
-            const isChecked = parseDays(form.dias_semana).includes(d.value);
-            return (
-              <button
-                type="button"
-                key={d.value}
-                aria-pressed={isChecked}
-                onClick={() => setField('dias_semana', toggleDay(form.dias_semana, d.value))}
-                className={`flex-1 py-1.5 rounded border text-[10px] font-semibold ${
-                  isChecked
-                    ? 'border-blue-500 bg-blue-700 text-white'
-                    : 'border-slate-700 bg-slate-800 text-slate-500'
-                }`}
-              >
-                {d.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* Dias + turno por dia */}
+      <AgendaEditor value={form.agenda || []} onChange={(a) => setField('agenda', a)} />
 
       {/* Clínica / Local */}
       <input
         type="text"
-        placeholder="Clínica / Nome do Local"
+        placeholder="Clínica / Local (PSM, SAMU, Hospital...)"
         value={form.complemento}
         onChange={(e) => setField('complemento', e.target.value)}
         className={inputCls}
@@ -187,56 +227,20 @@ export default function AddDoctorForm({ onAdd, onCancel }: AddDoctorFormProps) {
 
       {/* Endereço + Número */}
       <div className="grid grid-cols-[2fr_1fr] gap-1.5">
-        <input
-          type="text"
-          placeholder="Endereço"
-          value={form.endereco}
-          onChange={(e) => setField('endereco', e.target.value)}
-          className={inputCls}
-        />
-        <input
-          type="text"
-          placeholder="Número"
-          value={form.numero}
-          onChange={(e) => setField('numero', e.target.value)}
-          className={inputCls}
-        />
+        <input type="text" placeholder="Endereço" value={form.endereco} onChange={(e) => setField('endereco', e.target.value)} className={inputCls} />
+        <input type="text" placeholder="Número" value={form.numero} onChange={(e) => setField('numero', e.target.value)} className={inputCls} />
       </div>
 
       {/* Bairro + Cidade */}
       <div className="grid grid-cols-2 gap-1.5">
-        <input
-          type="text"
-          placeholder="Bairro"
-          value={form.bairro}
-          onChange={(e) => setField('bairro', e.target.value)}
-          className={inputCls}
-        />
-        <input
-          type="text"
-          placeholder="Cidade"
-          value={form.cidade}
-          onChange={(e) => setField('cidade', e.target.value)}
-          className={inputCls}
-        />
+        <input type="text" placeholder="Bairro" value={form.bairro} onChange={(e) => setField('bairro', e.target.value)} className={inputCls} />
+        <input type="text" placeholder="Cidade" value={form.cidade} onChange={(e) => setField('cidade', e.target.value)} className={inputCls} />
       </div>
 
       {/* Telefone + Email */}
       <div className="grid grid-cols-2 gap-1.5">
-        <input
-          type="tel"
-          placeholder="Telefone (WhatsApp)"
-          value={form.telefone}
-          onChange={(e) => setField('telefone', e.target.value)}
-          className={inputCls}
-        />
-        <input
-          type="email"
-          placeholder="Email"
-          value={form.email}
-          onChange={(e) => setField('email', e.target.value)}
-          className={inputCls}
-        />
+        <input type="tel" placeholder="Telefone (WhatsApp)" value={form.telefone} onChange={(e) => setField('telefone', e.target.value)} className={inputCls} />
+        <input type="email" placeholder="Email" value={form.email} onChange={(e) => setField('email', e.target.value)} className={inputCls} />
       </div>
 
       {/* Link GPS */}
@@ -272,8 +276,34 @@ export default function AddDoctorForm({ onAdd, onCancel }: AddDoctorFormProps) {
         className={inputCls}
       />
 
-      {/* Erro */}
-      {error && <div role="alert" className="text-[11px] text-red-400">{error}</div>}
+      {/* Duplicado: oferece vincular à carteira */}
+      {duplicate ? (
+        <div role="alert" className="rounded-md border border-red-500/40 bg-red-500/10 p-2.5 flex flex-col gap-1.5">
+          <strong className="text-[12px] text-red-300">Médico já cadastrado na base de dados</strong>
+          <span className="text-[11px] text-slate-300">
+            {duplicate.descricao}
+            {duplicate.crm && ` · CRM ${duplicate.crm}${duplicate.uf ? `/${duplicate.uf}` : ''}`}
+            {duplicate.complemento && ` · ${duplicate.complemento}`}
+            {duplicate.cidade && ` · ${duplicate.cidade}`}
+          </span>
+          {isInPortfolio(duplicate.id) || linkMsg?.startsWith('Vinculado') ? (
+            <span className="text-[11px] text-emerald-400">{linkMsg ?? 'Este médico já está na sua carteira.'}</span>
+          ) : (
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleLink}
+                className="px-2.5 py-1 bg-emerald-600 text-white border-none rounded text-[11px] font-semibold hover:bg-emerald-500"
+              >
+                Vincular à minha carteira
+              </button>
+              {linkMsg && <span className="text-[11px] text-amber-400">{linkMsg}</span>}
+            </div>
+          )}
+        </div>
+      ) : (
+        error && <div role="alert" className="text-[11px] text-red-400">{error}</div>
+      )}
 
       {/* Botões */}
       <div className="flex gap-2 justify-end mt-1">
@@ -282,7 +312,7 @@ export default function AddDoctorForm({ onAdd, onCancel }: AddDoctorFormProps) {
           onClick={handleCancel}
           className="px-3 py-1.5 bg-slate-700 text-slate-300 border-none rounded text-xs hover:bg-slate-600"
         >
-          Cancelar
+          {duplicate ? 'Fechar' : 'Cancelar'}
         </button>
         <button
           type="button"

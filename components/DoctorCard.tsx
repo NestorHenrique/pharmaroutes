@@ -1,16 +1,17 @@
 'use client';
 
 import { memo, useState, useEffect } from 'react';
-import type { Doctor } from '@/types/doctor';
+import type { AgendaEntry, Doctor } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { STATUS_META } from '@/types/status';
-import { OPCOES_DIAS, OPCOES_TURNO, CATEGORIAS } from '@/constants';
+import { CATEGORIAS } from '@/constants';
 import {
   buildWhatsAppUrl,
-  isRecentDoctor,
-  parseDays,
-  sortDays,
-  toggleDay,
+  isNewDoctor,
+  getAgenda,
+  formatAgendaBadge,
+  specialtyCode,
+  specialtyLabel,
   formatTime,
   minutesRemaining,
   hasSavedDraft,
@@ -21,6 +22,7 @@ import {
 import { useGeolocation } from '@/hooks/useGeolocation';
 import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
+import AgendaEditor from '@/components/AgendaEditor';
 
 /* ── Props ── */
 
@@ -28,15 +30,19 @@ interface DoctorCardProps {
   doc: Doctor;
   statuses: DoctorStatus[];
   categoryMode?: boolean;
-  onUpdateShift: (docId: string, newTurno: string, docName: string) => void;
   onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
   onDeleteDoctor: (doc: Doctor) => void;
   onSetStatus: (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string }) => void;
   onClearStatus: (doctorId: string, type: DoctorStatusType) => void;
 }
 
+type EditForm = Partial<Doctor> & { agenda: AgendaEntry[] };
+
 const inputCls =
   'w-full min-w-0 box-border p-1.5 rounded border border-slate-700 bg-slate-800 text-slate-100 text-[11px] outline-hidden placeholder:text-slate-500';
+
+/** Mesmo formato para NOVO, especialidade, dias e categoria */
+const tagCls = 'text-[9px] px-1 py-px rounded-sm font-bold whitespace-nowrap';
 
 /* ── Component ── */
 
@@ -44,7 +50,6 @@ function DoctorCard({
   doc,
   statuses,
   categoryMode,
-  onUpdateShift,
   onUpdateDoctor,
   onDeleteDoctor,
   onSetStatus,
@@ -54,61 +59,59 @@ function DoctorCard({
   const hasDraft = hasSavedDraft(draftKey);
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState<Partial<Doctor>>({});
+  const [editForm, setEditForm] = useState<EditForm>({ agenda: [] });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const gps = useGeolocation();
 
-  const currentShift = doc.turno || 'Manhã e Tarde';
-  const isRecent = isRecentDoctor(doc.created_at);
-  const dayTags = sortDays(parseDays(doc.dias_semana || doc.dia_semana)).map((d) => d.toUpperCase());
+  const isNew = isNewDoctor(doc);
+  const agenda = getAgenda(doc);
+  const specCode = specialtyCode(doc.especialidade);
   const whatsAppUrl = buildWhatsAppUrl(doc.telefone);
 
   /* ── Status derivados ── */
-  const primaryStatus = statuses.length > 0 ? statuses[0] : null;
-  const statusMeta = primaryStatus ? STATUS_META[primaryStatus.status_type] : null;
-
-  /* ── Card border class com base no status ── */
-  let borderClass = 'border-slate-800';
-  if (statuses.some((s) => s.status_type === 'ultimo_paciente')) borderClass = 'border-red-500';
-  else if (statuses.some((s) => s.status_type === 'representante_no_consultorio')) borderClass = 'border-emerald-500';
-  else if (statuses.some((s) => s.status_type === 'nao_veio_hoje')) borderClass = 'border-slate-600';
-  else if (statuses.some((s) => ['ferias', 'viajando', 'saiu_do_setor'].includes(s.status_type)))
-    borderClass = 'border-amber-500';
-
+  const has = (t: DoctorStatusType) => statuses.some((s) => s.status_type === t);
+  const visited = statuses.find((s) => s.status_type === 'visitado_hoje');
   const isAbsent = statuses.some((s) =>
     ['nao_veio_hoje', 'ferias', 'viajando', 'saiu_do_setor'].includes(s.status_type),
   );
 
-  /* ── Form persistence para edição ── */
+  let highlightCls = 'border-slate-800 bg-slate-900';
+  if (has('ultimo_paciente')) highlightCls = 'border-red-500 bg-red-950/40 shadow-[0_0_0_1px_rgba(239,68,68,0.35)]';
+  else if (has('representante_no_consultorio')) highlightCls = 'border-emerald-500 bg-emerald-950/30';
+  else if (visited) highlightCls = 'border-emerald-500 bg-emerald-950/40';
+  else if (has('nao_veio_hoje')) highlightCls = 'border-slate-600 bg-slate-900';
+  else if (statuses.some((s) => ['ferias', 'viajando', 'saiu_do_setor'].includes(s.status_type)))
+    highlightCls = 'border-amber-500 bg-slate-900';
+
+  /* ── Rascunho da edição ── */
   useEffect(() => {
     if (!isEditing) return;
     const timer = setTimeout(() => saveDraft(draftKey, editForm), 500);
     return () => clearTimeout(timer);
   }, [isEditing, editForm, draftKey]);
 
-  const setField = <K extends keyof Doctor>(key: K, value: Doctor[K]) =>
+  const setField = <K extends keyof EditForm>(key: K, value: EditForm[K]) =>
     setEditForm((prev) => ({ ...prev, [key]: value }));
 
   const handleStartEdit = () => {
     setFormError(null);
-    const draft = loadDraft<Partial<Doctor>>(draftKey);
-    if (draft) {
-      setEditForm(draft);
-    } else {
-      setEditForm({
-        dias_semana: doc.dias_semana || doc.dia_semana || '',
-        complemento: doc.complemento || '',
-        endereco: doc.endereco || '',
-        numero: doc.numero || '',
-        bairro: doc.bairro || '',
-        observacoes: doc.observacoes || '',
-        telefone: doc.telefone || '',
-        email: doc.email || '',
-        map_link: doc.map_link || '',
-        categoria: doc.categoria || 'consultorio',
-      });
-    }
+    const draft = loadDraft<Partial<EditForm>>(draftKey);
+    const base: EditForm = {
+      agenda: getAgenda(doc),
+      especialidade: doc.especialidade || '',
+      complemento: doc.complemento || '',
+      endereco: doc.endereco || '',
+      numero: doc.numero || '',
+      bairro: doc.bairro || '',
+      observacoes: doc.observacoes || '',
+      telefone: doc.telefone || '',
+      email: doc.email || '',
+      map_link: doc.map_link || '',
+      categoria: doc.categoria || 'consultorio',
+    };
+    // Rascunhos antigos (sem agenda) caem no valor atual do médico
+    setEditForm(draft ? { ...base, ...draft, agenda: draft.agenda ?? base.agenda } : base);
     setIsEditing(true);
   };
 
@@ -121,7 +124,20 @@ function DoctorCard({
     setSaving(true);
     setFormError(null);
     try {
-      const ok = await onUpdateDoctor(doc.id, editForm, doc.descricao || '');
+      const payload: Partial<Doctor> = {
+        agenda: editForm.agenda,
+        especialidade: (editForm.especialidade || '').trim() || null,
+        complemento: editForm.complemento ?? '',
+        endereco: editForm.endereco ?? '',
+        numero: editForm.numero ?? '',
+        bairro: editForm.bairro ?? '',
+        observacoes: editForm.observacoes ?? '',
+        telefone: editForm.telefone ?? '',
+        email: editForm.email ?? '',
+        map_link: editForm.map_link ?? '',
+        categoria: editForm.categoria,
+      };
+      const ok = await onUpdateDoctor(doc.id, payload, doc.descricao || '');
       if (ok) {
         clearDraft(draftKey);
         setIsEditing(false);
@@ -158,25 +174,29 @@ function DoctorCard({
 
   return (
     <div
-      className={`bg-slate-900 border rounded-lg px-3.5 py-3 flex flex-col gap-2 transition-colors ${borderClass} ${
-        isRecent ? 'border-l-[3px] border-l-green-500' : ''
+      className={`border rounded-lg px-3.5 py-3 flex flex-col gap-2 transition-colors ${highlightCls} ${
+        isNew ? 'border-l-[3px] border-l-green-500' : ''
       } ${isAbsent ? 'opacity-60' : ''}`}
     >
-      {/* ── Status Banner ── */}
+      {/* ── Faixas de status ── */}
       {statuses.map((s) => {
         const meta = STATUS_META[s.status_type];
         const remaining = minutesRemaining(s.expires_at);
+        const isVisit = s.status_type === 'visitado_hoje';
         return (
           <div
             key={s.status_type}
-            className={`rounded-md px-2.5 py-1.5 text-[11px] flex items-center justify-between ${meta.bg} ${meta.text} border border-white/10`}
+            className={`rounded-md px-2.5 py-1.5 text-[11px] flex items-center justify-between border border-white/10 ${meta.bg} ${meta.text}`}
           >
             <span>
-              {meta.emoji} <strong>{meta.label}</strong>
-              {s.status_type === 'representante_no_consultorio' && (
+              {meta.emoji} <strong>{isVisit ? 'Visitado' : meta.label}</strong>
+              {(s.status_type === 'representante_no_consultorio' || isVisit) && (
                 <span className="text-slate-300"> — às {formatTime(s.created_at)}</span>
               )}
-              {remaining !== null && remaining > 0 && <span className="text-slate-500"> · {remaining}min restante</span>}
+              {isVisit && s.rep_name && <span className="text-slate-400"> · {s.rep_name}</span>}
+              {meta.duration !== null && remaining !== null && remaining > 0 && (
+                <span className="text-slate-500"> · {remaining}min restante</span>
+              )}
               {s.return_date && (
                 <span className="text-slate-400">
                   {' '}
@@ -191,20 +211,17 @@ function DoctorCard({
       {/* ── Cabeçalho ── */}
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5">
             <h3 className="m-0 text-sm font-semibold text-white uppercase break-words">{doc.descricao}</h3>
-            {isRecent && (
-              <span className="text-[9px] bg-green-900 text-green-400 px-[5px] py-px rounded font-bold">NOVO</span>
-            )}
-            {/* OCR Status — preparação visual */}
+            {/* OCR — preparação visual: 🟢 confirmado · 🟡 encaixe/alterado · 🔴 ausente */}
             {doc.ocr_status && (
               <span
                 title={
                   doc.ocr_status === 'confirmado'
                     ? 'Confirmado'
                     : doc.ocr_status === 'encaixe'
-                      ? 'Encaixe / Alterações'
-                      : 'Ausente no agenda local'
+                      ? 'Encaixe / Alterado'
+                      : 'Ausente'
                 }
                 className={`size-2.5 rounded-full shrink-0 ${
                   doc.ocr_status === 'confirmado'
@@ -217,28 +234,44 @@ function DoctorCard({
             )}
           </div>
 
-          <div className="flex gap-1.5 items-center mt-[3px] flex-wrap">
-            {doc.crm && <span className="text-[11px] text-slate-500">CRM {doc.crm.toUpperCase()}</span>}
-            {dayTags.map((tag) => (
-              <span key={tag} className="text-[9px] text-blue-400 bg-blue-900 px-1 py-px rounded-sm font-bold">
-                {tag}
-              </span>
-            ))}
-            {doc.categoria && doc.categoria !== 'consultorio' && (
-              <span className="text-[9px] text-purple-400 bg-purple-900 px-1 py-px rounded-sm font-bold">
-                {doc.categoria.toUpperCase()}
+          {/* Tags: especialidade · NOVO · visitado · local · dias (turno) */}
+          <div className="flex gap-1 items-center mt-1 flex-wrap">
+            {specCode && (
+              <span
+                title={doc.especialidade || specialtyLabel(specCode)}
+                className={`${tagCls} text-[10px] bg-rose-900 text-rose-200 ring-1 ring-rose-500/40`}
+              >
+                {specCode}
               </span>
             )}
+            {isNew && <span className={`${tagCls} bg-green-900 text-green-400`}>NOVO</span>}
+            {visited && <span className={`${tagCls} bg-emerald-600 text-white`}>✅ VISITADO</span>}
+            {doc.categoria && doc.categoria !== 'consultorio' && (
+              <span className={`${tagCls} bg-purple-900 text-purple-300`}>{doc.categoria.toUpperCase()}</span>
+            )}
+            {agenda.map((e) => (
+              <span key={e.day} className={`${tagCls} bg-blue-900 text-blue-300`}>
+                {formatAgendaBadge(e)}
+              </span>
+            ))}
           </div>
+
+          {(doc.crm || doc.especialidade) && (
+            <div className="text-[11px] text-slate-500 mt-1">
+              {doc.crm && (
+                <span>
+                  CRM {doc.crm.toUpperCase()}
+                  {doc.uf ? `/${doc.uf.toUpperCase()}` : ''}
+                </span>
+              )}
+              {doc.crm && doc.especialidade && <span> · </span>}
+              {doc.especialidade && <span>{doc.especialidade}</span>}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5">
-          <StatusSelector
-            doctorId={doc.id}
-            statuses={statuses}
-            onSet={onSetStatus}
-            onClear={onClearStatus}
-          />
+          <StatusSelector doctorId={doc.id} statuses={statuses} onSet={onSetStatus} onClear={onClearStatus} />
 
           {!isEditing && (
             <div className="flex gap-1.5 opacity-70">
@@ -262,10 +295,10 @@ function DoctorCard({
         </div>
       </div>
 
-      {/* ── PSM/SAMU/Hospital: botão "Já Visitado" ── */}
+      {/* ── PSM/SAMU/Hospital: marcar visitado ── */}
       {categoryMode && !isEditing && (
         <div className="flex items-center gap-2">
-          {statuses.some((s) => s.status_type === 'visitado_hoje') ? (
+          {visited ? (
             <button
               onClick={() => onClearStatus(doc.id, 'visitado_hoje')}
               className="text-[10px] px-2 py-1 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 font-semibold"
@@ -286,33 +319,25 @@ function DoctorCard({
       {/* ── Edição / Visualização ── */}
       {isEditing ? (
         <div className="bg-slate-950 p-2.5 rounded-md border border-slate-800 flex flex-col gap-2">
-          <div>
-            <span className="text-[10px] text-slate-500 block mb-[3px]">Dias de Atendimento:</span>
-            <div className="flex gap-1">
-              {OPCOES_DIAS.map((d) => {
-                const isChecked = parseDays(editForm.dias_semana).includes(d.value);
-                return (
-                  <button
-                    type="button"
-                    key={d.value}
-                    aria-pressed={isChecked}
-                    onClick={() => setField('dias_semana', toggleDay(editForm.dias_semana, d.value))}
-                    className={`flex-1 py-1 rounded border text-[10px] font-semibold ${
-                      isChecked
-                        ? 'border-blue-500 bg-blue-700 text-white'
-                        : 'border-slate-700 bg-slate-800 text-slate-500'
-                    }`}
-                  >
-                    {d.label}
-                  </button>
-                );
-              })}
-            </div>
+          <AgendaEditor value={editForm.agenda} onChange={(a) => setField('agenda', a)} />
+
+          <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
+            <input
+              type="text"
+              placeholder="Especialidade (ex.: Cardiologia)"
+              value={editForm.especialidade ?? ''}
+              onChange={(e) => setField('especialidade', e.target.value)}
+              className={inputCls}
+              list="lista-especialidades"
+            />
+            <span className={`${tagCls} text-[10px] bg-rose-900 text-rose-200 min-w-8 text-center`}>
+              {specialtyCode(editForm.especialidade) ?? '—'}
+            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-1.5">
             <input type="tel" placeholder="Telefone" value={editForm.telefone ?? ''} onChange={(e) => setField('telefone', e.target.value)} className={inputCls} />
-            <input type="text" placeholder="Clínica / Local" value={editForm.complemento ?? ''} onChange={(e) => setField('complemento', e.target.value)} className={inputCls} />
+            <input type="text" placeholder="Clínica / Local (PSM, SAMU, Hospital...)" value={editForm.complemento ?? ''} onChange={(e) => setField('complemento', e.target.value)} className={inputCls} />
           </div>
 
           <div className="grid grid-cols-[2fr_1fr] gap-1.5">
@@ -339,7 +364,6 @@ function DoctorCard({
 
           <input type="text" placeholder="Observações do Propagandista" value={editForm.observacoes ?? ''} onChange={(e) => setField('observacoes', e.target.value)} className={inputCls} />
 
-          {/* Categoria */}
           <div>
             <span className="text-[10px] text-slate-500 block mb-[3px]">Categoria do Local:</span>
             <select
@@ -393,27 +417,13 @@ function DoctorCard({
       {/* ── Rodapé ── */}
       {!isEditing && (
         <div className="flex justify-between items-center pt-1.5 border-t border-slate-800 gap-2 mt-0.5 flex-wrap">
-          <div className="flex bg-slate-950 rounded-[5px] p-0.5 border border-slate-800">
-            {OPCOES_TURNO.map((opcao) => {
-              const isSelected = currentShift === opcao;
-              return (
-                <button
-                  key={opcao}
-                  aria-pressed={isSelected}
-                  onClick={() => onUpdateShift(doc.id, opcao, doc.descricao || '')}
-                  className={`px-[7px] py-[3px] rounded-sm border-none text-[10px] ${
-                    isSelected
-                      ? 'bg-blue-600 text-white font-semibold'
-                      : 'bg-transparent text-slate-500 font-normal hover:text-slate-300'
-                  }`}
-                >
-                  {opcao === 'Manhã e Tarde' ? 'Integral' : opcao}
-                </button>
-              );
-            })}
+          <div>
+            {(doc.updated_at || doc.updated_by_name) && (
+              <AuditBadge updatedAt={doc.updated_at} updatedByName={doc.updated_by_name} />
+            )}
           </div>
 
-          <div className="flex gap-1">
+          <div className="flex gap-1 ml-auto">
             <button
               onClick={openNavigation}
               disabled={!canNavigate}
@@ -433,13 +443,6 @@ function DoctorCard({
               </button>
             )}
           </div>
-        </div>
-      )}
-
-      {/* ── Audit Badge ── */}
-      {!isEditing && (doc.updated_at || doc.updated_by_name) && (
-        <div className="mt-0.5">
-          <AuditBadge updatedAt={doc.updated_at} updatedByName={doc.updated_by_name} />
         </div>
       )}
     </div>

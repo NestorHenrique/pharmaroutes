@@ -1,8 +1,31 @@
+import type { AgendaEntry, Doctor, Shift } from '@/types/doctor';
+import { ESPECIALIDADES } from '@/constants';
+
+/* ── Texto ── */
+
+/** minúsculas, sem acento, sem espaços nas pontas */
+export function normalizeText(s: string | null | undefined): string {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+/** Chave de cidade usada nas inscrições de push ("Parnaíba" → "parnaiba") */
+export function cityKey(city: string | null | undefined): string {
+  return normalizeText(city).replace(/\s+/g, ' ');
+}
+
 /* ── Dias da semana ── */
 
-const DAY_ORDER = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
+export const DAY_ORDER = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
 
-/** Transforma "seg,qua,ter" em ['seg','ter','qua'] */
+const DAY_LABEL: Record<string, string> = {
+  seg: 'Seg', ter: 'Ter', qua: 'Qua', qui: 'Qui', sex: 'Sex', sab: 'Sáb', dom: 'Dom',
+};
+
+/** Transforma "seg,qua,ter" em ['seg','qua','ter'] */
 export function parseDays(str: string | null | undefined): string[] {
   if (!str) return [];
   return str
@@ -25,7 +48,120 @@ export function toggleDay(str: string | null | undefined, day: string): string {
   return days.join(',');
 }
 
-/* ── Médico recente ── */
+/* ── Agenda granular (dia + turno) ── */
+
+const SHIFTS: Shift[] = ['MANHA', 'TARDE', 'INTEGRAL', 'NOITE'];
+
+export const SHIFT_LABEL: Record<Shift, string> = {
+  MANHA: 'Manhã',
+  TARDE: 'Tarde',
+  INTEGRAL: 'Integral',
+  NOITE: 'Noite',
+};
+
+/** Converte o turno antigo ("Manhã", "Tarde", "Manhã e Tarde") */
+export function turnoToShift(turno: string | null | undefined): Shift {
+  const t = normalizeText(turno);
+  if (!t) return 'INTEGRAL';
+  if ((t.includes('manha') && t.includes('tarde')) || t.includes('integral')) return 'INTEGRAL';
+  if (t.startsWith('manha')) return 'MANHA';
+  if (t.startsWith('tarde')) return 'TARDE';
+  if (t.startsWith('noite')) return 'NOITE';
+  return 'INTEGRAL';
+}
+
+export function sortAgenda(agenda: AgendaEntry[]): AgendaEntry[] {
+  return [...agenda].sort((a, b) => DAY_ORDER.indexOf(a.day) - DAY_ORDER.indexOf(b.day));
+}
+
+/**
+ * Agenda do médico, sempre em ordem seg→dom.
+ * Usa a coluna `agenda`; se vazia, deriva de dias_semana + turno (dados antigos).
+ */
+export function getAgenda(
+  doc: Pick<Doctor, 'agenda' | 'dias_semana' | 'dia_semana' | 'turno'>,
+): AgendaEntry[] {
+  if (Array.isArray(doc.agenda) && doc.agenda.length > 0) {
+    const seen = new Set<string>();
+    const clean: AgendaEntry[] = [];
+    for (const e of doc.agenda) {
+      if (!e || !DAY_ORDER.includes(e.day) || seen.has(e.day)) continue;
+      seen.add(e.day);
+      clean.push({ day: e.day, shift: SHIFTS.includes(e.shift) ? e.shift : 'INTEGRAL' });
+    }
+    return sortAgenda(clean);
+  }
+  const shift = turnoToShift(doc.turno);
+  const days = Array.from(new Set(parseDays(doc.dias_semana || doc.dia_semana))).filter((d) =>
+    DAY_ORDER.includes(d),
+  );
+  return sortDays(days).map((day) => ({ day, shift }));
+}
+
+/** "seg,ter" para manter a coluna antiga dias_semana sincronizada */
+export function agendaToDias(agenda: AgendaEntry[]): string {
+  return sortAgenda(agenda).map((e) => e.day).join(',');
+}
+
+/** "Seg (Integral)" */
+export function formatAgendaBadge(e: AgendaEntry): string {
+  return `${DAY_LABEL[e.day] ?? e.day} (${SHIFT_LABEL[e.shift]})`;
+}
+
+export function dayLabel(day: string): string {
+  return DAY_LABEL[day] ?? day;
+}
+
+/** O turno do dia cobre o filtro? Integral cobre manhã e tarde. */
+export function shiftCovers(shift: Shift, filter: Shift): boolean {
+  return shift === filter || (shift === 'INTEGRAL' && (filter === 'MANHA' || filter === 'TARDE'));
+}
+
+/* ── Especialidade ── */
+
+/** Sigla padronizada (CAR, ANG, CLG...). Fallback: 3 primeiras letras. */
+export function specialtyCode(esp: string | null | undefined): string | null {
+  const raw = (esp || '').trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+  if (ESPECIALIDADES.some((e) => e.code === upper)) return upper;
+  const n = normalizeText(raw);
+  for (const e of ESPECIALIDADES) {
+    if (e.keys.some((k) => n.includes(k))) return e.code;
+  }
+  const letters = n.replace(/[^a-z]/g, '').slice(0, 3).toUpperCase();
+  return letters || null;
+}
+
+export function specialtyLabel(code: string): string {
+  return ESPECIALIDADES.find((e) => e.code === code)?.label ?? code;
+}
+
+/* ── Local de atuação (PSM / SAMU / Hospital) ──
+ * Olha só a categoria e o campo de local (complemento). Nunca o nome do médico,
+ * para "Samuel" ou "Sâmia" não caírem no filtro SAMU.
+ */
+const LOCATION_PATTERNS: Record<string, RegExp> = {
+  psm: /\bpsm\b|\bpronto[\s-]*socorro\b/,
+  samu: /\bsamu\b/,
+  hospital: /\bhosp(ital)?\b/,
+};
+
+export function matchesLocation(doc: Pick<Doctor, 'categoria' | 'complemento'>, category: string): boolean {
+  if (doc.categoria === category) return true;
+  const re = LOCATION_PATTERNS[category];
+  if (!re) return false;
+  return re.test(normalizeText(doc.complemento));
+}
+
+/* ── CRM ── */
+
+/** Só os dígitos do CRM ("CRM-PI 1.234" → "1234") */
+export function normalizeCrm(crm: string | null | undefined): string {
+  return (crm || '').replace(/\D/g, '');
+}
+
+/* ── Médico novo ── */
 
 export function isRecentDoctor(createdAt: string | null | undefined): boolean {
   if (!createdAt) return false;
@@ -33,6 +169,11 @@ export function isRecentDoctor(createdAt: string | null | undefined): boolean {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 7);
   return created > cutoff;
+}
+
+/** NOVO = cadastrado em campo pelo app nos últimos 7 dias (importações não contam) */
+export function isNewDoctor(doc: Pick<Doctor, 'created_via' | 'created_at'>): boolean {
+  return doc.created_via === 'APP_FIELD' && isRecentDoctor(doc.created_at);
 }
 
 /* ── WhatsApp ── */
