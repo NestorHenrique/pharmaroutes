@@ -36,8 +36,10 @@ import type { ComboOption } from '@/components/ComboBox';
 
 /* ── Helpers ── */
 
-/** Polling só como reserva: o normal é o Realtime entregar na hora */
+/** Reserva com Realtime conectado (só para garantir consistência) */
 const FALLBACK_POLL_MS = 60_000;
+/** Reserva com Realtime fora do ar: atualiza bem mais rápido */
+const OFFLINE_POLL_MS = 8_000;
 /** Relógio da tela: some com status vencidos sem esperar o servidor */
 const CLOCK_TICK_MS = 15_000;
 const DUPLICATE_MSG = 'Médico já cadastrado na base de dados';
@@ -74,7 +76,7 @@ function upsertStatus(map: Record<string, DoctorStatus[]>, s: DoctorStatus): Rec
 
 export default function HomePage() {
   /* Auth */
-  const [session, setSession] = useState<{ user: { id: string; email?: string } } | null>(null);
+  const [session, setSession] = useState<{ access_token?: string; user: { id: string; email?: string } } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   /* Data */
@@ -205,58 +207,72 @@ export default function HomePage() {
   }, [fetchEvents]);
 
   // Realtime: qualquer mudança em doctor_statuses chega em ~1 s para todos
+  const accessToken = session?.access_token ?? null;
+  const sessionUserId = session?.user.id ?? null;
+
   useEffect(() => {
-    if (!session) return;
+    if (!sessionUserId) return;
+
+    // A policy da tabela libera só usuários logados ("authenticated").
+    // Se o WebSocket conectar com a chave anônima, o Supabase descarta todos os
+    // eventos em silêncio e o app cai na busca de reserva (o atraso de ~60 s).
+    // Por isso o token da sessão é entregue ao Realtime antes de assinar.
+    if (accessToken) void supabase.realtime.setAuth(accessToken);
+
+    const applyChange = (payload: RealtimePostgresChangesPayload<DoctorStatus>) => {
+      if (payload.eventType === 'DELETE') {
+        const old = payload.old as Partial<DoctorStatus>;
+        setStatusMap((prev) => {
+          const next: Record<string, DoctorStatus[]> = {};
+          for (const [docId, list] of Object.entries(prev)) {
+            next[docId] = list.filter((s) =>
+              old.doctor_id && old.status_type
+                ? !(s.doctor_id === old.doctor_id && s.status_type === old.status_type)
+                : s.id !== old.id,
+            );
+          }
+          return next;
+        });
+        return;
+      }
+
+      const row = payload.new as DoctorStatus;
+      if (!row?.doctor_id) return;
+      // Atualiza a lista na hora; a ordenação (useMemo) reage e o card sobe para o topo
+      setStatusMap((prev) => upsertStatus(prev, row));
+      setNow(Date.now());
+      if (ROUTING_STATUSES.includes(row.status_type)) {
+        setEvents((prev) => [
+          { doctor_id: row.doctor_id, status_type: row.status_type, event_at: row.created_at },
+          ...prev,
+        ]);
+      }
+    };
 
     const channel = supabase
-      .channel('doctor_statuses_live')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'doctor_statuses' },
-        (payload: RealtimePostgresChangesPayload<DoctorStatus>) => {
-          if (payload.eventType === 'DELETE') {
-            const old = payload.old as Partial<DoctorStatus>;
-            setStatusMap((prev) => {
-              const next: Record<string, DoctorStatus[]> = {};
-              for (const [docId, list] of Object.entries(prev)) {
-                next[docId] = list.filter((s) =>
-                  old.doctor_id && old.status_type
-                    ? !(s.doctor_id === old.doctor_id && s.status_type === old.status_type)
-                    : s.id !== old.id,
-                );
-              }
-              return next;
-            });
-            return;
-          }
-
-          const row = payload.new as DoctorStatus;
-          if (!row?.doctor_id) return;
-          setStatusMap((prev) => upsertStatus(prev, row));
-          if (ROUTING_STATUSES.includes(row.status_type)) {
-            setEvents((prev) => [
-              { doctor_id: row.doctor_id, status_type: row.status_type, event_at: row.created_at },
-              ...prev,
-            ]);
-          }
-        },
-      )
-      .subscribe((state: string) => {
+      .channel(`doctor-status-changes-${sessionUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_statuses' }, applyChange)
+      .subscribe((state: string, err?: Error) => {
         setRealtimeOn(state === 'SUBSCRIBED');
-        // Ao (re)conectar, sincroniza o que pode ter mudado enquanto estava fora
-        if (state === 'SUBSCRIBED') fetchStatuses();
+        if (state === 'SUBSCRIBED') {
+          // Sincroniza o que mudou enquanto estava desconectado (app em segundo plano no iOS)
+          fetchStatuses();
+        } else if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') {
+          console.warn('Realtime indisponível:', state, err?.message ?? '');
+        }
       });
 
     return () => {
+      setRealtimeOn(false);
       supabase.removeChannel(channel);
     };
-  }, [session, fetchStatuses]);
+  }, [sessionUserId, accessToken, fetchStatuses]);
 
-  // Reserva: busca completa a cada 60 s e ao voltar para o app
+  // Reserva: 60 s com Realtime conectado, 8 s sem ele; e sempre ao voltar para o app
   useEffect(() => {
     fetchStatuses();
     if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(fetchStatuses, FALLBACK_POLL_MS);
+    pollRef.current = setInterval(fetchStatuses, realtimeOn ? FALLBACK_POLL_MS : OFFLINE_POLL_MS);
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
@@ -270,7 +286,7 @@ export default function HomePage() {
       if (pollRef.current) clearInterval(pollRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [fetchStatuses, fetchEvents]);
+  }, [fetchStatuses, fetchEvents, realtimeOn]);
 
   // Relógio da tela (status de 10/20/30 min somem no horário certo)
   useEffect(() => {
@@ -614,7 +630,7 @@ export default function HomePage() {
           <h1 className="text-base font-bold text-white m-0 flex items-center gap-1.5">
             Rota Propagandista
             <span
-              title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 60 s)'}
+              title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 8 s)'}
               className={`size-2 rounded-full ${realtimeOn ? 'bg-emerald-500' : 'bg-slate-600'}`}
             />
           </h1>
