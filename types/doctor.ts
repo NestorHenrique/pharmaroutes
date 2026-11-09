@@ -1,4 +1,6 @@
-export type Shift = 'MANHA' | 'TARDE' | 'INTEGRAL' | 'NOITE';
+import type { DoctorStatusType } from '@/types/status';
+
+export type Shift ='MANHA' | 'TARDE' | 'INTEGRAL' | 'NOITE';
 
 /** Um dia de atendimento com o turno daquele dia. `day` usa os códigos seg..dom */
 export interface AgendaEntry {
@@ -41,6 +43,41 @@ export interface Doctor {
 export type AddDoctorResult =
   | { ok: true }
   | { ok: false; error: string; duplicate?: Doctor };
+
+/* ── Feed em 3 blocos + rota histórica ── */
+
+/** top = ativos/urgentes · middle = rota do dia · bottom = indisponíveis/concluídos */
+export type RouteTier = 'top' | 'middle' | 'bottom';
+
+/** Status que forçam o card para o TOPO do feed */
+export const TOP_PRIORITY_STATUSES: readonly DoctorStatusType[] = [
+  'ultimo_paciente',
+  'representante_no_consultorio',
+  'aguardando_medico',
+];
+
+/** Cliques que marcam o INÍCIO da visita (alimentam a média histórica) */
+export const ROUTE_START_STATUSES: readonly DoctorStatusType[] = ['representante_no_consultorio', 'aguardando_medico'];
+
+/** Cliques que marcam o FIM da visita / do turno (alimentam a média histórica) */
+export const ROUTE_END_STATUSES: readonly DoctorStatusType[] = ['ultimo_paciente', 'finalizou_atendimento'];
+
+/** Todos os status que gravam evento no histórico (espelha o trigger log_doctor_status_event) */
+export const ROUTE_EVENT_STATUSES: DoctorStatusType[] = [...ROUTE_START_STATUSES, ...ROUTE_END_STATUSES];
+
+/** Janela horária do histórico agrupada por (médico, dia da semana, turno) */
+export type HistoricalShift = Exclude<Shift, 'INTEGRAL'>;
+
+/** Horário esperado da visita, vindo da média de TODOS os representantes */
+export interface ExpectedVisit {
+  /** minutos desde 00:00 do início esperado */
+  startMinutes: number;
+  /** minutos desde 00:00 do fim esperado (null = sem registro de fim) */
+  endMinutes: number | null;
+  /** quantos dias entraram na média de início */
+  samples: number;
+  shift: HistoricalShift;
+}
 
 export interface RepProfile {
   user_id: string;

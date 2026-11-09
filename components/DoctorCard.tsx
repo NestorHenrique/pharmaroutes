@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useState, useEffect } from 'react';
-import type { AgendaEntry, Doctor } from '@/types/doctor';
+import type { AgendaEntry, Doctor, ExpectedVisit, RouteTier } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { STATUS_META, UNAVAILABLE_STATUSES } from '@/types/status';
 import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
@@ -20,7 +20,6 @@ import {
   clearDraft,
   formatMinutes,
 } from '@/utils';
-import type { ExpectedTime } from '@/utils';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
@@ -41,7 +40,9 @@ interface DoctorCardProps {
   /** cidades da base (grafia oficial) para o campo Cidade da edição */
   cityOptions: ComboOption[];
   /** horário esperado pela média móvel (modo "Média histórica") */
-  expected?: ExpectedTime | null;
+  expected?: ExpectedVisit | null;
+  /** bloco do feed: top (ativo) · middle (rota) · bottom (indisponível, esmaecido) */
+  tier?: RouteTier;
   /** modo "Ordem manual": setas para subir/descer na rota */
   onMove?: (docId: string, dir: -1 | 1) => void;
   isFirst?: boolean;
@@ -74,6 +75,7 @@ function DoctorCard({
   onClearStatus,
   cityOptions,
   expected,
+  tier = 'middle',
   onMove,
   isFirst,
   isLast,
@@ -95,15 +97,22 @@ function DoctorCard({
   /* ── Status derivados ── */
   const has = (t: DoctorStatusType) => statuses.some((s) => s.status_type === t);
   const visited = statuses.find((s) => s.status_type === 'visitado_hoje');
-  const isAbsent = statuses.some((s) => UNAVAILABLE_STATUSES.includes(s.status_type));
+  const waiting = statuses.find((s) => s.status_type === 'aguardando_medico');
+  const waitingLeft = waiting ? minutesRemaining(waiting.expires_at) : null;
+  const muted = tier === 'bottom' || (tier !== 'top' && statuses.some((s) => UNAVAILABLE_STATUSES.includes(s.status_type)));
 
   let highlightCls = 'border-slate-800 bg-slate-900';
-  if (has('ultimo_paciente')) highlightCls = 'border-red-500 bg-red-950/40 shadow-[0_0_0_1px_rgba(239,68,68,0.35)]';
-  else if (has('representante_no_consultorio')) highlightCls = 'border-emerald-500 bg-emerald-950/30';
-  else if (visited) highlightCls = 'border-emerald-500 bg-emerald-950/40';
-  else if (has('aguardando_medico')) highlightCls = 'border-sky-500 bg-sky-950/30';
-  else if (has('nao_veio_hoje') || has('finalizou_atendimento')) highlightCls = 'border-slate-600 bg-slate-900';
-  else if (has('ferias') || has('viajando')) highlightCls = 'border-amber-500 bg-slate-900';
+  if (muted) {
+    highlightCls = has('ferias') || has('viajando') ? 'border-amber-500/60 bg-slate-900' : 'border-slate-700 bg-slate-900';
+  } else if (has('ultimo_paciente')) {
+    highlightCls = 'border-red-500 bg-red-950/40 shadow-[0_0_0_1px_rgba(239,68,68,0.35)]';
+  } else if (has('representante_no_consultorio')) {
+    highlightCls = 'border-blue-500 bg-blue-950/40 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]';
+  } else if (has('aguardando_medico')) {
+    highlightCls = 'border-amber-400 bg-amber-950/30';
+  } else if (visited) {
+    highlightCls = 'border-emerald-500 bg-emerald-950/40';
+  }
 
   /* ── Rascunho da edição ── */
   useEffect(() => {
@@ -199,11 +208,28 @@ function DoctorCard({
     <div
       className={`border rounded-lg px-3.5 py-3 flex flex-col gap-2 transition-colors ${highlightCls} ${
         isNew ? 'border-l-[3px] border-l-green-500' : ''
-      } ${isAbsent ? 'opacity-60' : ''}`}
+      } ${muted ? 'opacity-60' : ''}`}
     >
+      {/* ── Timer do Aguardando Médico (30 min) ── */}
+      {waiting && waitingLeft !== null && waitingLeft > 0 && !muted && (
+        <div
+          role="timer"
+          className="self-start rounded-full bg-amber-500 px-2.5 py-0.5 text-[11px] font-bold text-slate-950"
+        >
+          ⏳ Aguardando · {waitingLeft} min restantes
+        </div>
+      )}
+
       {/* ── Faixas de status ── */}
       {statuses.map((s) => {
-        const meta = STATUS_META[s.status_type];
+        const base = STATUS_META[s.status_type];
+        // Cores do bloco superior alinhadas com o destaque do card
+        const meta =
+          s.status_type === 'representante_no_consultorio'
+            ? { ...base, bg: 'bg-blue-500/10', text: 'text-blue-400' }
+            : s.status_type === 'aguardando_medico'
+              ? { ...base, bg: 'bg-amber-500/10', text: 'text-amber-400' }
+              : base;
         const remaining = minutesRemaining(s.expires_at);
         const isVisit = s.status_type === 'visitado_hoje';
         const showTime = meta.showTime;
@@ -268,14 +294,11 @@ function DoctorCard({
             )}
             {expected && (
               <span
-                title={
-                  expected.sameWeekday
-                    ? `Média dos últimos ${expected.samples} registro(s) neste dia da semana`
-                    : `Média de ${expected.samples} registro(s) na última semana`
-                }
+                title={`Média de todos os representantes: últimos ${expected.samples} registro(s) deste dia da semana, turno ${expected.shift.toLowerCase()}`}
                 className={`${tagCls} bg-sky-900 text-sky-200`}
               >
-                ⏱ ~{formatMinutes(expected.minutes)}
+                ⏱ ~{formatMinutes(expected.startMinutes)}
+                {expected.endMinutes !== null && ` → ${formatMinutes(expected.endMinutes)}`}
               </span>
             )}
             {isNew && <span className={`${tagCls} bg-green-900 text-green-400`}>NOVO</span>}
@@ -461,7 +484,7 @@ function DoctorCard({
         </div>
       ) : (
         <div className="text-xs text-slate-300 flex flex-col gap-0.5">
-          <div className="text-sky-400 font-semibold text-[11px] uppercase">
+          <div className={`${muted ? 'text-slate-500' : 'text-sky-400'} font-semibold text-[11px] uppercase`}>
             {doc.complemento ? doc.complemento : 'Consultório Próprio'}
           </div>
           <div className="text-slate-400 text-xs">
@@ -492,10 +515,14 @@ function DoctorCard({
           <div className="flex gap-1 ml-auto">
             <button
               onClick={openNavigation}
-              disabled={!canNavigate}
-              className={`px-[9px] py-1 text-white border-none rounded text-[11px] font-semibold ${
-                canNavigate ? 'opacity-100' : 'cursor-not-allowed opacity-40'
-              } ${doc.map_link ? 'bg-green-700 hover:bg-green-600' : 'bg-blue-900 hover:bg-blue-800'}`}
+              disabled={!canNavigate || muted}
+              className={`px-[9px] py-1 border-none rounded text-[11px] font-semibold ${
+                muted
+                  ? 'cursor-not-allowed bg-slate-800 text-slate-500'
+                  : `text-white ${canNavigate ? 'opacity-100' : 'cursor-not-allowed opacity-40'} ${
+                      doc.map_link ? 'bg-green-700 hover:bg-green-600' : 'bg-blue-900 hover:bg-blue-800'
+                    }`
+              }`}
             >
               {doc.map_link ? 'GPS Fixo' : 'GPS'}
             </button>
@@ -503,7 +530,10 @@ function DoctorCard({
             {whatsAppUrl && (
               <button
                 onClick={() => window.open(whatsAppUrl, '_blank', 'noopener,noreferrer')}
-                className="px-[9px] py-1 bg-green-700 text-white border-none rounded text-[11px] font-semibold hover:bg-green-600"
+                disabled={muted}
+                className={`px-[9px] py-1 border-none rounded text-[11px] font-semibold ${
+                  muted ? 'cursor-not-allowed bg-slate-800 text-slate-500' : 'bg-green-700 text-white hover:bg-green-600'
+                }`}
               >
                 WhatsApp
               </button>

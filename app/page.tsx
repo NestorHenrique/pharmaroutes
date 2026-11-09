@@ -1,18 +1,20 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { AddDoctorResult, Doctor, Shift } from '@/types/doctor';
+import { ROUTE_EVENT_STATUSES } from '@/types/doctor';
+import type { RouteTier } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusEvent, DoctorStatusType } from '@/types/status';
-import { STATUS_META, PINNED_STATUSES, ROUTING_STATUSES } from '@/types/status';
+import { STATUS_META, PINNED_STATUSES } from '@/types/status';
 import { TABS_NAVEGACAO, FILTROS_PLANTAO, FILTROS_TURNO, OPCOES_DIAS } from '@/constants';
 import {
   agendaToDias,
   buildCityOptions,
   canonicalCity,
   cityKey,
-  computeExpectedTimes,
   getAgenda,
   getTodayDayCode,
   isNewDoctor,
@@ -28,6 +30,8 @@ import LoginScreen from '@/components/LoginScreen';
 import InstallBanner from '@/components/InstallBanner';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { useRepProfile } from '@/hooks/useRepProfile';
+import { useDoctorFilters } from '@/hooks/useDoctorFilters';
+import type { SortMode } from '@/hooks/useDoctorFilters';
 import DoctorCard from '@/components/DoctorCard';
 import AddDoctorForm from '@/components/AddDoctorForm';
 import ProfileSettings from '@/components/ProfileSettings';
@@ -44,8 +48,6 @@ const OFFLINE_POLL_MS = 8_000;
 const CLOCK_TICK_MS = 15_000;
 const DUPLICATE_MSG = 'Médico já cadastrado na base de dados';
 const SORT_MODE_KEY = 'pharma_sort_mode';
-
-type SortMode = 'historico' | 'manual';
 
 function endOfToday(): string {
   const d = new Date();
@@ -70,6 +72,10 @@ function isLive(s: Pick<DoctorStatus, 'expires_at'>, nowMs: number): boolean {
 function upsertStatus(map: Record<string, DoctorStatus[]>, s: DoctorStatus): Record<string, DoctorStatus[]> {
   const others = (map[s.doctor_id] || []).filter((x) => x.status_type !== s.status_type);
   return { ...map, [s.doctor_id]: [...others, s] };
+}
+
+function SectionTitle({ tone, children }: { tone: string; children: ReactNode }) {
+  return <div className={`text-[10px] font-bold uppercase tracking-wide mt-1 ${tone}`}>{children}</div>;
 }
 
 /* ── Page Component ── */
@@ -191,7 +197,7 @@ export default function HomePage() {
     const { data, error } = await supabase
       .from('doctor_status_events')
       .select('doctor_id, status_type, event_at')
-      .in('status_type', ROUTING_STATUSES)
+      .in('status_type', ROUTE_EVENT_STATUSES)
       .gte('event_at', since)
       .order('event_at', { ascending: false })
       .limit(5000);
@@ -241,7 +247,7 @@ export default function HomePage() {
       // Atualiza a lista na hora; a ordenação (useMemo) reage e o card sobe para o topo
       setStatusMap((prev) => upsertStatus(prev, row));
       setNow(Date.now());
-      if (ROUTING_STATUSES.includes(row.status_type)) {
+      if (ROUTE_EVENT_STATUSES.includes(row.status_type)) {
         setEvents((prev) => [
           { doctor_id: row.doctor_id, status_type: row.status_type, event_at: row.created_at },
           ...prev,
@@ -323,7 +329,7 @@ export default function HomePage() {
       const previous = (statusMap[doctorId] || []).find((s) => s.status_type === type);
       setStatusMap((prev) => upsertStatus(prev, optimistic));
       setNow(Date.now());
-      if (ROUTING_STATUSES.includes(type)) {
+      if (ROUTE_EVENT_STATUSES.includes(type)) {
         setEvents((prev) => [{ doctor_id: doctorId, status_type: type, event_at: createdAt }, ...prev]);
       }
 
@@ -536,77 +542,125 @@ export default function HomePage() {
     });
   }, [doctors, selectedTab, selectedCategory, selectedCities, turnoFilter, searchQuery, portfolioActive, profile, portfolio]);
 
-  /* ═══════════════════ Ordenação ═══════════════════
-   * Sempre no topo: Último Paciente / Rep. no Consultório ativos (mais recente primeiro).
-   * Depois, nas abas PSM/SAMU/Hospitais: visitados.
-   * Restante:
-   *   - Média histórica: pelo horário esperado (média móvel); sem histórico vai para o fim.
-   *   - Ordem manual: na ordem que você definiu com ▲▼ para este dia.
+  /* ═══════════════════ Ordenação em 3 blocos ═══════════════════
+   * TOPO:  Último Paciente / Rep. no Consultório / Aguardando Médico (mais recente primeiro).
+   * MEIO:  rota do dia — média histórica (todos os reps, por médico+dia+turno) ou ordem manual
+   *        deste representante (rep_route_order), com ▲▼ e arrastar-e-soltar.
+   * FIM:   Finalizou / Não veio / Licença / Viagem — esmaecidos.
    */
-  const expectedTimes = useMemo(() => computeExpectedTimes(events, routeDay, now), [events, routeDay, now]);
   const manualOrder = routeOrder[orderKey];
+  const feed = useDoctorFilters({
+    doctors: filteredDoctors,
+    statusMap: liveStatusMap,
+    events,
+    routeDay,
+    now,
+    sortMode,
+    manualOrder,
+    categoryMode: isCategoryMode,
+  });
+  const { middleIds } = feed;
+  const sortedDoctors = useMemo(() => [...feed.top, ...feed.middle, ...feed.bottom], [feed]);
 
-  const { sortedDoctors, restIds } = useMemo(() => {
-    const manualIndex = new Map((manualOrder ?? []).map((id, i) => [id, i]));
-
-    const head: { d: Doctor; rank: number; ts: number }[] = [];
-    const rest: Doctor[] = [];
-
-    for (const d of filteredDoctors) {
-      const live = liveStatusMap[d.id] || [];
-      const pinned = live.filter((s) => PINNED_STATUSES.includes(s.status_type));
-      if (pinned.length > 0) {
-        head.push({ d, rank: 0, ts: Math.max(...pinned.map((s) => new Date(s.created_at).getTime())) });
-        continue;
-      }
-      const visited = live.find((s) => s.status_type === 'visitado_hoje');
-      if (isCategoryMode && visited) {
-        head.push({ d, rank: 1, ts: new Date(visited.created_at).getTime() });
-        continue;
-      }
-      rest.push(d);
-    }
-
-    head.sort((a, b) => a.rank - b.rank || b.ts - a.ts);
-
-    if (sortMode === 'historico') {
-      rest.sort((a, b) => {
-        const ea = expectedTimes.get(a.id)?.minutes ?? Number.POSITIVE_INFINITY;
-        const eb = expectedTimes.get(b.id)?.minutes ?? Number.POSITIVE_INFINITY;
-        return ea - eb; // empate/sem histórico: mantém ordem alfabética
-      });
-    } else {
-      rest.sort((a, b) => {
-        const ia = manualIndex.get(a.id) ?? Number.POSITIVE_INFINITY;
-        const ib = manualIndex.get(b.id) ?? Number.POSITIVE_INFINITY;
-        return ia - ib;
-      });
-    }
-
-    return { sortedDoctors: [...head.map((x) => x.d), ...rest], restIds: rest.map((d) => d.id) };
-  }, [filteredDoctors, liveStatusMap, isCategoryMode, sortMode, expectedTimes, manualOrder]);
-
-  const moveDoctor = useCallback(
-    (docId: string, dir: -1 | 1) => {
-      const idx = restIds.indexOf(docId);
-      const target = idx + dir;
-      if (idx < 0 || target < 0 || target >= restIds.length) return;
-      const visible = [...restIds];
-      [visible[idx], visible[target]] = [visible[target], visible[idx]];
+  const applyMiddleOrder = useCallback(
+    (visible: string[]) => {
       // Mantém a posição salva de médicos que estão fora do filtro atual
       const hidden = (manualOrder ?? []).filter((id) => !visible.includes(id));
       saveRouteOrder(orderKey, [...visible, ...hidden]);
     },
-    [restIds, manualOrder, orderKey, saveRouteOrder],
+    [manualOrder, orderKey, saveRouteOrder],
   );
 
-  const restIndex = useMemo(() => new Map(restIds.map((id, i) => [id, i])), [restIds]);
+  const moveDoctor = useCallback(
+    (docId: string, dir: -1 | 1) => {
+      const idx = middleIds.indexOf(docId);
+      const target = idx + dir;
+      if (idx < 0 || target < 0 || target >= middleIds.length) return;
+      const visible = [...middleIds];
+      [visible[idx], visible[target]] = [visible[target], visible[idx]];
+      applyMiddleOrder(visible);
+    },
+    [middleIds, applyMiddleOrder],
+  );
+
+  /* Arrastar e soltar (só no bloco do meio, modo manual) */
+  const dragId = useRef<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const dropOn = useCallback(
+    (targetId: string) => {
+      const from = dragId.current;
+      dragId.current = null;
+      setDragOverId(null);
+      if (!from || from === targetId) return;
+      const visible = middleIds.filter((id) => id !== from);
+      const at = visible.indexOf(targetId);
+      if (at < 0) return;
+      const fromIdx = middleIds.indexOf(from);
+      const targetIdx = middleIds.indexOf(targetId);
+      visible.splice(fromIdx < targetIdx ? at + 1 : at, 0, from);
+      applyMiddleOrder(visible);
+    },
+    [middleIds, applyMiddleOrder],
+  );
+
+  const middleIndex = useMemo(() => new Map(middleIds.map((id, i) => [id, i])), [middleIds]);
 
   const visitedCount = isCategoryMode
     ? sortedDoctors.filter((d) => (liveStatusMap[d.id] || []).some((s) => s.status_type === 'visitado_hoje')).length
     : 0;
 
   const cityLabelOf = (key: string) => cityOptions.find((o) => o.value === key)?.label ?? key;
+
+  const renderCard = (doc: Doctor, tier: RouteTier) => {
+    const pos = tier === 'middle' ? middleIndex.get(doc.id) : undefined;
+    const manual = sortMode === 'manual' && pos !== undefined;
+    const card = (
+      <DoctorCard
+        key={doc.id}
+        doc={doc}
+        tier={tier}
+        statuses={liveStatusMap[doc.id] || []}
+        categoryMode={isCategoryMode}
+        onUpdateDoctor={updateDoctor}
+        onDeleteDoctor={deleteDoctor}
+        onSetStatus={setDoctorStatus}
+        onClearStatus={clearDoctorStatus}
+        cityOptions={cityComboOptions}
+        expected={sortMode === 'historico' ? feed.expected.get(doc.id) ?? null : null}
+        onMove={manual ? moveDoctor : undefined}
+        isFirst={manual && pos === 0}
+        isLast={manual && pos === middleIds.length - 1}
+      />
+    );
+    if (!manual) return card;
+    return (
+      <div
+        key={doc.id}
+        draggable
+        onDragStart={(e) => {
+          dragId.current = doc.id;
+          e.dataTransfer.effectAllowed = 'move';
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (dragOverId !== doc.id) setDragOverId(doc.id);
+        }}
+        onDragLeave={() => setDragOverId((cur) => (cur === doc.id ? null : cur))}
+        onDrop={(e) => {
+          e.preventDefault();
+          dropOn(doc.id);
+        }}
+        onDragEnd={() => {
+          dragId.current = null;
+          setDragOverId(null);
+        }}
+        className={`rounded-lg cursor-grab active:cursor-grabbing ${dragOverId === doc.id ? 'ring-2 ring-sky-500' : ''}`}
+      >
+        {card}
+      </div>
+    );
+  };
 
   /* ═══════════════════ Render ═══════════════════ */
 
@@ -817,31 +871,26 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Cards */}
+        {/* Cards em 3 blocos */}
         {sortedDoctors.length === 0 && !loading ? (
           <div className="text-center text-slate-500 text-sm py-12">Nenhum médico encontrado para o filtro selecionado.</div>
         ) : (
-          sortedDoctors.map((doc) => {
-            const pos = restIndex.get(doc.id);
-            const manual = sortMode === 'manual' && pos !== undefined;
-            return (
-              <DoctorCard
-                key={doc.id}
-                doc={doc}
-                statuses={liveStatusMap[doc.id] || []}
-                categoryMode={isCategoryMode}
-                onUpdateDoctor={updateDoctor}
-                onDeleteDoctor={deleteDoctor}
-                onSetStatus={setDoctorStatus}
-                onClearStatus={clearDoctorStatus}
-                cityOptions={cityComboOptions}
-                expected={sortMode === 'historico' ? expectedTimes.get(doc.id) ?? null : null}
-                onMove={manual ? moveDoctor : undefined}
-                isFirst={manual && pos === 0}
-                isLast={manual && pos === restIds.length - 1}
-              />
-            );
-          })
+          <>
+            {feed.top.length > 0 && (
+              <SectionTitle tone="text-red-400">🔥 Em atendimento agora · {feed.top.length}</SectionTitle>
+            )}
+            {feed.top.map((doc) => renderCard(doc, 'top'))}
+
+            {feed.middle.length > 0 && (feed.top.length > 0 || feed.bottom.length > 0) && (
+              <SectionTitle tone="text-sky-400">🧭 Rota do dia · {feed.middle.length}</SectionTitle>
+            )}
+            {feed.middle.map((doc) => renderCard(doc, 'middle'))}
+
+            {feed.bottom.length > 0 && (
+              <SectionTitle tone="text-slate-500">⚫ Indisponíveis / concluídos · {feed.bottom.length}</SectionTitle>
+            )}
+            {feed.bottom.map((doc) => renderCard(doc, 'bottom'))}
+          </>
         )}
       </main>
     </div>
