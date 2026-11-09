@@ -590,18 +590,6 @@ export default function HomePage() {
     [manualOrder, orderKey, saveRouteOrder],
   );
 
-  const moveDoctor = useCallback(
-    (docId: string, dir: -1 | 1) => {
-      const idx = middleIds.indexOf(docId);
-      const target = idx + dir;
-      if (idx < 0 || target < 0 || target >= middleIds.length) return;
-      const visible = [...middleIds];
-      [visible[idx], visible[target]] = [visible[target], visible[idx]];
-      applyMiddleOrder(visible);
-    },
-    [middleIds, applyMiddleOrder],
-  );
-
   /* Arrastar e soltar (só no bloco do meio, modo manual) */
   const dragId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -623,51 +611,88 @@ export default function HomePage() {
     [middleIds, applyMiddleOrder],
   );
 
-  /* Toque (iPhone/Android/PWA): arrasta pela alça ☰ e solta sobre outro card do bloco do meio */
+  /* Toque (iPhone/Android/PWA): arrasta pela alça ☰, o card "gruda" no dedo,
+   * a página rola sozinha perto das bordas e soltar sobre outro card insere naquele lugar. */
   const dropRef = useRef(dropOn);
   useEffect(() => {
     dropRef.current = dropOn;
   }, [dropOn]);
 
-  const startTouchDrag = useCallback((docId: string) => {
-    dragId.current = docId;
-    setDragOverId(docId);
-    let overId: string | null = docId;
+  const [ghost, setGhost] = useState<{ id: string; name: string; y: number } | null>(null);
+  const ghostEl = useRef<HTMLDivElement | null>(null);
+  const middleDocs = feed.middle;
 
-    const cardAt = (x: number, y: number): string | null => {
-      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-drag-id]');
-      return el?.dataset.dragId ?? null;
-    };
-    const onMoveTouch = (e: TouchEvent) => {
-      const t = e.touches[0];
-      if (!t) return;
-      e.preventDefault(); // impede o scroll da página durante o arraste
-      const hit = cardAt(t.clientX, t.clientY);
-      if (hit && hit !== overId) {
-        overId = hit;
-        setDragOverId(hit);
-      }
-      // rolagem automática perto das bordas
-      const edge = 70;
-      if (t.clientY < edge) window.scrollBy(0, -12);
-      else if (t.clientY > window.innerHeight - edge) window.scrollBy(0, 12);
-    };
-    const finish = (commit: boolean) => {
-      document.removeEventListener('touchmove', onMoveTouch);
-      document.removeEventListener('touchend', onEnd);
-      document.removeEventListener('touchcancel', onCancel);
-      if (commit && overId) dropRef.current(overId);
-      else {
+  const startTouchDrag = useCallback(
+    (docId: string, startY: number) => {
+      const name = middleDocs.find((d) => d.id === docId)?.descricao ?? '';
+      dragId.current = docId;
+      setDragOverId(docId);
+      setGhost({ id: docId, name, y: startY });
+
+      let overId: string | null = docId;
+      let fingerX = 0;
+      let fingerY = startY;
+      let raf = 0;
+      const EDGE_TOP = 130; // abaixo do cabeçalho fixo
+      const EDGE_BOTTOM = 90;
+      const MAX_SPEED = 22;
+
+      const cardAt = (x: number, y: number): string | null => {
+        const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-drag-id]');
+        return el?.dataset.dragId ?? null;
+      };
+      const updateTarget = () => {
+        const hit = cardAt(fingerX || window.innerWidth / 2, fingerY);
+        if (hit && hit !== overId) {
+          overId = hit;
+          setDragOverId(hit);
+        }
+      };
+      // Rolagem contínua enquanto o dedo fica perto da borda (mesmo parado)
+      const tick = () => {
+        let speed = 0;
+        if (fingerY < EDGE_TOP) speed = -MAX_SPEED * Math.min(1, (EDGE_TOP - fingerY) / EDGE_TOP);
+        else if (fingerY > window.innerHeight - EDGE_BOTTOM)
+          speed = MAX_SPEED * Math.min(1, (fingerY - (window.innerHeight - EDGE_BOTTOM)) / EDGE_BOTTOM);
+        if (speed !== 0) {
+          window.scrollBy(0, speed);
+          updateTarget();
+        }
+        raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+
+      const onMoveTouch = (e: TouchEvent) => {
+        const t = e.touches[0];
+        if (!t) return;
+        e.preventDefault(); // impede o scroll nativo; a rolagem é feita pelo tick()
+        fingerX = t.clientX;
+        fingerY = t.clientY;
+        if (ghostEl.current) ghostEl.current.style.transform = `translateY(${fingerY - 28}px)`;
+        updateTarget();
+      };
+      const cleanup = () => {
+        cancelAnimationFrame(raf);
+        document.removeEventListener('touchmove', onMoveTouch);
+        document.removeEventListener('touchend', onEnd);
+        document.removeEventListener('touchcancel', onCancel);
+        setGhost(null);
+      };
+      const onEnd = () => {
+        cleanup();
+        if (overId) dropRef.current(overId);
+      };
+      const onCancel = () => {
+        cleanup();
         dragId.current = null;
         setDragOverId(null);
-      }
-    };
-    const onEnd = () => finish(true);
-    const onCancel = () => finish(false);
-    document.addEventListener('touchmove', onMoveTouch, { passive: false });
-    document.addEventListener('touchend', onEnd);
-    document.addEventListener('touchcancel', onCancel);
-  }, []);
+      };
+      document.addEventListener('touchmove', onMoveTouch, { passive: false });
+      document.addEventListener('touchend', onEnd);
+      document.addEventListener('touchcancel', onCancel);
+    },
+    [middleDocs],
+  );
 
   const middleIndex = useMemo(() => new Map(middleIds.map((id, i) => [id, i])), [middleIds]);
 
@@ -693,10 +718,7 @@ export default function HomePage() {
         onClearStatus={clearDoctorStatus}
         cityOptions={cityComboOptions}
         expected={sortMode === 'historico' ? feed.expected.get(doc.id) ?? null : null}
-        onMove={manual ? moveDoctor : undefined}
         onDragHandleTouchStart={manual ? startTouchDrag : undefined}
-        isFirst={manual && pos === 0}
-        isLast={manual && pos === middleIds.length - 1}
       />
     );
     if (!manual) return card;
@@ -712,6 +734,9 @@ export default function HomePage() {
         onDragOver={(e) => {
           e.preventDefault();
           if (dragOverId !== doc.id) setDragOverId(doc.id);
+          // rolagem automática do arraste com mouse
+          if (e.clientY < 130) window.scrollBy(0, -16);
+          else if (e.clientY > window.innerHeight - 90) window.scrollBy(0, 16);
         }}
         onDragLeave={() => setDragOverId((cur) => (cur === doc.id ? null : cur))}
         onDrop={(e) => {
@@ -722,7 +747,7 @@ export default function HomePage() {
           dragId.current = null;
           setDragOverId(null);
         }}
-        className={`rounded-lg cursor-grab active:cursor-grabbing ${dragOverId === doc.id ? 'ring-2 ring-sky-500' : ''}`}
+        className={`rounded-lg cursor-grab active:cursor-grabbing ${dragOverId === doc.id ? 'ring-2 ring-sky-500' : ''} ${ghost?.id === doc.id ? 'opacity-40' : ''}`}
       >
         {card}
       </div>
@@ -960,6 +985,17 @@ export default function HomePage() {
           </>
         )}
       </main>
+
+      {/* Prévia do card sendo arrastado (segue o dedo) */}
+      {ghost && (
+        <div
+          ref={ghostEl}
+          className="pointer-events-none fixed left-3 right-3 top-0 z-50 rounded-lg border border-sky-400 bg-slate-800/95 px-3 py-3 text-sm font-semibold uppercase text-white shadow-xl"
+          style={{ transform: `translateY(${ghost.y - 28}px)` }}
+        >
+          ☰ {ghost.name}
+        </div>
+      )}
     </div>
   );
 }

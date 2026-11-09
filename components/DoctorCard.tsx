@@ -43,12 +43,8 @@ interface DoctorCardProps {
   expected?: ExpectedVisit | null;
   /** bloco do feed: top (ativo) · middle (rota) · bottom (indisponível, esmaecido) */
   tier?: RouteTier;
-  /** modo "Ordem manual": setas para subir/descer na rota */
-  onMove?: (docId: string, dir: -1 | 1) => void;
   /** alça de arraste por toque (iOS/Android/PWA) */
-  onDragHandleTouchStart?: (docId: string) => void;
-  isFirst?: boolean;
-  isLast?: boolean;
+  onDragHandleTouchStart?: (docId: string, clientY: number) => void;
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
@@ -78,10 +74,7 @@ function DoctorCard({
   cityOptions,
   expected,
   tier = 'middle',
-  onMove,
   onDragHandleTouchStart,
-  isFirst,
-  isLast,
 }: DoctorCardProps) {
   const draftKey = `edit_${doc.id}`;
   const hasDraft = hasSavedDraft(draftKey);
@@ -335,34 +328,12 @@ function DoctorCard({
             <button
               type="button"
               aria-label="Arrastar para reordenar"
-              onTouchStart={() => onDragHandleTouchStart(doc.id)}
+              onTouchStart={(e) => onDragHandleTouchStart(doc.id, e.touches[0]?.clientY ?? 0)}
               style={{ touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
               className="select-none rounded border border-slate-700 bg-slate-800 px-2 py-2 text-sm leading-none text-slate-300 active:bg-sky-700"
             >
               ☰
             </button>
-          )}
-          {onMove && !isEditing && (
-            <div className="flex flex-col">
-              <button
-                type="button"
-                aria-label="Subir na rota"
-                disabled={isFirst}
-                onClick={() => onMove(doc.id, -1)}
-                className="rounded-t border border-slate-700 bg-slate-800 px-1.5 text-[10px] leading-4 text-slate-300 hover:text-white disabled:opacity-30"
-              >
-                ▲
-              </button>
-              <button
-                type="button"
-                aria-label="Descer na rota"
-                disabled={isLast}
-                onClick={() => onMove(doc.id, 1)}
-                className="rounded-b border border-t-0 border-slate-700 bg-slate-800 px-1.5 text-[10px] leading-4 text-slate-300 hover:text-white disabled:opacity-30"
-              >
-                ▼
-              </button>
-            </div>
           )}
           <StatusSelector doctorId={doc.id} statuses={statuses} onSet={onSetStatus} onClear={onClearStatus} />
 
