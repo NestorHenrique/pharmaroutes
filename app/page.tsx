@@ -5,8 +5,15 @@ import type { ReactNode } from 'react';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { AddDoctorResult, Doctor, Shift } from '@/types/doctor';
-import { ROUTE_EVENT_STATUSES, CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
-import type { CycleVisit, CycleWeek, RouteTier } from '@/types/doctor';
+import {
+  ROUTE_EVENT_STATUSES,
+  CYCLE_WEEKS,
+  CYCLE_VISIT_STATUS,
+  cycleWeekKey,
+  cycleWeekLabel,
+  normalizeCycleWeeks,
+} from '@/types/doctor';
+import type { CycleWeek, RouteTier } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusEvent, DoctorStatusType } from '@/types/status';
 import { STATUS_META, PINNED_STATUSES } from '@/types/status';
 import { TABS_NAVEGACAO, FILTROS_PLANTAO, FILTROS_TURNO, OPCOES_DIAS } from '@/constants';
@@ -49,6 +56,7 @@ const CLOCK_TICK_MS = 15_000;
 const DUPLICATE_MSG = 'Médico já cadastrado na base de dados';
 const SORT_MODE_KEY = 'pharma_sort_mode';
 const CYCLE_WEEK_KEY = 'pharma_cycle_week';
+const ACTIVE_WEEK_KEY = 'pharma_active_week';
 
 function endOfToday(): string {
   const d = new Date();
@@ -106,8 +114,8 @@ export default function HomePage() {
   const [sortMode, setSortMode] = useState<SortMode>('historico');
   /** null = Todas as semanas do ciclo */
   const [selectedWeek, setSelectedWeek] = useState<CycleWeek | null>(null);
-  /** visitas do ciclo deste representante: doctor_id -> visited_at */
-  const [cycleVisits, setCycleVisits] = useState<Map<string, string>>(() => new Map());
+  /** "Estou visitando na": semana em que os visitados entram automaticamente */
+  const [activeWeek, setActiveWeek] = useState<CycleWeek | null>(null);
 
   /* UI */
   const [showAddForm, setShowAddForm] = useState(false);
@@ -142,8 +150,18 @@ export default function HomePage() {
       if (saved === 'historico' || saved === 'manual') setSortMode(saved);
       const week = normalizeCycleWeeks([Number(localStorage.getItem(CYCLE_WEEK_KEY))])[0];
       if (week) setSelectedWeek(week);
+      const active = normalizeCycleWeeks([Number(localStorage.getItem(ACTIVE_WEEK_KEY))])[0];
+      if (active) setActiveWeek(active);
     } catch { /* ignore */ }
   }, []);
+
+  const changeActiveWeek = (week: CycleWeek | null) => {
+    setActiveWeek(week);
+    try {
+      if (week) localStorage.setItem(ACTIVE_WEEK_KEY, String(week));
+      else localStorage.removeItem(ACTIVE_WEEK_KEY);
+    } catch { /* ignore */ }
+  };
 
   const changeWeek = (week: CycleWeek | null) => {
     setSelectedWeek(week);
@@ -321,12 +339,17 @@ export default function HomePage() {
   /* ═══════════════════ Status Actions (otimistas) ═══════════════════ */
 
   const setDoctorStatus = useCallback(
-    async (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string }) => {
+    async (
+      doctorId: string,
+      type: DoctorStatusType,
+      opts?: { repName?: string; returnDate?: string; persistent?: boolean },
+    ) => {
       if (!session) return;
       const meta = STATUS_META[type];
 
       let expiresAt: string | null = null;
-      if (meta.duration) expiresAt = addMinutes(meta.duration);
+      if (opts?.persistent) expiresAt = null; // visita do ciclo: fica até "Renovar Ciclo"
+      else if (meta.duration) expiresAt = addMinutes(meta.duration);
       else if (meta.untilMidnight) expiresAt = endOfToday();
       else if (opts?.returnDate) expiresAt = new Date(opts.returnDate + 'T23:59:59').toISOString();
 
@@ -412,13 +435,51 @@ export default function HomePage() {
     [cityOptions],
   );
 
+  /* ═══════════════════ Ciclo: semanas por representante ═══════════════════
+   * Guardadas em rep_route_order (day_of_week = ciclo_w1..ciclo_w5): a lista é quem está
+   * na semana E a ordem da rota dela. Não precisa de coluna nova em doctors.
+   */
+  const weeksByDoctor = useMemo(() => {
+    const out = new Map<string, CycleWeek[]>();
+    for (const w of CYCLE_WEEKS) {
+      for (const id of routeOrder[cycleWeekKey(w)] ?? []) {
+        const list = out.get(id) ?? [];
+        list.push(w);
+        out.set(id, list);
+      }
+    }
+    return out;
+  }, [routeOrder]);
+
+  const setDoctorWeeks = useCallback(
+    async (docId: string, weeks: readonly number[] | null | undefined): Promise<boolean> => {
+      const want = normalizeCycleWeeks(weeks);
+      const jobs: Promise<unknown>[] = [];
+      for (const w of CYCLE_WEEKS) {
+        const key = cycleWeekKey(w);
+        const list = routeOrder[key] ?? [];
+        const has = list.includes(docId);
+        const on = want.includes(w);
+        if (on && !has) jobs.push(saveRouteOrder(key, [...list, docId]));
+        else if (!on && has) jobs.push(saveRouteOrder(key, list.filter((id) => id !== docId)));
+      }
+      const results = await Promise.all(jobs);
+      return results.every((r) => r !== false);
+    },
+    [routeOrder, saveRouteOrder],
+  );
+
   /* ═══════════════════ Doctor CRUD ═══════════════════ */
 
   const updateDoctor = useCallback(
     async (docId: string, data: Partial<Doctor>, _docName: string): Promise<boolean> => {
+      const { cycle_weeks: weeks, ...fields } = data;
+      if (weeks !== undefined && !(await setDoctorWeeks(docId, weeks))) return false;
+      if (Object.keys(fields).length === 0) return true;
+
       const { error } = await supabase
         .from('doctors')
-        .update({ ...prepare(data), updated_by_name: actorName, change_source: 'app' })
+        .update({ ...prepare(fields), updated_by_name: actorName, change_source: 'app' })
         .eq('id', docId);
 
       if (error) {
@@ -428,7 +489,7 @@ export default function HomePage() {
       await fetchDoctors();
       return true;
     },
-    [prepare, actorName, fetchDoctors],
+    [prepare, actorName, fetchDoctors, setDoctorWeeks],
   );
 
   const findDuplicate = useCallback(
@@ -448,13 +509,18 @@ export default function HomePage() {
       const dup = findDuplicate(data.crm, data.uf);
       if (dup) return { ok: false, error: DUPLICATE_MSG, duplicate: dup };
 
-      const { error } = await supabase.from('doctors').insert({
-        ...prepare(data),
-        created_via: 'APP_FIELD',
-        updated_by: session?.user.id || '',
-        updated_by_name: actorName,
-        change_source: 'app',
-      });
+      const { cycle_weeks: weeks, ...fields } = data;
+      const { data: inserted, error } = await supabase
+        .from('doctors')
+        .insert({
+          ...prepare(fields),
+          created_via: 'APP_FIELD',
+          updated_by: session?.user.id || '',
+          updated_by_name: actorName,
+          change_source: 'app',
+        })
+        .select('id')
+        .single();
 
       if (error) {
         if (error.code === '23505') {
@@ -471,11 +537,14 @@ export default function HomePage() {
         return { ok: false, error: `Não foi possível adicionar: ${error.message}` };
       }
 
+      const newId = (inserted as { id: string } | null)?.id;
+      if (newId && weeks?.length) await setDoctorWeeks(newId, weeks);
+
       setShowAddForm(false);
       await fetchDoctors();
       return { ok: true };
     },
-    [findDuplicate, prepare, session, actorName, fetchDoctors],
+    [findDuplicate, prepare, session, actorName, fetchDoctors, setDoctorWeeks],
   );
 
   const deleteDoctor = useCallback(
@@ -490,82 +559,6 @@ export default function HomePage() {
     },
     [fetchDoctors],
   );
-
-  /* ═══════════════════ Ciclo de 5 semanas: visitas ═══════════════════ */
-
-  const fetchCycleVisits = useCallback(async () => {
-    if (!sessionUserId) return;
-    const { data, error } = await supabase
-      .from('rep_cycle_visits')
-      .select('user_id, doctor_id, status, visited_at')
-      .eq('user_id', sessionUserId);
-    if (error) {
-      console.warn('Visitas do ciclo indisponíveis (rodou a migração v5?):', error.message);
-      return;
-    }
-    setCycleVisits(new Map((data as CycleVisit[]).map((v) => [v.doctor_id, v.visited_at])));
-  }, [sessionUserId]);
-
-  useEffect(() => {
-    fetchCycleVisits();
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') fetchCycleVisits();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [fetchCycleVisits]);
-
-  /** Marca/desfaz "Visitado" no ciclo (otimista; volta atrás se falhar) */
-  const toggleCycleVisit = useCallback(
-    async (doctorId: string, visited: boolean) => {
-      if (!sessionUserId) return;
-      const previous = cycleVisits.get(doctorId);
-      const visitedAt = new Date().toISOString();
-      setCycleVisits((prev) => {
-        const next = new Map(prev);
-        if (visited) next.set(doctorId, visitedAt);
-        else next.delete(doctorId);
-        return next;
-      });
-
-      const { error } = visited
-        ? await supabase
-            .from('rep_cycle_visits')
-            .upsert(
-              { user_id: sessionUserId, doctor_id: doctorId, status: 'visitado', visited_at: visitedAt },
-              { onConflict: 'user_id,doctor_id' },
-            )
-        : await supabase.from('rep_cycle_visits').delete().eq('user_id', sessionUserId).eq('doctor_id', doctorId);
-
-      if (error) {
-        console.error('Erro ao gravar visita do ciclo:', error.message, '|', error.code);
-        setCycleVisits((prev) => {
-          const next = new Map(prev);
-          if (previous) next.set(doctorId, previous);
-          else next.delete(doctorId);
-          return next;
-        });
-      }
-    },
-    [sessionUserId, cycleVisits],
-  );
-
-  /** Novo ciclo: zera só as visitas deste representante (semanas e ordem manual ficam) */
-  const renewCycle = useCallback(async () => {
-    if (!sessionUserId) return;
-    const ok = confirm(
-      'Renovar o ciclo de visitas? Todos os médicos voltam para pendente. Semanas e ordem da rota continuam iguais.',
-    );
-    if (!ok) return;
-    const previous = cycleVisits;
-    setCycleVisits(new Map());
-    const { error } = await supabase.from('rep_cycle_visits').delete().eq('user_id', sessionUserId);
-    if (error) {
-      console.error('Erro ao renovar o ciclo:', error.message, '|', error.code);
-      setCycleVisits(previous);
-      alert('Não foi possível renovar o ciclo. Tente novamente.');
-    }
-  }, [sessionUserId, cycleVisits]);
 
   const isInPortfolio = useCallback((doctorId: string) => portfolio.has(doctorId), [portfolio]);
 
@@ -598,12 +591,82 @@ export default function HomePage() {
   const portfolioConfigured = mySpecialties.length > 0 || portfolio.size > 0;
   const portfolioActive = Boolean(profile && !profile.show_all && portfolioConfigured);
 
+  /* ═══════════════════ Ciclo: visitas (doctor_statuses) ═══════════════════ */
+
+  /** Médicos que ESTE representante marcou visitado no ciclo: doctor_id -> visited_at */
+  const cycleVisits = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const [docId, list] of Object.entries(liveStatusMap)) {
+      const v = list.find((s) => s.status_type === CYCLE_VISIT_STATUS && s.created_by === sessionUserId);
+      if (v) out.set(docId, v.created_at);
+    }
+    return out;
+  }, [liveStatusMap, sessionUserId]);
+
+  /** Marca/desfaz "Visitado". Com semana ativa, o médico entra nela e fica na sequência da visita. */
+  const toggleCycleVisit = useCallback(
+    (doctorId: string, visited: boolean) => {
+      if (!visited) {
+        void clearDoctorStatus(doctorId, CYCLE_VISIT_STATUS);
+        return;
+      }
+      void setDoctorStatus(doctorId, CYCLE_VISIT_STATUS, { persistent: true });
+
+      if (activeWeek) {
+        const key = cycleWeekKey(activeWeek);
+        const current = routeOrder[key] ?? [];
+        const list = current.filter((id) => id !== doctorId);
+        // Trava a posição: logo depois do último médico já visitado nesta semana
+        let at = 0;
+        list.forEach((id, i) => {
+          if (cycleVisits.has(id)) at = i + 1;
+        });
+        list.splice(at, 0, doctorId);
+        if (list.join(',') !== current.join(',')) void saveRouteOrder(key, list);
+      }
+    },
+    [clearDoctorStatus, setDoctorStatus, activeWeek, routeOrder, cycleVisits, saveRouteOrder],
+  );
+
+  /** Novo ciclo: zera só os "Visitado" deste representante (semanas e ordem da rota ficam) */
+  const renewCycle = useCallback(async () => {
+    if (!sessionUserId) return;
+    const ok = confirm(
+      'Renovar o ciclo de visitas? Todos os médicos voltam para pendente. Semanas e ordem da rota continuam iguais.',
+    );
+    if (!ok) return;
+
+    setStatusMap((prev) => {
+      const next: Record<string, DoctorStatus[]> = {};
+      for (const [docId, list] of Object.entries(prev)) {
+        next[docId] = list.filter((s) => !(s.status_type === CYCLE_VISIT_STATUS && s.created_by === sessionUserId));
+      }
+      return next;
+    });
+    const { error } = await supabase
+      .from('doctor_statuses')
+      .delete()
+      .eq('status_type', CYCLE_VISIT_STATUS)
+      .eq('created_by', sessionUserId);
+    if (error) {
+      console.error('Erro ao renovar o ciclo:', error.message, '|', error.details, '|', error.code);
+      alert('Não foi possível renovar o ciclo. Tente novamente.');
+      fetchStatuses();
+    }
+  }, [sessionUserId, fetchStatuses]);
+
+  /** Médicos com as semanas DESTE representante */
+  const doctorsWithWeeks = useMemo(
+    () => doctors.map((d) => ({ ...d, cycle_weeks: weeksByDoctor.get(d.id) ?? [] })),
+    [doctors, weeksByDoctor],
+  );
+
   const filteredDoctors = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const specSet = new Set(profile?.specialties ?? []);
     const citySet = new Set(selectedCities);
 
-    return doctors.filter((d) => {
+    return doctorsWithWeeks.filter((d) => {
       const agenda = getAgenda(d);
 
       if (selectedTab === 'novos') {
@@ -637,7 +700,7 @@ export default function HomePage() {
       }
       return true;
     });
-  }, [doctors, selectedTab, selectedCategory, selectedCities, selectedWeek, turnoFilter, searchQuery, portfolioActive, profile, portfolio]);
+  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, turnoFilter, searchQuery, portfolioActive, profile, portfolio]);
 
   /* ═══════════════════ Ordenação em 3 blocos ═══════════════════
    * TOPO:  Último Paciente / Rep. no Consultório / Aguardando Médico (mais recente primeiro).
@@ -645,7 +708,9 @@ export default function HomePage() {
    *        deste representante (rep_route_order), com ▲▼ e arrastar-e-soltar.
    * FIM:   Finalizou / Não veio / Licença / Viagem — esmaecidos.
    */
-  const manualOrder = routeOrder[orderKey];
+  /** Com semana filtrada, a ordem manual é a da semana (ciclo_wN); senão a do dia */
+  const manualKey = selectedWeek ? cycleWeekKey(selectedWeek) : orderKey;
+  const manualOrder = routeOrder[manualKey];
   const feed = useDoctorFilters({
     doctors: filteredDoctors,
     statusMap: liveStatusMap,
@@ -680,9 +745,9 @@ export default function HomePage() {
     (visible: string[]) => {
       // Mantém a posição salva de médicos que estão fora do filtro atual
       const hidden = (manualOrder ?? []).filter((id) => !visible.includes(id));
-      saveRouteOrder(orderKey, [...visible, ...hidden]);
+      saveRouteOrder(manualKey, [...visible, ...hidden]);
     },
-    [manualOrder, orderKey, saveRouteOrder],
+    [manualOrder, manualKey, saveRouteOrder],
   );
 
   /* Arrastar e soltar (só no bloco do meio, modo manual) */
@@ -818,6 +883,7 @@ export default function HomePage() {
         onDragHandleTouchStart={manual ? startTouchDrag : undefined}
         cycleVisitedAt={isCategoryMode ? null : cycleVisits.get(doc.id) ?? null}
         onToggleCycleVisit={isCategoryMode ? undefined : toggleCycleVisit}
+        activeWeekLabel={activeWeek ? cycleWeekLabel(activeWeek) : null}
       />
     );
     if (!manual) return card;
@@ -1038,19 +1104,39 @@ export default function HomePage() {
 
         {/* Ciclo de visitas */}
         {!isCategoryMode && (
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-violet-500/40 bg-violet-950/30 px-3 py-2">
-            <span className="text-[11px] text-violet-200">
-              {selectedWeek ? `${cycleWeekLabel(selectedWeek)} · ` : 'Ciclo · '}
-              <strong>{cycleVisitedCount}</strong> de {filteredDoctors.length} visitado{cycleVisitedCount !== 1 ? 's' : ''}
-            </span>
-            <button
-              type="button"
-              onClick={renewCycle}
-              disabled={cycleVisits.size === 0}
-              className="shrink-0 rounded border border-violet-400 bg-violet-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500 disabled:opacity-40"
-            >
-              🔄 Renovar Ciclo de Visitas
-            </button>
+          <div className="flex flex-col gap-2 rounded-lg border border-violet-500/40 bg-violet-950/30 px-3 py-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Semana que estou visitando">
+              <span className="text-[11px] text-violet-200 whitespace-nowrap shrink-0">Estou visitando na:</span>
+              {CYCLE_WEEKS.map((w) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => changeActiveWeek(activeWeek === w ? null : w)}
+                  aria-pressed={activeWeek === w}
+                  className={`px-2 py-1 rounded text-[10px] font-bold border whitespace-nowrap shrink-0 ${
+                    activeWeek === w
+                      ? 'border-violet-400 bg-violet-600 text-white'
+                      : 'border-violet-500/30 bg-slate-900 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {cycleWeekLabel(w)}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-violet-200">
+                {selectedWeek ? `${cycleWeekLabel(selectedWeek)} · ` : 'Ciclo · '}
+                <strong>{cycleVisitedCount}</strong> de {filteredDoctors.length} visitado{cycleVisitedCount !== 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={renewCycle}
+                disabled={cycleVisits.size === 0}
+                className="shrink-0 rounded border border-violet-400 bg-violet-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500 disabled:opacity-40"
+              >
+                🔄 Renovar Ciclo de Visitas
+              </button>
+            </div>
           </div>
         )}
 

@@ -21,7 +21,7 @@ import {
   clearDraft,
   formatMinutes,
 } from '@/utils';
-import { useGeolocation, GPS_ACTIVATE_LABEL } from '@/hooks/useGeolocation';
+import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
 import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
 import AgendaEditor from '@/components/AgendaEditor';
@@ -50,6 +50,8 @@ interface DoctorCardProps {
   cycleVisitedAt?: string | null;
   /** marca/desfaz a visita do ciclo; ausente = botão oculto */
   onToggleCycleVisit?: (docId: string, visited: boolean) => void;
+  /** semana ativa ("Estou visitando na"): o visitado entra nela automaticamente */
+  activeWeekLabel?: string | null;
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
@@ -82,6 +84,7 @@ function DoctorCard({
   onDragHandleTouchStart,
   cycleVisitedAt = null,
   onToggleCycleVisit,
+  activeWeekLabel = null,
 }: DoctorCardProps) {
   const draftKey = `edit_${doc.id}`;
   const hasDraft = hasSavedDraft(draftKey);
@@ -310,7 +313,6 @@ function DoctorCard({
             )}
             {isNew && <span className={`${tagCls} bg-green-900 text-green-400`}>NOVO</span>}
             {visited && <span className={`${tagCls} bg-emerald-600 text-white`}>✅ VISITADO</span>}
-            {cycleVisitedAt && <span className={`${tagCls} bg-emerald-600 text-white`}>✓ VISITADO NO CICLO</span>}
             {normalizeCycleWeeks(doc.cycle_weeks).map((w) => (
               <span key={`w${w}`} className={`${tagCls} bg-violet-900 text-violet-200`}>
                 {cycleWeekLabel(w)}
@@ -466,7 +468,17 @@ function DoctorCard({
             <button
               type="button"
               disabled={gps.loading}
-              onClick={() => gps.capture((url) => setField('map_link', url))}
+              onClick={() =>
+                gps.capture((url) => setField('map_link', url), {
+                  fallbackAddress: [
+                    [editForm.endereco, editForm.numero].filter(Boolean).join(', '),
+                    editForm.bairro,
+                    editForm.cidade,
+                  ]
+                    .filter(Boolean)
+                    .join(', '),
+                })
+              }
               className="bg-green-700 text-white border-none px-2 rounded text-[10px] font-semibold shrink-0 hover:bg-green-600 disabled:opacity-50"
             >
               {gps.loading ? '...' : 'GPS'}
@@ -485,6 +497,15 @@ function DoctorCard({
               className="self-start rounded border border-sky-500 bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
             >
               📍 {GPS_ACTIVATE_LABEL}
+            </button>
+          )}
+          {gps.fallbackUrl && (
+            <button
+              type="button"
+              onClick={gps.applyAddressFallback}
+              className="self-start rounded border border-slate-600 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:text-white"
+            >
+              🗺️ {GPS_ADDRESS_FALLBACK_LABEL}
             </button>
           )}
 
@@ -565,6 +586,7 @@ function DoctorCard({
               className="text-[12px] px-3 py-1.5 rounded border border-emerald-500 bg-emerald-600 text-white font-semibold hover:bg-emerald-500"
             >
               ✓ Marcar Visitado
+              {activeWeekLabel && <span className="ml-1 font-normal text-emerald-100">→ {activeWeekLabel}</span>}
             </button>
           )}
         </div>

@@ -53,13 +53,25 @@ export const cycleWeekLabel = (w: number): string => `${w}ª Sem`;
 /** Situação do médico no ciclo atual DESTE representante */
 export type CycleVisitStatus = 'pendente' | 'visitado';
 
-/** Linha de rep_cycle_visits (uma por representante + médico) */
+/**
+ * "Visitado" do ciclo = linha de doctor_statuses com este status, sem expiração
+ * (expires_at = null) e created_by = representante. Fica até "Renovar Ciclo".
+ */
+export const CYCLE_VISIT_STATUS: DoctorStatusType = 'visitado_hoje';
+
+/** Visita do ciclo já resolvida para a tela */
 export interface CycleVisit {
-  user_id: string;
   doctor_id: string;
-  status: 'visitado';
+  status: Extract<CycleVisitStatus, 'visitado'>;
   visited_at: string;
 }
+
+/**
+ * Semanas do ciclo ficam POR REPRESENTANTE em rep_route_order, uma linha por semana
+ * (day_of_week = "ciclo_w1".."ciclo_w5"). A lista é ao mesmo tempo quem está na semana
+ * e a ordem da rota dela.
+ */
+export const cycleWeekKey = (w: number): string => `ciclo_w${w}`;
 
 /** Semanas válidas, sem repetição e em ordem */
 export function normalizeCycleWeeks(weeks: readonly number[] | null | undefined): CycleWeek[] {
