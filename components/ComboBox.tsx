@@ -73,7 +73,7 @@ export default function ComboBox({
     setOpen(false);
   };
 
-  const pad = size === 'sm' ? 'p-1.5 text-[11px]' : 'p-2 text-xs';
+  const pad = size === 'sm' ? 'h-10 px-3 text-base sm:text-sm' : 'h-11 px-3.5 text-base sm:text-sm';
 
   return (
     <div ref={ref} className="relative min-w-0">
@@ -100,7 +100,7 @@ export default function ComboBox({
               pick(filtered[0]);
             }
           }}
-          className={`w-full min-w-0 box-border rounded-l border border-slate-700 bg-slate-800 text-slate-100 outline-hidden placeholder:text-slate-500 ${pad}`}
+          className={`w-full min-w-0 box-border rounded-l-xl border border-slate-700 bg-slate-950 text-slate-100 outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600 ${pad}`}
         />
         <button
           type="button"
@@ -110,7 +110,7 @@ export default function ComboBox({
             setQuery('');
             setOpen((o) => !o);
           }}
-          className="shrink-0 rounded-r border border-l-0 border-slate-700 bg-slate-800 px-2 text-[10px] text-slate-400 hover:text-white"
+          className="shrink-0 rounded-r-xl border border-l-0 border-slate-700 bg-slate-950 px-3 text-xs text-slate-400 hover:text-white"
         >
           ▾
         </button>

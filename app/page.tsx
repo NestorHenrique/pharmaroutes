@@ -1075,13 +1075,6 @@ export default function HomePage() {
   const openTargetStatus = () => {
     if (targetDoc) setSheetId(targetDoc.id);
   };
-  const startEdit = (id: string) => {
-    setSheetId(null);
-    setEditingId(id);
-    requestAnimationFrame(() =>
-      document.getElementById(`doc-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
-    );
-  };
 
   const activeFilterCount =
     (selectedCities.length > 0 ? 1 : 0) +
@@ -1453,7 +1446,7 @@ export default function HomePage() {
               className="text-left bg-transparent border-0 p-0 flex flex-col gap-1"
             >
               <span className="text-lg font-semibold uppercase text-white">{nextDoctor.descricao}</span>
-              <span className="text-sm text-slate-400">
+              <span className="text-sm uppercase text-slate-400">
                 {[nextDoctor.complemento || 'Consultório próprio', nextDoctor.bairro].filter(Boolean).join(' · ')}
               </span>
             </button>
@@ -1638,7 +1631,8 @@ export default function HomePage() {
             const url = navigationUrl(sheetDoc);
             return url ? () => openExternal(url) : null;
           })()}
-          onEdit={() => startEdit(sheetDoc.id)}
+          cityOptions={cityComboOptions}
+          onUpdateDoctor={updateDoctor}
           onDelete={() => {
             setSheetId(null);
             void deleteDoctor(sheetDoc);

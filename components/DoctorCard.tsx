@@ -313,7 +313,7 @@ function DoctorCard({
             {doc.descricao}
             {isNew && <span className="ml-1.5 align-middle text-[9px] font-bold text-green-400 no-underline">NOVO</span>}
           </span>
-          <span className={`text-xs truncate ${visitedAt ? 'text-emerald-400' : tone?.text ?? 'text-slate-400'}`}>
+          <span className={`text-xs uppercase truncate ${visitedAt ? 'text-emerald-400' : tone?.text ?? 'text-slate-400'}`}>
             {subline}
           </span>
         </button>

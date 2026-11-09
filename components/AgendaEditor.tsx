@@ -24,7 +24,7 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] text-slate-500 block">Dias e turnos de atendimento:</span>
+      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 block">Dias e turnos</span>
 
       <div className="flex gap-1">
         {OPCOES_DIAS.map((d) => {
@@ -35,10 +35,10 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
               key={d.value}
               aria-pressed={isChecked}
               onClick={() => toggleDay(d.value)}
-              className={`flex-1 py-1.5 rounded border text-[10px] font-semibold ${
+              className={`flex-1 h-10 rounded-xl text-xs font-semibold ${
                 isChecked
-                  ? 'border-blue-500 bg-blue-700 text-white'
-                  : 'border-slate-700 bg-slate-800 text-slate-500'
+                  ? 'border-0 bg-blue-600 text-white'
+                  : 'border border-slate-700 bg-slate-900 text-slate-400'
               }`}
             >
               {d.label}
@@ -48,11 +48,11 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
       </div>
 
       {agenda.length > 0 && (
-        <div className="flex flex-col gap-1 rounded-md border border-slate-800 bg-slate-950/60 p-1.5">
+        <div className="flex flex-col gap-1.5 rounded-xl border border-slate-800 bg-slate-900 p-2">
           {agenda.map((e) => (
             <div key={e.day} className="flex items-center gap-1.5">
-              <span className="w-8 shrink-0 text-[10px] font-bold text-blue-400">{dayLabel(e.day)}</span>
-              <div className="flex flex-1 gap-0.5">
+              <span className="w-9 shrink-0 text-xs font-bold text-slate-200">{dayLabel(e.day)}</span>
+              <div className="flex flex-1 gap-1">
                 {OPCOES_SHIFT.map((s) => {
                   const active = e.shift === s.value;
                   return (
@@ -61,10 +61,10 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
                       key={s.value}
                       aria-pressed={active}
                       onClick={() => setShift(e.day, s.value)}
-                      className={`flex-1 py-1 rounded text-[10px] border ${
+                      className={`flex-1 h-9 rounded-lg text-xs ${
                         active
-                          ? 'border-sky-500 bg-sky-500/20 text-sky-300 font-semibold'
-                          : 'border-slate-800 bg-slate-900 text-slate-500 hover:text-slate-300'
+                          ? 'border-0 bg-slate-100 text-slate-950 font-semibold'
+                          : 'border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200'
                       }`}
                     >
                       {s.label}

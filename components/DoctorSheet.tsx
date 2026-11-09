@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import type { Doctor, ExpectedVisit } from '@/types/doctor';
 import { cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
+import type { ComboOption } from '@/components/ComboBox';
+import DoctorEditForm from '@/components/DoctorEditForm';
 import { STATUS_META } from '@/types/status';
 import {
   buildWhatsAppUrl,
@@ -29,7 +31,9 @@ interface DoctorSheetProps {
   onSetStatus: (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string }) => void;
   onClearStatus: (doctorId: string, type: DoctorStatusType) => void;
   onNavigate: (() => void) | null;
-  onEdit: () => void;
+  /** edição dentro da própria ficha; ao salvar/cancelar volta para os status */
+  cityOptions: ComboOption[];
+  onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -72,11 +76,13 @@ export default function DoctorSheet({
   onSetStatus,
   onClearStatus,
   onNavigate,
-  onEdit,
+  cityOptions,
+  onUpdateDoctor,
   onDelete,
   onClose,
 }: DoctorSheetProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mode, setMode] = useState<'status' | 'edit'>('status');
   const [absence, setAbsence] = useState<DoctorStatusType | null>(null);
   const [returnDate, setReturnDate] = useState('');
 
@@ -133,8 +139,10 @@ export default function DoctorSheet({
               {doc.descricao}
               {isNewDoctor(doc) && <span className="ml-2 align-middle text-[10px] font-bold text-green-400">NOVO</span>}
             </h2>
-            {(doc.especialidade || doc.crm) && (
-              <span className="text-sm text-slate-400">
+            {mode === 'edit' ? (
+              <span className="text-sm font-semibold uppercase tracking-[0.08em] text-blue-400">Editando dados</span>
+            ) : (doc.especialidade || doc.crm) && (
+              <span className="text-sm uppercase text-slate-400">
                 {[doc.especialidade, doc.crm && `CRM ${doc.crm.toUpperCase()}${doc.uf ? `/${doc.uf.toUpperCase()}` : ''}`]
                   .filter(Boolean)
                   .join(' · ')}
@@ -142,6 +150,7 @@ export default function DoctorSheet({
             )}
           </div>
           <div className="relative flex gap-1.5 shrink-0">
+            {mode === 'status' && (
             <button
               type="button"
               aria-label="Mais opções"
@@ -155,6 +164,7 @@ export default function DoctorSheet({
                 <circle cx="19" cy="12" r="1.8" />
               </svg>
             </button>
+            )}
             <button
               type="button"
               aria-label="Fechar"
@@ -171,7 +181,7 @@ export default function DoctorSheet({
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
-                    onEdit();
+                    setMode('edit');
                   }}
                   className="text-left px-3 py-3 rounded-lg bg-transparent text-sm text-slate-100 hover:bg-slate-800"
                 >
@@ -192,6 +202,15 @@ export default function DoctorSheet({
           </div>
         </div>
 
+        {mode === 'edit' ? (
+          <DoctorEditForm
+            doc={doc}
+            cityOptions={cityOptions}
+            onUpdateDoctor={onUpdateDoctor}
+            onDone={() => setMode('status')}
+          />
+        ) : (
+          <>
         {/* Dias, semanas */}
         {(agenda.length > 0 || weeks.length > 0) && (
           <div className="flex gap-1.5 flex-wrap">
@@ -371,6 +390,8 @@ export default function DoctorSheet({
         </div>
         {!visitedAt && activeWeekLabel && (
           <span className="-mt-2 text-center text-xs text-slate-500">O visitado entra na {activeWeekLabel}</span>
+        )}
+          </>
         )}
       </div>
     </div>
