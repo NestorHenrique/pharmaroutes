@@ -1,9 +1,22 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 export type GpsStatus = { type: 'ok' | 'error'; text: string } | null;
 
+/** Texto do botão exibido quando o iOS bloqueia o pedido no modo standalone */
+export const GPS_ACTIVATE_LABEL = 'Tocar para Ativar GPS';
+
+/** App aberto pela Tela de Início (iOS `navigator.standalone` ou display-mode: standalone) */
+export function isStandalone(): boolean {
+  if (typeof window === 'undefined') return false;
+  const nav = window.navigator as Navigator & { standalone?: boolean };
+  return Boolean(nav.standalone) || window.matchMedia?.('(display-mode: standalone)').matches === true;
+}
+
 /** 1ª tentativa: GPS preciso, posição nova, até 15 s (sinal fraco em hospital/clínica) */
 const HIGH_ACCURACY: PositionOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+/** PWA standalone: 20 s e aceita posição de até 10 s (o iOS demora mais para responder) */
+const STANDALONE_HIGH: PositionOptions = { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 };
+const STANDALONE_LOW: PositionOptions = { enableHighAccuracy: false, timeout: 20000, maximumAge: 10000 };
 /** 2ª tentativa: rede/Wi-Fi, aceita posição de até 1 min, mais 15 s */
 const LOW_ACCURACY: PositionOptions = { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 };
 
@@ -65,8 +78,17 @@ function errorText(code: number | undefined): string {
 export function useGeolocation() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<GpsStatus>(null);
+  /** true = permissão negada no modo standalone: mostrar o botão GPS_ACTIVATE_LABEL */
+  const [needsActivation, setNeedsActivation] = useState(false);
+  const lastSuccess = useRef<((url: string) => void) | null>(null);
 
+  /** SEMPRE chamar direto de um onClick/toque: nunca em useEffect ou na montagem */
   const capture = useCallback((onSuccess: (url: string) => void) => {
+    lastSuccess.current = onSuccess;
+    setNeedsActivation(false);
+    const standalone = isStandalone();
+    const high = standalone ? STANDALONE_HIGH : HIGH_ACCURACY;
+    const low = standalone ? STANDALONE_LOW : LOW_ACCURACY;
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setStatus({ type: 'error', text: 'Geolocalização não suportada neste aparelho.' });
       return;
@@ -90,16 +112,22 @@ export function useGeolocation() {
     };
 
     // A 1ª chamada acontece ainda dentro do toque no botão (exigência do iOS)
-    getPosition(HIGH_ACCURACY)
+    getPosition(high)
       .then((pos) => done(pos, false))
       .catch((err: { code?: number }) => {
         if (err?.code === PERMISSION_DENIED) {
-          setStatus({ type: 'error', text: errorText(err.code) });
+          if (standalone) {
+            // Não trava a tela: oferece um novo pedido iniciado por toque
+            setNeedsActivation(true);
+            setStatus({ type: 'error', text: `Localização não liberada. ${GPS_ACTIVATE_LABEL}.` });
+          } else {
+            setStatus({ type: 'error', text: errorText(err.code) });
+          }
           setLoading(false);
           return;
         }
         // Sinal fraco ou indisponível: tenta de novo sem alta precisão
-        getPosition(LOW_ACCURACY)
+        getPosition(low)
           .then((pos) => done(pos, true))
           .catch((err2: { code?: number }) => {
             setStatus({ type: 'error', text: errorText(err2?.code) });
@@ -108,5 +136,10 @@ export function useGeolocation() {
       });
   }, []);
 
-  return { loading, status, capture };
+  /** Novo pedido a partir do botão "Tocar para Ativar GPS" (é um toque novo do usuário) */
+  const retry = useCallback(() => {
+    if (lastSuccess.current) capture(lastSuccess.current);
+  }, [capture]);
+
+  return { loading, status, capture, needsActivation, retry };
 }
