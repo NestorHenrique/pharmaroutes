@@ -57,6 +57,9 @@ const DUPLICATE_MSG = 'Médico já cadastrado na base de dados';
 const SORT_MODE_KEY = 'pharma_sort_mode';
 const CYCLE_WEEK_KEY = 'pharma_cycle_week';
 const ACTIVE_WEEK_KEY = 'pharma_active_week';
+const THEME_KEY = 'pharma_theme';
+
+type Theme = 'onix' | 'marfim';
 
 function endOfToday(): string {
   const d = new Date();
@@ -187,6 +190,21 @@ export default function HomePage() {
     const { data: listener } = supabase.auth.onAuthStateChange((_ev, s) => setSession(s));
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  /* Tema: Ônix (escuro, padrão) ou Marfim (claro). O layout já aplicou o salvo antes da pintura. */
+  const [theme, setTheme] = useState<Theme>('onix');
+  useEffect(() => {
+    if (document.documentElement.getAttribute('data-theme') === 'marfim') setTheme('marfim');
+  }, []);
+  const toggleTheme = () => {
+    const next: Theme = theme === 'onix' ? 'marfim' : 'onix';
+    setTheme(next);
+    document.documentElement.setAttribute('data-theme', next);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'marfim' ? '#F6F4EF' : '#0B0B0D');
+    try {
+      localStorage.setItem(THEME_KEY, next);
+    } catch { /* ignore */ }
+  };
 
   /* App pronto: avisa o script de recuperação do layout (tela branca no iOS) */
   useEffect(() => {
@@ -1027,6 +1045,15 @@ export default function HomePage() {
               className="bg-blue-600 text-white border-none px-2.5 py-1 rounded text-xs font-semibold hover:bg-blue-500"
             >
               + Novo
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={theme === 'onix' ? 'Mudar para o tema claro' : 'Mudar para o tema escuro'}
+              title={theme === 'onix' ? 'Tema claro (Marfim)' : 'Tema escuro (Ônix)'}
+              className="bg-transparent border border-slate-700 text-slate-300 px-2 py-1 rounded text-[11px] hover:text-white"
+            >
+              {theme === 'onix' ? '☀️' : '🌙'}
             </button>
             <button
               onClick={() => setShowProfile(true)}

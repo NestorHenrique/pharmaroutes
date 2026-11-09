@@ -1,14 +1,17 @@
 import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
+
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
 // Não bloqueamos o zoom do usuário (acessibilidade, WCAG 1.4.4).
 // O zoom automático do iOS ao focar campos é evitado com inputs de 16px no mobile.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#020617',
-  // Fundo padrão escuro no WebKit: sem "flash" branco enquanto o CSS ainda não chegou
-  colorScheme: 'dark',
+  themeColor: '#0B0B0D',
+  // Escuro por padrão (Ônix); o tema claro (Marfim) é escolhido no app
+  colorScheme: 'dark light',
 };
 
 export const metadata: Metadata = {
@@ -16,7 +19,20 @@ export const metadata: Metadata = {
   description: 'Sistema de Roteiro de Visitas',
 };
 
-const APP_BG = '#020617';
+const APP_BG = '#0B0B0D';
+
+/** Tema salvo no aparelho, aplicado ANTES da primeira pintura (sem piscar o outro tema) */
+const THEME_SCRIPT = `(function () {
+  try {
+    var t = localStorage.getItem('pharma_theme');
+    if (t !== 'marfim') t = 'onix';
+    document.documentElement.setAttribute('data-theme', t);
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', t === 'marfim' ? '#F6F4EF' : '#0B0B0D');
+  } catch (e) {
+    document.documentElement.setAttribute('data-theme', 'onix');
+  }
+})();`;
 
 /**
  * Recuperação da "tela branca" no iOS (app da Tela de Início).
@@ -63,11 +79,18 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="pt-BR" className="bg-slate-950" style={{ backgroundColor: APP_BG }}>
+    <html
+      lang="pt-BR"
+      data-theme="onix"
+      className={`${inter.variable} bg-slate-950`}
+      style={{ backgroundColor: 'var(--background)' }}
+      suppressHydrationWarning
+    >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <script dangerouslySetInnerHTML={{ __html: RECOVERY_SCRIPT }} />
       </head>
-      <body className="min-h-dvh bg-slate-950 text-slate-100 antialiased" style={{ backgroundColor: APP_BG }}>
+      <body className="min-h-dvh bg-slate-950 text-slate-100 antialiased" style={{ backgroundColor: 'var(--background)' }}>
         {children}
       </body>
     </html>
