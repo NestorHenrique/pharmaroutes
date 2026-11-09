@@ -41,6 +41,7 @@ import { useRepProfile } from '@/hooks/useRepProfile';
 import { useDoctorFilters } from '@/hooks/useDoctorFilters';
 import type { SortMode } from '@/hooks/useDoctorFilters';
 import DoctorCard from '@/components/DoctorCard';
+import DoctorSheet from '@/components/DoctorSheet';
 import AddDoctorForm from '@/components/AddDoctorForm';
 import ProfileSettings from '@/components/ProfileSettings';
 import CityFilter from '@/components/CityFilter';
@@ -985,9 +986,13 @@ export default function HomePage() {
 
   /* ═══════════════════ Layout: ficha aberta, próximo, barra de ações ═══════════════════ */
 
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** ficha aberta (sobe de baixo) e card em edição */
+  const [sheetId, setSheetId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const toggleExpand = useCallback((id: string) => setExpandedId((cur) => (cur === id ? null : id)), []);
+  const openSheet = useCallback((id: string) => setSheetId(id), []);
+  const closeSheet = useCallback(() => setSheetId(null), []);
+  const endEdit = useCallback(() => setEditingId(null), []);
 
   /** Próximo da rota: o primeiro do bloco do meio ainda não visitado */
   const nextDoctor = useMemo(
@@ -995,7 +1000,8 @@ export default function HomePage() {
     [isCategoryMode, feed.middle, cycleVisits],
   );
   /** A barra de baixo age sobre a ficha aberta; sem ficha aberta, sobre o próximo */
-  const targetDoc = (expandedId ? sortedDoctors.find((d) => d.id === expandedId) : undefined) ?? nextDoctor;
+  const sheetDoc = sheetId ? doctorsWithWeeks.find((d) => d.id === sheetId) ?? null : null;
+  const targetDoc = sheetDoc ?? nextDoctor;
   const targetVisited = targetDoc
     ? isCategoryMode
       ? (liveStatusMap[targetDoc.id] || []).some((s) => s.status_type === 'visitado_hoje')
@@ -1003,20 +1009,31 @@ export default function HomePage() {
     : false;
   const targetNav = targetDoc ? navigationUrl(targetDoc) : null;
 
-  const toggleTargetVisited = () => {
-    if (!targetDoc) return;
+  /** Visitado do ciclo (rota) ou do dia (PSM/SAMU/Hospital) */
+  const visitedAtOf = (id: string): string | null =>
+    isCategoryMode
+      ? (liveStatusMap[id] || []).find((s) => s.status_type === 'visitado_hoje')?.created_at ?? null
+      : cycleVisits.get(id) ?? null;
+  const toggleVisited = (id: string) => {
+    const visited = Boolean(visitedAtOf(id));
     if (isCategoryMode) {
-      if (targetVisited) void clearDoctorStatus(targetDoc.id, 'visitado_hoje');
-      else void setDoctorStatus(targetDoc.id, 'visitado_hoje');
+      if (visited) void clearDoctorStatus(id, 'visitado_hoje');
+      else void setDoctorStatus(id, 'visitado_hoje');
     } else {
-      toggleCycleVisit(targetDoc.id, !targetVisited);
+      toggleCycleVisit(id, !visited);
     }
   };
+  const toggleTargetVisited = () => {
+    if (targetDoc) toggleVisited(targetDoc.id);
+  };
   const openTargetStatus = () => {
-    if (!targetDoc) return;
-    setExpandedId(targetDoc.id);
+    if (targetDoc) setSheetId(targetDoc.id);
+  };
+  const startEdit = (id: string) => {
+    setSheetId(null);
+    setEditingId(id);
     requestAnimationFrame(() =>
-      document.getElementById(`doc-${targetDoc.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }),
+      document.getElementById(`doc-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
     );
   };
 
@@ -1048,8 +1065,10 @@ export default function HomePage() {
         cycleVisitedAt={isCategoryMode ? null : cycleVisits.get(doc.id) ?? null}
         onToggleCycleVisit={isCategoryMode ? undefined : toggleCycleVisit}
         activeWeekLabel={activeWeek ? cycleWeekLabel(activeWeek) : null}
-        expanded={expandedId === doc.id}
-        onToggleExpand={toggleExpand}
+        expanded={editingId === doc.id}
+        onToggleExpand={openSheet}
+        autoEdit={editingId === doc.id}
+        onEditEnd={endEdit}
       />
     );
     if (!manual) return card;
@@ -1150,11 +1169,6 @@ export default function HomePage() {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <circle cx="12" cy="8" r="4" />
                 <path d="M4 21a8 8 0 0 1 16 0" />
-              </svg>
-            </button>
-            <button type="button" onClick={handleLogout} aria-label="Sair" className={iconBtn}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3" />
               </svg>
             </button>
           </div>
@@ -1331,10 +1345,16 @@ export default function HomePage() {
       {showProfile && profile && userId && (
         <ProfileSettings
           userId={userId}
+          email={session.user.email ?? ''}
           profile={profile}
           cities={cityLabels}
           onSave={saveProfile}
           onClose={() => setShowProfile(false)}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onLogout={handleLogout}
+          portfolioActive={portfolioActive}
+          onTogglePortfolio={() => saveProfile({ show_all: !profile.show_all })}
         />
       )}
 
@@ -1364,7 +1384,7 @@ export default function HomePage() {
             </div>
             <button
               type="button"
-              onClick={() => toggleExpand(nextDoctor.id)}
+              onClick={() => openSheet(nextDoctor.id)}
               className="text-left bg-transparent border-0 p-0 flex flex-col gap-1"
             >
               <span className="text-lg font-semibold text-white">{nextDoctor.descricao}</span>
@@ -1379,21 +1399,16 @@ export default function HomePage() {
                   return e ? `${formatMinutes(e.startMinutes)} esperado` : 'Sem horário médio ainda';
                 })()}
               </span>
-              {navigationUrl(nextDoctor) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const url = navigationUrl(nextDoctor);
-                    if (url) openExternal(url);
-                  }}
-                  className="h-10 px-4 rounded-xl border-0 bg-blue-600 text-white text-sm font-bold flex items-center gap-1.5 hover:bg-blue-500"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M3 11l18-8-8 18-2-8-8-2z" />
-                  </svg>
-                  Ir agora
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => toggleVisited(nextDoctor.id)}
+                className="h-11 px-5 rounded-xl border-0 bg-emerald-600 text-white text-sm font-bold flex items-center gap-1.5 hover:bg-emerald-500"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 12l5 5L20 7" />
+                </svg>
+                Visitado
+              </button>
             </div>
           </section>
         )}
@@ -1478,7 +1493,7 @@ export default function HomePage() {
       </main>
 
       {/* Barra de ações fixa (no alcance do polegar) */}
-      {targetDoc && (
+      {targetDoc && !sheetDoc && (
         <nav
           aria-label="Ações rápidas"
           className="fixed inset-x-0 bottom-0 z-30 px-3 pt-2"
@@ -1527,6 +1542,30 @@ export default function HomePage() {
             </div>
           </div>
         </nav>
+      )}
+
+      {/* Ficha do médico (sobe de baixo) */}
+      {sheetDoc && (
+        <DoctorSheet
+          doc={sheetDoc}
+          statuses={liveStatusMap[sheetDoc.id] || []}
+          expected={feed.expected.get(sheetDoc.id) ?? null}
+          visitedAt={visitedAtOf(sheetDoc.id)}
+          activeWeekLabel={!isCategoryMode && activeWeek ? cycleWeekLabel(activeWeek) : null}
+          onToggleVisited={() => toggleVisited(sheetDoc.id)}
+          onSetStatus={setDoctorStatus}
+          onClearStatus={clearDoctorStatus}
+          onNavigate={(() => {
+            const url = navigationUrl(sheetDoc);
+            return url ? () => openExternal(url) : null;
+          })()}
+          onEdit={() => startEdit(sheetDoc.id)}
+          onDelete={() => {
+            setSheetId(null);
+            void deleteDoctor(sheetDoc);
+          }}
+          onClose={closeSheet}
+        />
       )}
 
       {/* Prévia do card sendo arrastado (segue o dedo) */}

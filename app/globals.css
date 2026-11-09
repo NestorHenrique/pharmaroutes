@@ -300,3 +300,13 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Ficha e painéis que sobem de baixo para cima */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

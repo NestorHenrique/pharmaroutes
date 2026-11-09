@@ -67,7 +67,7 @@ const DEFAULTS: FormState = {
 };
 
 const inputCls =
-  'w-full min-w-0 box-border p-2 rounded border border-slate-700 bg-slate-800 text-slate-100 text-xs outline-hidden placeholder:text-slate-500';
+  'w-full min-w-0 box-border h-11 px-3 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
 
 /* ── Component ── */
 
@@ -158,9 +158,9 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
   const code = specialtyCode(form.especialidade);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-lg p-3.5 flex flex-col gap-2.5">
+    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
       <div className="flex justify-between items-center">
-        <h3 className="text-sm font-semibold text-white m-0">Novo Médico</h3>
+        <h3 className="text-lg font-bold tracking-tight text-white m-0">Novo médico</h3>
         {restored && (
           <span className="text-[10px] text-amber-400 bg-amber-900/30 px-1.5 py-0.5 rounded">
             Rascunho restaurado
@@ -362,7 +362,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         <button
           type="button"
           onClick={handleCancel}
-          className="px-3 py-1.5 bg-slate-700 text-slate-300 border-none rounded text-xs hover:bg-slate-600"
+          className="h-11 px-4 bg-transparent text-slate-300 border border-slate-700 rounded-xl text-sm hover:text-white"
         >
           {duplicate ? 'Fechar' : 'Cancelar'}
         </button>
@@ -370,7 +370,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
           type="button"
           disabled={saving}
           onClick={handleSubmit}
-          className={`px-3 py-1.5 bg-blue-600 text-white border-none rounded text-xs font-semibold hover:bg-blue-500 ${
+          className={`h-11 px-5 bg-blue-600 text-white border-none rounded-xl text-sm font-bold hover:bg-blue-500 ${
             saving ? 'opacity-70' : ''
           }`}
         >

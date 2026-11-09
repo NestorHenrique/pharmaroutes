@@ -56,6 +56,10 @@ interface DoctorCardProps {
   expanded?: boolean;
   /** abre/fecha o card; ausente = sempre aberto */
   onToggleExpand?: (docId: string) => void;
+  /** abre direto no modo edição (menu ⋯ › Editar da ficha) */
+  autoEdit?: boolean;
+  /** avisado ao salvar ou cancelar a edição */
+  onEditEnd?: () => void;
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
@@ -67,7 +71,7 @@ const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
 type EditForm = Partial<Doctor> & { agenda: AgendaEntry[] };
 
 const inputCls =
-  'w-full min-w-0 box-border p-1.5 rounded border border-slate-700 bg-slate-800 text-slate-100 text-[11px] outline-hidden placeholder:text-slate-500';
+  'w-full min-w-0 box-border h-10 px-3 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
 
 /** Mesmo formato para NOVO, especialidade, dias e categoria */
 const tagCls = 'text-[9px] px-1 py-px rounded-sm font-bold whitespace-nowrap';
@@ -108,6 +112,8 @@ function DoctorCard({
   activeWeekLabel = null,
   expanded = true,
   onToggleExpand,
+  autoEdit = false,
+  onEditEnd,
 }: DoctorCardProps) {
   const draftKey = `edit_${doc.id}`;
   const hasDraft = hasSavedDraft(draftKey);
@@ -180,7 +186,14 @@ function DoctorCard({
   const handleCancelEdit = () => {
     clearDraft(draftKey);
     setIsEditing(false);
+    onEditEnd?.();
   };
+
+  // Aberto pelo menu ⋯ › Editar da ficha: entra direto na edição
+  useEffect(() => {
+    if (autoEdit && !isEditing) handleStartEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoEdit]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -207,6 +220,7 @@ function DoctorCard({
       if (ok) {
         clearDraft(draftKey);
         setIsEditing(false);
+        onEditEnd?.();
       } else {
         setFormError('Não foi possível salvar. Tente novamente.');
       }
@@ -558,7 +572,7 @@ function DoctorCard({
 
       {/* ── Edição / Visualização ── */}
       {isEditing ? (
-        <div className="bg-slate-950 p-2.5 rounded-md border border-slate-800 flex flex-col gap-2">
+        <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-2.5">
           <AgendaEditor value={editForm.agenda} onChange={(a) => setField('agenda', a)} />
 
           <div>
@@ -684,14 +698,14 @@ function DoctorCard({
           {formError && <div role="alert" className="text-[11px] text-red-400">{formError}</div>}
 
           <div className="flex gap-1.5 justify-end mt-0.5">
-            <button type="button" onClick={handleCancelEdit} className="px-2.5 py-1 bg-slate-700 text-slate-300 border-none rounded text-[11px] hover:bg-slate-600">
+            <button type="button" onClick={handleCancelEdit} className="h-10 px-4 bg-transparent text-slate-300 border border-slate-700 rounded-xl text-sm hover:text-white">
               Cancelar
             </button>
             <button
               type="button"
               disabled={saving}
               onClick={handleSave}
-              className={`px-2.5 py-1 bg-blue-600 text-white border-none rounded text-[11px] font-semibold hover:bg-blue-500 ${saving ? 'opacity-70' : ''}`}
+              className={`h-10 px-5 bg-blue-600 text-white border-none rounded-xl text-sm font-bold hover:bg-blue-500 ${saving ? 'opacity-70' : ''}`}
             >
               {saving ? 'Salvando...' : 'Salvar'}
             </button>
