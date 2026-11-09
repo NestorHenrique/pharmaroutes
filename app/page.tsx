@@ -74,6 +74,9 @@ function upsertStatus(map: Record<string, DoctorStatus[]>, s: DoctorStatus): Rec
   return { ...map, [s.doctor_id]: [...others, s] };
 }
 
+/** Ordem exata dentro do bloco do topo */
+const TOP_ORDER: DoctorStatusType[] = ['representante_no_consultorio', 'ultimo_paciente', 'aguardando_medico'];
+
 function SectionTitle({ tone, children }: { tone: string; children: ReactNode }) {
   return <div className={`text-[10px] font-bold uppercase tracking-wide mt-1 ${tone}`}>{children}</div>;
 }
@@ -560,7 +563,23 @@ export default function HomePage() {
     categoryMode: isCategoryMode,
   });
   const { middleIds } = feed;
-  const sortedDoctors = useMemo(() => [...feed.top, ...feed.middle, ...feed.bottom], [feed]);
+  /* Sub-hierarquia do TOPO: Rep. no Consultório → Último Paciente → Aguardando Médico.
+   * Dentro da mesma faixa vale a ordem que o hook já entregou (marcado mais recentemente primeiro). */
+  const topDoctors = useMemo(() => {
+    const rank = (id: string) =>
+      Math.min(
+        ...(liveStatusMap[id] || []).map((s) => {
+          const i = TOP_ORDER.indexOf(s.status_type);
+          return i < 0 ? TOP_ORDER.length : i;
+        }),
+        TOP_ORDER.length,
+      );
+    return [...feed.top].sort((a, b) => rank(a.id) - rank(b.id));
+  }, [feed.top, liveStatusMap]);
+  const sortedDoctors = useMemo(
+    () => [...topDoctors, ...feed.middle, ...feed.bottom],
+    [topDoctors, feed.middle, feed.bottom],
+  );
 
   const applyMiddleOrder = useCallback(
     (visible: string[]) => {
@@ -604,6 +623,52 @@ export default function HomePage() {
     [middleIds, applyMiddleOrder],
   );
 
+  /* Toque (iPhone/Android/PWA): arrasta pela alça ☰ e solta sobre outro card do bloco do meio */
+  const dropRef = useRef(dropOn);
+  useEffect(() => {
+    dropRef.current = dropOn;
+  }, [dropOn]);
+
+  const startTouchDrag = useCallback((docId: string) => {
+    dragId.current = docId;
+    setDragOverId(docId);
+    let overId: string | null = docId;
+
+    const cardAt = (x: number, y: number): string | null => {
+      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-drag-id]');
+      return el?.dataset.dragId ?? null;
+    };
+    const onMoveTouch = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (!t) return;
+      e.preventDefault(); // impede o scroll da página durante o arraste
+      const hit = cardAt(t.clientX, t.clientY);
+      if (hit && hit !== overId) {
+        overId = hit;
+        setDragOverId(hit);
+      }
+      // rolagem automática perto das bordas
+      const edge = 70;
+      if (t.clientY < edge) window.scrollBy(0, -12);
+      else if (t.clientY > window.innerHeight - edge) window.scrollBy(0, 12);
+    };
+    const finish = (commit: boolean) => {
+      document.removeEventListener('touchmove', onMoveTouch);
+      document.removeEventListener('touchend', onEnd);
+      document.removeEventListener('touchcancel', onCancel);
+      if (commit && overId) dropRef.current(overId);
+      else {
+        dragId.current = null;
+        setDragOverId(null);
+      }
+    };
+    const onEnd = () => finish(true);
+    const onCancel = () => finish(false);
+    document.addEventListener('touchmove', onMoveTouch, { passive: false });
+    document.addEventListener('touchend', onEnd);
+    document.addEventListener('touchcancel', onCancel);
+  }, []);
+
   const middleIndex = useMemo(() => new Map(middleIds.map((id, i) => [id, i])), [middleIds]);
 
   const visitedCount = isCategoryMode
@@ -629,6 +694,7 @@ export default function HomePage() {
         cityOptions={cityComboOptions}
         expected={sortMode === 'historico' ? feed.expected.get(doc.id) ?? null : null}
         onMove={manual ? moveDoctor : undefined}
+        onDragHandleTouchStart={manual ? startTouchDrag : undefined}
         isFirst={manual && pos === 0}
         isLast={manual && pos === middleIds.length - 1}
       />
@@ -637,6 +703,7 @@ export default function HomePage() {
     return (
       <div
         key={doc.id}
+        data-drag-id={doc.id}
         draggable
         onDragStart={(e) => {
           dragId.current = doc.id;
@@ -876,12 +943,12 @@ export default function HomePage() {
           <div className="text-center text-slate-500 text-sm py-12">Nenhum médico encontrado para o filtro selecionado.</div>
         ) : (
           <>
-            {feed.top.length > 0 && (
-              <SectionTitle tone="text-red-400">🔥 Em atendimento agora · {feed.top.length}</SectionTitle>
+            {topDoctors.length > 0 && (
+              <SectionTitle tone="text-red-400">🔥 Em atendimento agora · {topDoctors.length}</SectionTitle>
             )}
-            {feed.top.map((doc) => renderCard(doc, 'top'))}
+            {topDoctors.map((doc) => renderCard(doc, 'top'))}
 
-            {feed.middle.length > 0 && (feed.top.length > 0 || feed.bottom.length > 0) && (
+            {feed.middle.length > 0 && (topDoctors.length > 0 || feed.bottom.length > 0) && (
               <SectionTitle tone="text-sky-400">🧭 Rota do dia · {feed.middle.length}</SectionTitle>
             )}
             {feed.middle.map((doc) => renderCard(doc, 'middle'))}

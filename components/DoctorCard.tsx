@@ -45,6 +45,8 @@ interface DoctorCardProps {
   tier?: RouteTier;
   /** modo "Ordem manual": setas para subir/descer na rota */
   onMove?: (docId: string, dir: -1 | 1) => void;
+  /** alça de arraste por toque (iOS/Android/PWA) */
+  onDragHandleTouchStart?: (docId: string) => void;
   isFirst?: boolean;
   isLast?: boolean;
 }
@@ -77,6 +79,7 @@ function DoctorCard({
   expected,
   tier = 'middle',
   onMove,
+  onDragHandleTouchStart,
   isFirst,
   isLast,
 }: DoctorCardProps) {
@@ -328,6 +331,17 @@ function DoctorCard({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {onDragHandleTouchStart && !isEditing && (
+            <button
+              type="button"
+              aria-label="Arrastar para reordenar"
+              onTouchStart={() => onDragHandleTouchStart(doc.id)}
+              style={{ touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+              className="select-none rounded border border-slate-700 bg-slate-800 px-2 py-2 text-sm leading-none text-slate-300 active:bg-sky-700"
+            >
+              ☰
+            </button>
+          )}
           {onMove && !isEditing && (
             <div className="flex flex-col">
               <button
