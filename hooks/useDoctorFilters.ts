@@ -165,6 +165,8 @@ interface Params {
   /** ordem manual DESTE representante para o dia (rep_route_order) */
   manualOrder: readonly string[] | undefined;
   categoryMode: boolean;
+  /** visitas do ciclo deste representante: doctor_id → visited_at */
+  cycleVisits?: ReadonlyMap<string, string>;
 }
 
 export interface DoctorFeed {
@@ -185,6 +187,7 @@ export function useDoctorFilters({
   sortMode,
   manualOrder,
   categoryMode,
+  cycleVisits,
 }: Params): DoctorFeed {
   const windows = useMemo(() => computeHistoricalWindows(events, routeDay, now), [events, routeDay, now]);
 
@@ -205,8 +208,14 @@ export function useDoctorFilters({
 
     for (const d of doctors) {
       const list = statusMap[d.id] ?? [];
-      const tier = classifyTier(list, categoryMode);
-      const ts = list.length ? Math.max(...list.map((s) => new Date(s.created_at).getTime())) : 0;
+      let tier = classifyTier(list, categoryMode);
+      let ts = list.length ? Math.max(...list.map((s) => new Date(s.created_at).getTime())) : 0;
+      // Visitado no ciclo: afunda para o fim (status ativo do topo ainda vence)
+      const visitedAt = cycleVisits?.get(d.id);
+      if (visitedAt && tier === 'middle') {
+        tier = 'bottom';
+        ts = new Date(visitedAt).getTime();
+      }
       if (tier === 'top') top.push({ d, ts });
       else if (tier === 'bottom') bottom.push({ d, ts });
       else middle.push(d);
@@ -237,5 +246,5 @@ export function useDoctorFilters({
       middleIds: middle.map((d) => d.id),
       expected,
     };
-  }, [doctors, statusMap, categoryMode, sortMode, expected, manualOrder]);
+  }, [doctors, statusMap, categoryMode, sortMode, expected, manualOrder, cycleVisits]);
 }

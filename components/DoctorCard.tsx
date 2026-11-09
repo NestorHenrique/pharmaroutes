@@ -2,6 +2,7 @@
 
 import { memo, useState, useEffect } from 'react';
 import type { AgendaEntry, Doctor, ExpectedVisit, RouteTier } from '@/types/doctor';
+import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { STATUS_META, UNAVAILABLE_STATUSES } from '@/types/status';
 import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
@@ -45,6 +46,10 @@ interface DoctorCardProps {
   tier?: RouteTier;
   /** alça de arraste por toque (iOS/Android/PWA) */
   onDragHandleTouchStart?: (docId: string, clientY: number) => void;
+  /** ciclo de 5 semanas: quando este representante marcou visitado (null = pendente) */
+  cycleVisitedAt?: string | null;
+  /** marca/desfaz a visita do ciclo; ausente = botão oculto */
+  onToggleCycleVisit?: (docId: string, visited: boolean) => void;
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
@@ -75,6 +80,8 @@ function DoctorCard({
   expected,
   tier = 'middle',
   onDragHandleTouchStart,
+  cycleVisitedAt = null,
+  onToggleCycleVisit,
 }: DoctorCardProps) {
   const draftKey = `edit_${doc.id}`;
   const hasDraft = hasSavedDraft(draftKey);
@@ -136,6 +143,7 @@ function DoctorCard({
       email: doc.email || '',
       map_link: doc.map_link || '',
       categoria: doc.categoria || 'consultorio',
+      cycle_weeks: normalizeCycleWeeks(doc.cycle_weeks),
     };
     // Rascunhos antigos (sem agenda) caem no valor atual do médico
     setEditForm(draft ? { ...base, ...draft, agenda: draft.agenda ?? base.agenda } : base);
@@ -165,6 +173,9 @@ function DoctorCard({
         map_link: editForm.map_link ?? '',
         categoria: editForm.categoria,
       };
+      // Semanas do ciclo: só envia se mudou (não quebra a edição antes da migração v5)
+      const weeks = normalizeCycleWeeks(editForm.cycle_weeks);
+      if (weeks.join(',') !== normalizeCycleWeeks(doc.cycle_weeks).join(',')) payload.cycle_weeks = weeks;
       const ok = await onUpdateDoctor(doc.id, payload, doc.descricao || '');
       if (ok) {
         clearDraft(draftKey);
@@ -299,6 +310,12 @@ function DoctorCard({
             )}
             {isNew && <span className={`${tagCls} bg-green-900 text-green-400`}>NOVO</span>}
             {visited && <span className={`${tagCls} bg-emerald-600 text-white`}>✅ VISITADO</span>}
+            {cycleVisitedAt && <span className={`${tagCls} bg-emerald-600 text-white`}>✓ VISITADO NO CICLO</span>}
+            {normalizeCycleWeeks(doc.cycle_weeks).map((w) => (
+              <span key={`w${w}`} className={`${tagCls} bg-violet-900 text-violet-200`}>
+                {cycleWeekLabel(w)}
+              </span>
+            ))}
             {doc.categoria && doc.categoria !== 'consultorio' && (
               <span className={`${tagCls} bg-purple-900 text-purple-300`}>{doc.categoria.toUpperCase()}</span>
             )}
@@ -384,6 +401,31 @@ function DoctorCard({
       {isEditing ? (
         <div className="bg-slate-950 p-2.5 rounded-md border border-slate-800 flex flex-col gap-2">
           <AgendaEditor value={editForm.agenda} onChange={(a) => setField('agenda', a)} />
+
+          <div>
+            <span className="text-[10px] text-slate-500 block mb-[3px]">Semanas do ciclo:</span>
+            <div className="flex gap-1 flex-wrap" role="group" aria-label="Semanas do ciclo">
+              {CYCLE_WEEKS.map((w) => {
+                const current = editForm.cycle_weeks ?? [];
+                const on = current.includes(w);
+                return (
+                  <button
+                    key={w}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setField('cycle_weeks', normalizeCycleWeeks(on ? current.filter((x) => x !== w) : [...current, w]))
+                    }
+                    className={`px-2 py-1 rounded text-[10px] font-semibold border ${
+                      on ? 'border-violet-500 bg-violet-500/20 text-violet-200' : 'border-slate-700 bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    {cycleWeekLabel(w)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
             <ComboBox
@@ -495,6 +537,36 @@ function DoctorCard({
       {!isEditing && doc.observacoes && (
         <div className="border-l-2 border-amber-500 pl-2 text-[11px] text-amber-400 italic mt-0.5">
           <strong className="not-italic">OBS:</strong> {doc.observacoes}
+        </div>
+      )}
+
+      {/* ── Ciclo de 5 semanas: marcar visitado / desfazer ── */}
+      {onToggleCycleVisit && !isEditing && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {cycleVisitedAt ? (
+            <>
+              <span className="text-[11px] font-semibold text-emerald-400">
+                ✓ Visitado em{' '}
+                {new Date(cycleVisitedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} às{' '}
+                {formatTime(cycleVisitedAt)}
+              </span>
+              <button
+                type="button"
+                onClick={() => onToggleCycleVisit(doc.id, false)}
+                className="text-[11px] px-2.5 py-1 rounded border border-slate-600 bg-slate-800 text-slate-200 hover:text-white"
+              >
+                ↩ Desfazer
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onToggleCycleVisit(doc.id, true)}
+              className="text-[12px] px-3 py-1.5 rounded border border-emerald-500 bg-emerald-600 text-white font-semibold hover:bg-emerald-500"
+            >
+              ✓ Marcar Visitado
+            </button>
+          )}
         </div>
       )}
 

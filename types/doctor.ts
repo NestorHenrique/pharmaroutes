@@ -38,6 +38,33 @@ export interface Doctor {
   uf?: string | null;
   created_via?: 'APP_FIELD' | 'BASE_IMPORT' | null;
   agenda?: AgendaEntry[] | null;
+  /* ── v5 ── */
+  /** semanas do ciclo (1..5) em que o médico entra na rota */
+  cycle_weeks?: number[] | null;
+}
+
+/* ── Ciclo de 5 semanas ── */
+
+export const CYCLE_WEEKS = [1, 2, 3, 4, 5] as const;
+export type CycleWeek = (typeof CYCLE_WEEKS)[number];
+
+export const cycleWeekLabel = (w: number): string => `${w}ª Sem`;
+
+/** Situação do médico no ciclo atual DESTE representante */
+export type CycleVisitStatus = 'pendente' | 'visitado';
+
+/** Linha de rep_cycle_visits (uma por representante + médico) */
+export interface CycleVisit {
+  user_id: string;
+  doctor_id: string;
+  status: 'visitado';
+  visited_at: string;
+}
+
+/** Semanas válidas, sem repetição e em ordem */
+export function normalizeCycleWeeks(weeks: readonly number[] | null | undefined): CycleWeek[] {
+  const set = new Set((weeks ?? []).filter((w): w is CycleWeek => (CYCLE_WEEKS as readonly number[]).includes(w)));
+  return CYCLE_WEEKS.filter((w) => set.has(w));
 }
 
 export type AddDoctorResult =

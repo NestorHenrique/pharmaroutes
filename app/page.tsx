@@ -5,8 +5,8 @@ import type { ReactNode } from 'react';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { AddDoctorResult, Doctor, Shift } from '@/types/doctor';
-import { ROUTE_EVENT_STATUSES } from '@/types/doctor';
-import type { RouteTier } from '@/types/doctor';
+import { ROUTE_EVENT_STATUSES, CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
+import type { CycleVisit, CycleWeek, RouteTier } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusEvent, DoctorStatusType } from '@/types/status';
 import { STATUS_META, PINNED_STATUSES } from '@/types/status';
 import { TABS_NAVEGACAO, FILTROS_PLANTAO, FILTROS_TURNO, OPCOES_DIAS } from '@/constants';
@@ -48,6 +48,7 @@ const OFFLINE_POLL_MS = 8_000;
 const CLOCK_TICK_MS = 15_000;
 const DUPLICATE_MSG = 'Médico já cadastrado na base de dados';
 const SORT_MODE_KEY = 'pharma_sort_mode';
+const CYCLE_WEEK_KEY = 'pharma_cycle_week';
 
 function endOfToday(): string {
   const d = new Date();
@@ -103,6 +104,10 @@ export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>('historico');
+  /** null = Todas as semanas do ciclo */
+  const [selectedWeek, setSelectedWeek] = useState<CycleWeek | null>(null);
+  /** visitas do ciclo deste representante: doctor_id -> visited_at */
+  const [cycleVisits, setCycleVisits] = useState<Map<string, string>>(() => new Map());
 
   /* UI */
   const [showAddForm, setShowAddForm] = useState(false);
@@ -135,8 +140,18 @@ export default function HomePage() {
     try {
       const saved = localStorage.getItem(SORT_MODE_KEY);
       if (saved === 'historico' || saved === 'manual') setSortMode(saved);
+      const week = normalizeCycleWeeks([Number(localStorage.getItem(CYCLE_WEEK_KEY))])[0];
+      if (week) setSelectedWeek(week);
     } catch { /* ignore */ }
   }, []);
+
+  const changeWeek = (week: CycleWeek | null) => {
+    setSelectedWeek(week);
+    try {
+      if (week) localStorage.setItem(CYCLE_WEEK_KEY, String(week));
+      else localStorage.removeItem(CYCLE_WEEK_KEY);
+    } catch { /* ignore */ }
+  };
 
   const changeSortMode = (mode: SortMode) => {
     setSortMode(mode);
@@ -476,6 +491,82 @@ export default function HomePage() {
     [fetchDoctors],
   );
 
+  /* ═══════════════════ Ciclo de 5 semanas: visitas ═══════════════════ */
+
+  const fetchCycleVisits = useCallback(async () => {
+    if (!sessionUserId) return;
+    const { data, error } = await supabase
+      .from('rep_cycle_visits')
+      .select('user_id, doctor_id, status, visited_at')
+      .eq('user_id', sessionUserId);
+    if (error) {
+      console.warn('Visitas do ciclo indisponíveis (rodou a migração v5?):', error.message);
+      return;
+    }
+    setCycleVisits(new Map((data as CycleVisit[]).map((v) => [v.doctor_id, v.visited_at])));
+  }, [sessionUserId]);
+
+  useEffect(() => {
+    fetchCycleVisits();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchCycleVisits();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [fetchCycleVisits]);
+
+  /** Marca/desfaz "Visitado" no ciclo (otimista; volta atrás se falhar) */
+  const toggleCycleVisit = useCallback(
+    async (doctorId: string, visited: boolean) => {
+      if (!sessionUserId) return;
+      const previous = cycleVisits.get(doctorId);
+      const visitedAt = new Date().toISOString();
+      setCycleVisits((prev) => {
+        const next = new Map(prev);
+        if (visited) next.set(doctorId, visitedAt);
+        else next.delete(doctorId);
+        return next;
+      });
+
+      const { error } = visited
+        ? await supabase
+            .from('rep_cycle_visits')
+            .upsert(
+              { user_id: sessionUserId, doctor_id: doctorId, status: 'visitado', visited_at: visitedAt },
+              { onConflict: 'user_id,doctor_id' },
+            )
+        : await supabase.from('rep_cycle_visits').delete().eq('user_id', sessionUserId).eq('doctor_id', doctorId);
+
+      if (error) {
+        console.error('Erro ao gravar visita do ciclo:', error.message, '|', error.code);
+        setCycleVisits((prev) => {
+          const next = new Map(prev);
+          if (previous) next.set(doctorId, previous);
+          else next.delete(doctorId);
+          return next;
+        });
+      }
+    },
+    [sessionUserId, cycleVisits],
+  );
+
+  /** Novo ciclo: zera só as visitas deste representante (semanas e ordem manual ficam) */
+  const renewCycle = useCallback(async () => {
+    if (!sessionUserId) return;
+    const ok = confirm(
+      'Renovar o ciclo de visitas? Todos os médicos voltam para pendente. Semanas e ordem da rota continuam iguais.',
+    );
+    if (!ok) return;
+    const previous = cycleVisits;
+    setCycleVisits(new Map());
+    const { error } = await supabase.from('rep_cycle_visits').delete().eq('user_id', sessionUserId);
+    if (error) {
+      console.error('Erro ao renovar o ciclo:', error.message, '|', error.code);
+      setCycleVisits(previous);
+      alert('Não foi possível renovar o ciclo. Tente novamente.');
+    }
+  }, [sessionUserId, cycleVisits]);
+
   const isInPortfolio = useCallback((doctorId: string) => portfolio.has(doctorId), [portfolio]);
 
   /* ═══════════════════ Logout ═══════════════════ */
@@ -532,6 +623,9 @@ export default function HomePage() {
         if (!entries.some((e) => shiftCovers(e.shift, turnoFilter))) return false;
       }
 
+      // Semana do ciclo: só os médicos marcados nessa semana
+      if (selectedWeek && !normalizeCycleWeeks(d.cycle_weeks).includes(selectedWeek)) return false;
+
       if (portfolioActive) {
         const code = specialtyCode(d.especialidade);
         if (!portfolio.has(d.id) && !(code && specSet.has(code))) return false;
@@ -543,7 +637,7 @@ export default function HomePage() {
       }
       return true;
     });
-  }, [doctors, selectedTab, selectedCategory, selectedCities, turnoFilter, searchQuery, portfolioActive, profile, portfolio]);
+  }, [doctors, selectedTab, selectedCategory, selectedCities, selectedWeek, turnoFilter, searchQuery, portfolioActive, profile, portfolio]);
 
   /* ═══════════════════ Ordenação em 3 blocos ═══════════════════
    * TOPO:  Último Paciente / Rep. no Consultório / Aguardando Médico (mais recente primeiro).
@@ -561,6 +655,7 @@ export default function HomePage() {
     sortMode,
     manualOrder,
     categoryMode: isCategoryMode,
+    cycleVisits: isCategoryMode ? undefined : cycleVisits,
   });
   const { middleIds } = feed;
   /* Sub-hierarquia do TOPO: Rep. no Consultório → Último Paciente → Aguardando Médico.
@@ -696,6 +791,8 @@ export default function HomePage() {
 
   const middleIndex = useMemo(() => new Map(middleIds.map((id, i) => [id, i])), [middleIds]);
 
+  const cycleVisitedCount = filteredDoctors.filter((d) => cycleVisits.has(d.id)).length;
+
   const visitedCount = isCategoryMode
     ? sortedDoctors.filter((d) => (liveStatusMap[d.id] || []).some((s) => s.status_type === 'visitado_hoje')).length
     : 0;
@@ -719,6 +816,8 @@ export default function HomePage() {
         cityOptions={cityComboOptions}
         expected={sortMode === 'historico' ? feed.expected.get(doc.id) ?? null : null}
         onDragHandleTouchStart={manual ? startTouchDrag : undefined}
+        cycleVisitedAt={isCategoryMode ? null : cycleVisits.get(doc.id) ?? null}
+        onToggleCycleVisit={isCategoryMode ? undefined : toggleCycleVisit}
       />
     );
     if (!manual) return card;
@@ -814,6 +913,22 @@ export default function HomePage() {
 
         {/* Cidades (busca + caixas de marcar) */}
         <CityFilter options={cityOptions} selected={selectedCities} onChange={setSelectedCities} />
+
+        {/* Semanas do ciclo (logo abaixo das cidades) */}
+        <div className="flex gap-0.5 overflow-x-auto no-scrollbar mb-1.5" role="group" aria-label="Semana do ciclo">
+          {[null, ...CYCLE_WEEKS].map((w) => (
+            <button
+              key={w ?? 'todas'}
+              onClick={() => changeWeek(w)}
+              aria-pressed={selectedWeek === w}
+              className={`px-2.5 py-1.5 rounded text-[10px] font-bold border-none whitespace-nowrap shrink-0 ${
+                selectedWeek === w ? 'bg-violet-600 text-white' : 'bg-slate-900 text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {w === null ? 'Todas' : cycleWeekLabel(w)}
+            </button>
+          ))}
+        </div>
 
         {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
         <div className="flex gap-0.5 overflow-x-auto no-scrollbar">
@@ -919,6 +1034,24 @@ export default function HomePage() {
             onCancel={() => setShowAddForm(false)}
             cityOptions={cityComboOptions}
           />
+        )}
+
+        {/* Ciclo de visitas */}
+        {!isCategoryMode && (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-violet-500/40 bg-violet-950/30 px-3 py-2">
+            <span className="text-[11px] text-violet-200">
+              {selectedWeek ? `${cycleWeekLabel(selectedWeek)} · ` : 'Ciclo · '}
+              <strong>{cycleVisitedCount}</strong> de {filteredDoctors.length} visitado{cycleVisitedCount !== 1 ? 's' : ''}
+            </span>
+            <button
+              type="button"
+              onClick={renewCycle}
+              disabled={cycleVisits.size === 0}
+              className="shrink-0 rounded border border-violet-400 bg-violet-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500 disabled:opacity-40"
+            >
+              🔄 Renovar Ciclo de Visitas
+            </button>
+          </div>
         )}
 
         {/* Contagem + modo de ordenação */}

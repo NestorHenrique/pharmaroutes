@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 
 export type GpsStatus = { type: 'ok' | 'error'; text: string } | null;
 
-/** Texto do botão exibido quando o iOS bloqueia o pedido no modo standalone */
+/** Texto do botão exibido quando o iOS bloqueia o pedido */
 export const GPS_ACTIVATE_LABEL = 'Tocar para Ativar GPS';
 
 /** App aberto pela Tela de Início (iOS `navigator.standalone` ou display-mode: standalone) */
@@ -11,17 +11,6 @@ export function isStandalone(): boolean {
   const nav = window.navigator as Navigator & { standalone?: boolean };
   return Boolean(nav.standalone) || window.matchMedia?.('(display-mode: standalone)').matches === true;
 }
-
-/** 1ª tentativa: GPS preciso, posição nova, até 15 s (sinal fraco em hospital/clínica) */
-const HIGH_ACCURACY: PositionOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
-/** PWA standalone: 20 s e aceita posição de até 10 s (o iOS demora mais para responder) */
-const STANDALONE_HIGH: PositionOptions = { enableHighAccuracy: true, timeout: 20000, maximumAge: 10000 };
-const STANDALONE_LOW: PositionOptions = { enableHighAccuracy: false, timeout: 20000, maximumAge: 10000 };
-/** 2ª tentativa: rede/Wi-Fi, aceita posição de até 1 min, mais 15 s */
-const LOW_ACCURACY: PositionOptions = { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 };
-
-const PERMISSION_DENIED = 1;
-const TIMEOUT = 3;
 
 function isIOS(): boolean {
   if (typeof navigator === 'undefined') return false;
@@ -32,78 +21,71 @@ function isIOS(): boolean {
   );
 }
 
-/**
- * getCurrentPosition em Promise, com trava de segurança:
- * no iOS aberto pela Tela de Início o callback às vezes nunca volta.
- */
-function getPosition(options: PositionOptions): Promise<GeolocationPosition> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const guard = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject({ code: TIMEOUT, message: 'timeout' });
-    }, (options.timeout ?? 15000) + 2000);
+/** iOS / PWA standalone: aceita posição de até 30 s para responder rápido */
+const IOS_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 };
+/** Demais aparelhos: GPS preciso e posição nova */
+const DEFAULT_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
+/** Plano B (WebKit): watchPosition por rede/Wi-Fi quando o getCurrentPosition não responde */
+const FALLBACK_OPTIONS: PositionOptions = { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 };
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(guard);
-        resolve(pos);
-      },
-      (err) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(guard);
-        reject(err);
-      },
-      options,
-    );
-  });
+/** O iOS às vezes nunca chama o callback no modo standalone: trava de segurança */
+const GUARD_MARGIN_MS = 2000;
+
+const PERMISSION_DENIED = 1;
+
+function deniedText(): string {
+  if (!isIOS()) return 'Localização bloqueada. Permita a localização para este site nas configurações do navegador.';
+  return isStandalone()
+    ? 'Localização bloqueada pelo iPhone. Em Ajustes › Privacidade e Segurança › Serviços de Localização, ligue a localização e em "Sites do Safari" escolha "Ao Usar o App". Depois toque no botão abaixo.'
+    : 'Localização bloqueada. No iPhone: Ajustes › Privacidade e Segurança › Serviços de Localização › Sites do Safari › "Ao Usar o App".';
 }
 
-function errorText(code: number | undefined): string {
-  if (code === PERMISSION_DENIED) {
-    return isIOS()
-      ? 'Localização bloqueada. No iPhone: Ajustes › Privacidade e Segurança › Serviços de Localização › Sites do Safari › "Ao Usar o App". Depois feche e abra o app.'
-      : 'Localização bloqueada. Permita a localização para este site nas configurações do navegador.';
-  }
-  if (code === TIMEOUT) {
-    return 'O GPS demorou demais (sinal fraco). Vá para perto de uma janela ou porta e tente de novo.';
-  }
-  return 'Não foi possível capturar o GPS. Verifique se a localização do aparelho está ligada.';
-}
+const TIMEOUT_TEXT = 'O GPS demorou demais (sinal fraco). Vá para perto de uma janela ou porta e tente de novo.';
+const UNAVAILABLE_TEXT = 'Não foi possível capturar o GPS. Verifique se a localização do aparelho está ligada.';
 
 export function useGeolocation() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<GpsStatus>(null);
-  /** true = permissão negada no modo standalone: mostrar o botão GPS_ACTIVATE_LABEL */
+  /** true = permissão negada/sem resposta: mostrar o botão GPS_ACTIVATE_LABEL */
   const [needsActivation, setNeedsActivation] = useState(false);
   const lastSuccess = useRef<((url: string) => void) | null>(null);
+  /** cada toque é uma tentativa; respostas atrasadas de tentativas antigas são ignoradas */
+  const attempt = useRef(0);
 
-  /** SEMPRE chamar direto de um onClick/toque: nunca em useEffect ou na montagem */
+  /**
+   * SEMPRE chamar direto de um onClick/toque. O getCurrentPosition é invocado de forma
+   * síncrona aqui dentro (sem await/Promise antes), que é o que o WebKit exige para
+   * mostrar o pedido de permissão no app da Tela de Início.
+   */
   const capture = useCallback((onSuccess: (url: string) => void) => {
     lastSuccess.current = onSuccess;
-    setNeedsActivation(false);
-    const standalone = isStandalone();
-    const high = standalone ? STANDALONE_HIGH : HIGH_ACCURACY;
-    const low = standalone ? STANDALONE_LOW : LOW_ACCURACY;
+
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setStatus({ type: 'error', text: 'Geolocalização não suportada neste aparelho.' });
       return;
     }
-    if (typeof window !== 'undefined' && !window.isSecureContext) {
-      setStatus({ type: 'error', text: 'O GPS só funciona com o app aberto em https://.' });
-      return;
-    }
 
-    setLoading(true);
-    setStatus(null);
+    const id = ++attempt.current;
+    const geo = navigator.geolocation;
+    const ios = isIOS() || isStandalone();
+    const options = ios ? IOS_OPTIONS : DEFAULT_OPTIONS;
+    let settled = false;
+    let watchId: number | null = null;
+    let guard: ReturnType<typeof setTimeout> | null = null;
 
-    const done = (pos: GeolocationPosition, reduced: boolean) => {
+    const finish = () => {
+      settled = true;
+      if (guard) clearTimeout(guard);
+      if (watchId !== null) geo.clearWatch(watchId);
+      watchId = null;
+    };
+
+    const success = (pos: GeolocationPosition, reduced: boolean) => {
+      if (settled || id !== attempt.current) return;
+      finish();
       const { latitude, longitude, accuracy } = pos.coords;
       onSuccess(`https://www.google.com/maps?q=${latitude},${longitude}`);
+      setNeedsActivation(false);
       setStatus({
         type: 'ok',
         text: `Localização capturada (±${Math.round(accuracy)} m)${reduced ? ' · precisão reduzida' : ''}.`,
@@ -111,29 +93,52 @@ export function useGeolocation() {
       setLoading(false);
     };
 
-    // A 1ª chamada acontece ainda dentro do toque no botão (exigência do iOS)
-    getPosition(high)
-      .then((pos) => done(pos, false))
-      .catch((err: { code?: number }) => {
-        if (err?.code === PERMISSION_DENIED) {
-          if (standalone) {
-            // Não trava a tela: oferece um novo pedido iniciado por toque
-            setNeedsActivation(true);
-            setStatus({ type: 'error', text: `Localização não liberada. ${GPS_ACTIVATE_LABEL}.` });
-          } else {
-            setStatus({ type: 'error', text: errorText(err.code) });
-          }
-          setLoading(false);
-          return;
-        }
-        // Sinal fraco ou indisponível: tenta de novo sem alta precisão
-        getPosition(low)
-          .then((pos) => done(pos, true))
-          .catch((err2: { code?: number }) => {
-            setStatus({ type: 'error', text: errorText(err2?.code) });
-            setLoading(false);
-          });
-      });
+    const fail = (text: string, offerRetry: boolean) => {
+      if (settled || id !== attempt.current) return;
+      finish();
+      // Aviso em linha, não bloqueia o formulário
+      setStatus({ type: 'error', text });
+      setNeedsActivation(offerRetry);
+      setLoading(false);
+    };
+
+    /** Plano B: watchPosition costuma responder quando o getCurrentPosition trava no iOS */
+    const fallback = () => {
+      if (settled || id !== attempt.current) return;
+      if (guard) clearTimeout(guard);
+      guard = setTimeout(
+        () => fail(TIMEOUT_TEXT, true),
+        (FALLBACK_OPTIONS.timeout ?? 15000) + GUARD_MARGIN_MS,
+      );
+      watchId = geo.watchPosition(
+        (pos) => success(pos, true),
+        (err) => {
+          if (err.code === PERMISSION_DENIED) fail(deniedText(), true);
+          else fail(err.code === err.TIMEOUT ? TIMEOUT_TEXT : UNAVAILABLE_TEXT, true);
+        },
+        FALLBACK_OPTIONS,
+      );
+    };
+
+    // 1) Chamada síncrona dentro do toque — nada de await antes desta linha
+    geo.getCurrentPosition(
+      (pos) => success(pos, false),
+      (err) => {
+        if (err.code === PERMISSION_DENIED) fail(deniedText(), true);
+        else fallback(); // sinal fraco/indisponível: tenta pela rede
+      },
+      options,
+    );
+    guard = setTimeout(fallback, (options.timeout ?? 15000) + GUARD_MARGIN_MS);
+
+    // 2) Estado da tela só depois do pedido já ter sido feito
+    setLoading(true);
+    setStatus(null);
+    setNeedsActivation(false);
+
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setStatus({ type: 'error', text: 'O GPS só funciona com o app aberto em https://.' });
+    }
   }, []);
 
   /** Novo pedido a partir do botão "Tocar para Ativar GPS" (é um toque novo do usuário) */
@@ -141,5 +146,8 @@ export function useGeolocation() {
     if (lastSuccess.current) capture(lastSuccess.current);
   }, [capture]);
 
-  return { loading, status, capture, needsActivation, retry };
+  /** Fecha o aviso */
+  const dismiss = useCallback(() => setStatus(null), []);
+
+  return { loading, status, capture, needsActivation, retry, dismiss };
 }

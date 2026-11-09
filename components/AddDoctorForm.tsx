@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import type { AddDoctorResult, AgendaEntry, Doctor } from '@/types/doctor';
+import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
 import { sortAgenda, specialtyCode } from '@/utils';
 import { useFormPersistence } from '@/hooks/useFormPersistence';
@@ -43,6 +44,7 @@ type FormState = {
   map_link: string;
   observacoes: string;
   categoria: string;
+  cycle_weeks: number[];
 };
 
 const DEFAULTS: FormState = {
@@ -61,6 +63,7 @@ const DEFAULTS: FormState = {
   map_link: '',
   observacoes: '',
   categoria: 'consultorio',
+  cycle_weeks: [],
 };
 
 const inputCls =
@@ -116,6 +119,9 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
       observacoes: form.observacoes.trim(),
       categoria: form.categoria as Doctor['categoria'],
     };
+    // Só envia se marcado (funciona mesmo antes da migração v5)
+    const weeks = normalizeCycleWeeks(form.cycle_weeks);
+    if (weeks.length) payload.cycle_weeks = weeks;
 
     try {
       const result = await onAdd(payload);
@@ -223,6 +229,29 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
 
       {/* Dias + turno por dia */}
       <AgendaEditor value={form.agenda || []} onChange={(a) => setField('agenda', a)} />
+
+      {/* Semanas do ciclo */}
+      <div>
+        <span className="text-[10px] text-slate-500 block mb-[3px]">Semanas do ciclo:</span>
+        <div className="flex gap-1 flex-wrap" role="group" aria-label="Semanas do ciclo">
+          {CYCLE_WEEKS.map((w) => {
+            const on = (form.cycle_weeks ?? []).includes(w);
+            return (
+              <button
+                key={w}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setField('cycle_weeks', normalizeCycleWeeks(on ? (form.cycle_weeks ?? []).filter((x) => x !== w) : [...(form.cycle_weeks ?? []), w]))}
+                className={`px-2 py-1 rounded text-[10px] font-semibold border ${
+                  on ? 'border-violet-500 bg-violet-500/20 text-violet-200' : 'border-slate-700 bg-slate-800 text-slate-400'
+                }`}
+              >
+                {cycleWeekLabel(w)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Clínica / Local */}
       <input
