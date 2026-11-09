@@ -52,6 +52,10 @@ interface DoctorCardProps {
   onToggleCycleVisit?: (docId: string, visited: boolean) => void;
   /** semana ativa ("Estou visitando na"): o visitado entra nela automaticamente */
   activeWeekLabel?: string | null;
+  /** card aberto (ficha completa); fechado = linha compacta de 2 linhas */
+  expanded?: boolean;
+  /** abre/fecha o card; ausente = sempre aberto */
+  onToggleExpand?: (docId: string) => void;
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
@@ -102,6 +106,8 @@ function DoctorCard({
   cycleVisitedAt = null,
   onToggleCycleVisit,
   activeWeekLabel = null,
+  expanded = true,
+  onToggleExpand,
 }: DoctorCardProps) {
   const draftKey = `edit_${doc.id}`;
   const hasDraft = hasSavedDraft(draftKey);
@@ -110,6 +116,7 @@ function DoctorCard({
   const [editForm, setEditForm] = useState<EditForm>({ agenda: [] });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const gps = useGeolocation();
 
   const isNew = isNewDoctor(doc);
@@ -130,7 +137,7 @@ function DoctorCard({
   } else if (has('ultimo_paciente')) {
     highlightCls = 'border-red-500 bg-red-950/40 shadow-[0_0_0_1px_rgba(239,68,68,0.35)]';
   } else if (has('representante_no_consultorio')) {
-    highlightCls = 'border-blue-500 bg-blue-950/40 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]';
+    highlightCls = 'border-sky-500 bg-sky-950/40 shadow-[0_0_0_1px_rgba(14,165,233,0.35)]';
   } else if (has('aguardando_medico')) {
     highlightCls = 'border-amber-400 bg-amber-950/30';
   } else if (visited) {
@@ -225,11 +232,109 @@ function DoctorCard({
 
   const canNavigate = Boolean(doc.map_link?.trim() || doc.endereco);
 
+  /* ── Linha compacta: nome + local/status, horário à direita. Toque abre a ficha. ── */
+  if (onToggleExpand && !expanded && !isEditing) {
+    const lead =
+      statuses.find((s) => s.status_type === 'representante_no_consultorio') ??
+      statuses.find((s) => s.status_type === 'ultimo_paciente') ??
+      statuses.find((s) => s.status_type === 'aguardando_medico') ??
+      statuses.find((s) => UNAVAILABLE_STATUSES.includes(s.status_type));
+    const leadTone: Partial<Record<DoctorStatusType, { dot: string; text: string; border: string }>> = {
+      representante_no_consultorio: { dot: 'bg-sky-400', text: 'text-sky-400', border: 'border-sky-500/60' },
+      ultimo_paciente: { dot: 'bg-red-400', text: 'text-red-400', border: 'border-red-500/60' },
+      aguardando_medico: { dot: 'bg-amber-400', text: 'text-amber-400', border: 'border-amber-400/60' },
+    };
+    const tone = lead ? leadTone[lead.status_type] : undefined;
+    const visitedAt = cycleVisitedAt ?? (categoryMode ? visited?.created_at ?? null : null);
+    const place = [doc.complemento || 'Consultório próprio', doc.bairro].filter(Boolean).join(' · ');
+    let subline = place;
+    if (visitedAt) subline = `Visitado às ${formatTime(visitedAt)}`;
+    else if (lead) {
+      const label = STATUS_META[lead.status_type].label;
+      subline =
+        lead.status_type === 'aguardando_medico' && waitingLeft !== null && waitingLeft > 0
+          ? `${label} · ${waitingLeft} min`
+          : STATUS_META[lead.status_type].showTime
+            ? `${label} · ${formatTime(lead.created_at)}`
+            : label;
+    }
+
+    return (
+      <div
+        id={`doc-${doc.id}`}
+        className={`rounded-2xl border px-3.5 py-3 flex items-center gap-3 transition-colors ${
+          muted ? 'border-slate-800 bg-transparent opacity-60' : `bg-slate-900 ${tone?.border ?? 'border-slate-800'}`
+        }`}
+      >
+        {onDragHandleTouchStart && (
+          <button
+            type="button"
+            aria-label="Arrastar para reordenar"
+            onTouchStart={(e) => onDragHandleTouchStart(doc.id, e.touches[0]?.clientY ?? 0)}
+            style={{ touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
+            className="select-none -ml-1 size-9 shrink-0 rounded-lg text-slate-500 active:bg-slate-800 flex items-center justify-center"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M5 8h14M5 12h14M5 16h14" />
+            </svg>
+          </button>
+        )}
+        {visitedAt ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-emerald-400" role="img" aria-label="Visitado">
+            <path d="M5 12l5 5L20 7" />
+          </svg>
+        ) : tone ? (
+          <span className={`size-2 shrink-0 rounded-full ${tone.dot}`} aria-hidden="true" />
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => onToggleExpand(doc.id)}
+          aria-expanded={false}
+          className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 flex flex-col gap-0.5"
+        >
+          <span
+            className={`text-[15px] font-semibold truncate ${visitedAt ? 'text-slate-500 line-through' : 'text-white'}`}
+          >
+            {doc.descricao}
+            {isNew && <span className="ml-1.5 align-middle text-[9px] font-bold text-green-400 no-underline">NOVO</span>}
+          </span>
+          <span className={`text-xs truncate ${visitedAt ? 'text-emerald-400' : tone?.text ?? 'text-slate-400'}`}>
+            {subline}
+          </span>
+        </button>
+
+        {expected && !visitedAt && (
+          <span
+            className="shrink-0 text-[13px] tabular-nums text-slate-200"
+            title={`Horário médio: ${formatMinutes(expected.startMinutes)}${expected.endMinutes !== null ? ` → ${formatMinutes(expected.endMinutes)}` : ''}`}
+          >
+            {formatMinutes(expected.startMinutes)}
+          </span>
+        )}
+        {cycleVisitedAt && onToggleCycleVisit ? (
+          <button
+            type="button"
+            onClick={() => onToggleCycleVisit(doc.id, false)}
+            className="shrink-0 h-8 px-2.5 rounded-lg border border-slate-700 bg-transparent text-xs text-slate-300 hover:text-white"
+          >
+            Desfazer
+          </button>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-600" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        )}
+      </div>
+    );
+  }
+
   /* ── Render ── */
 
   return (
     <div
-      className={`border rounded-lg px-3.5 py-3 flex flex-col gap-2 transition-colors ${highlightCls} ${
+      id={`doc-${doc.id}`}
+      className={`border rounded-2xl px-3.5 py-3 flex flex-col gap-2 transition-colors ${highlightCls} ${
         isNew ? 'border-l-[3px] border-l-green-500' : ''
       } ${muted ? 'opacity-60' : ''}`}
     >
@@ -249,7 +354,7 @@ function DoctorCard({
         // Cores do bloco superior alinhadas com o destaque do card
         const meta =
           s.status_type === 'representante_no_consultorio'
-            ? { ...base, bg: 'bg-blue-500/10', text: 'text-blue-400' }
+            ? { ...base, bg: 'bg-sky-500/10', text: 'text-sky-400' }
             : s.status_type === 'aguardando_medico'
               ? { ...base, bg: 'bg-amber-500/10', text: 'text-amber-400' }
               : base;
@@ -370,22 +475,61 @@ function DoctorCard({
           <StatusSelector doctorId={doc.id} statuses={statuses} onSet={onSetStatus} onClear={onClearStatus} />
 
           {!isEditing && (
-            <div className="flex gap-1.5 opacity-70">
+            <div className="relative flex items-center gap-1">
               <button
-                onClick={handleStartEdit}
-                className={`bg-transparent border-none text-[11px] px-1 py-0.5 hover:text-white ${
-                  hasDraft ? 'text-amber-400' : 'text-slate-400'
-                }`}
-                title={hasDraft ? 'Rascunho salvo — clique para continuar' : 'Editar'}
+                type="button"
+                aria-label="Mais opções"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((o) => !o)}
+                className={`size-9 rounded-lg border bg-transparent flex items-center justify-center ${
+                  hasDraft ? 'border-amber-500/60 text-amber-400' : 'border-slate-700 text-slate-300'
+                } hover:text-white`}
               >
-                {hasDraft ? '✏️ Rascunho' : 'Editar'}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="5" cy="12" r="1.8" />
+                  <circle cx="12" cy="12" r="1.8" />
+                  <circle cx="19" cy="12" r="1.8" />
+                </svg>
               </button>
-              <button
-                onClick={() => onDeleteDoctor(doc)}
-                className="bg-transparent border-none text-red-400 text-[11px] px-1 py-0.5 hover:text-red-300"
-              >
-                Excluir
-              </button>
+              {onToggleExpand && (
+                <button
+                  type="button"
+                  aria-label="Fechar ficha"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onToggleExpand(doc.id);
+                  }}
+                  className="size-9 rounded-lg border border-slate-700 bg-transparent text-slate-300 hover:text-white flex items-center justify-center"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M6 15l6-6 6 6" />
+                  </svg>
+                </button>
+              )}
+              {menuOpen && (
+                <div className="absolute right-0 top-11 z-10 w-44 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl shadow-black/40 flex flex-col">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      handleStartEdit();
+                    }}
+                    className="text-left px-3 py-2.5 rounded-lg bg-transparent text-sm text-slate-200 hover:bg-slate-800"
+                  >
+                    {hasDraft ? '✏️ Continuar rascunho' : 'Editar'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDeleteDoctor(doc);
+                    }}
+                    className="text-left px-3 py-2.5 rounded-lg bg-transparent text-sm text-red-400 hover:bg-slate-800"
+                  >
+                    Excluir
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
