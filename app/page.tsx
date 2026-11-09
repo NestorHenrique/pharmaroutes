@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import type { ReactNode } from 'react';
+import { Component, useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { AddDoctorResult, Doctor, Shift } from '@/types/doctor';
@@ -86,6 +86,52 @@ function upsertStatus(map: Record<string, DoctorStatus[]>, s: DoctorStatus): Rec
 /** Ordem exata dentro do bloco do topo */
 const TOP_ORDER: DoctorStatusType[] = ['representante_no_consultorio', 'ultimo_paciente', 'aguardando_medico'];
 
+/**
+ * Se algo quebrar no feed (ex.: estado suspenso pelo WebKit em segundo plano),
+ * mostra um aviso com "Tentar de novo" em vez de deixar a tela em branco.
+ * `resetKey` muda a cada retomada do app: o feed tenta se recuperar sozinho.
+ */
+class FeedErrorBoundary extends Component<{ resetKey: number; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Erro no feed:', error.message, info.componentStack);
+  }
+
+  componentDidUpdate(prev: { resetKey: number }) {
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false });
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div role="alert" className="flex flex-col items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 p-4 text-center">
+        <span className="text-sm text-slate-200">A lista não carregou direito.</span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => this.setState({ failed: false })}
+            className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white"
+          >
+            Tentar de novo
+          </button>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded border border-slate-600 px-3 py-1.5 text-xs text-slate-300"
+          >
+            Recarregar app
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
 function SectionTitle({ tone, children }: { tone: string; children: ReactNode }) {
   return <div className={`text-[10px] font-bold uppercase tracking-wide mt-1 ${tone}`}>{children}</div>;
 }
@@ -140,6 +186,12 @@ export default function HomePage() {
     });
     const { data: listener } = supabase.auth.onAuthStateChange((_ev, s) => setSession(s));
     return () => listener.subscription.unsubscribe();
+  }, []);
+
+  /* App pronto: avisa o script de recuperação do layout (tela branca no iOS) */
+  useEffect(() => {
+    document.documentElement.setAttribute('data-app-ready', '1');
+    document.getElementById('pwa-recover')?.remove();
   }, []);
 
   /* Service worker de push sempre atualizado + modo de ordenação salvo no aparelho */
@@ -329,6 +381,30 @@ export default function HomePage() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [fetchStatuses, fetchEvents, realtimeOn]);
+
+  /* Retomada do app (volta do Google Maps/WhatsApp no iOS standalone):
+   * força um novo render, sincroniza os dados e dá nova chance ao feed se ele tinha quebrado. */
+  const [resumeTick, setResumeTick] = useState(0);
+  const doctorsEmpty = doctors.length === 0;
+  useEffect(() => {
+    const onResume = (e?: Event) => {
+      if (document.visibilityState !== 'visible') return;
+      if (e?.type === 'pageshow' && !(e as PageTransitionEvent).persisted) return;
+      setNow(Date.now());
+      setResumeTick((t) => t + 1);
+      fetchStatuses();
+      fetchEvents();
+      if (doctorsEmpty) fetchDoctors();
+    };
+    document.addEventListener('visibilitychange', onResume);
+    window.addEventListener('pageshow', onResume);
+    window.addEventListener('focus', onResume);
+    return () => {
+      document.removeEventListener('visibilitychange', onResume);
+      window.removeEventListener('pageshow', onResume);
+      window.removeEventListener('focus', onResume);
+    };
+  }, [fetchStatuses, fetchEvents, fetchDoctors, doctorsEmpty]);
 
   // Relógio da tela (status de 10/20/30 min somem no horário certo)
   useEffect(() => {
@@ -1183,6 +1259,7 @@ export default function HomePage() {
         </div>
 
         {/* Cards em 3 blocos */}
+        <FeedErrorBoundary resetKey={resumeTick}>
         {sortedDoctors.length === 0 && !loading ? (
           <div className="text-center text-slate-500 text-sm py-12">Nenhum médico encontrado para o filtro selecionado.</div>
         ) : (
@@ -1203,6 +1280,7 @@ export default function HomePage() {
             {feed.bottom.map((doc) => renderCard(doc, 'bottom'))}
           </>
         )}
+        </FeedErrorBoundary>
       </main>
 
       {/* Prévia do card sendo arrastado (segue o dedo) */}

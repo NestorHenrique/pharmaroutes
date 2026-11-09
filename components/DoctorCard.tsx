@@ -68,6 +68,23 @@ const inputCls =
 /** Mesmo formato para NOVO, especialidade, dias e categoria */
 const tagCls = 'text-[9px] px-1 py-px rounded-sm font-bold whitespace-nowrap';
 
+/**
+ * Abre Maps/WhatsApp fora do app sem trocar a página do PWA.
+ * Um <a target="_blank"> clicado no próprio toque é o caminho mais estável no iOS standalone:
+ * o iOS entrega o link ao app do Google Maps/WhatsApp (ou ao Safari) e o PWA continua intacto.
+ * Nunca usar window.location.href aqui: isso descarrega o app e volta em tela branca.
+ */
+function openExternal(url: string) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 /* ── Component ── */
 
 function DoctorCard({
@@ -196,18 +213,14 @@ function DoctorCard({
   const openNavigation = () => {
     const link = doc.map_link?.trim();
     if (link) {
-      window.open(link, '_blank', 'noopener,noreferrer');
+      openExternal(link);
       return;
     }
     if (!doc.endereco) return;
     const address = [[doc.endereco, doc.numero || 'SN'].join(', '), doc.bairro, doc.cidade]
       .filter(Boolean)
       .join(', ');
-    window.open(
-      `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`,
-      '_blank',
-      'noopener,noreferrer',
-    );
+    openExternal(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`);
   };
 
   const canNavigate = Boolean(doc.map_link?.trim() || doc.endereco);
@@ -618,7 +631,7 @@ function DoctorCard({
 
             {whatsAppUrl && (
               <button
-                onClick={() => window.open(whatsAppUrl, '_blank', 'noopener,noreferrer')}
+                onClick={() => openExternal(whatsAppUrl)}
                 disabled={muted}
                 className={`px-[9px] py-1 border-none rounded text-[11px] font-semibold ${
                   muted ? 'cursor-not-allowed bg-slate-800 text-slate-500' : 'bg-green-700 text-white hover:bg-green-600'
