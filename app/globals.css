@@ -310,3 +310,12 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* iOS dá zoom em qualquer campo com fonte menor que 16px: no celular todos ficam com 16px */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

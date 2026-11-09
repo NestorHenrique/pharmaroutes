@@ -6,7 +6,7 @@ export const TABS_NAVEGACAO = [
   { value: 'qua', label: 'QUA' },
   { value: 'qui', label: 'QUI' },
   { value: 'sex', label: 'SEX' },
-  { value: 'novos', label: 'NOVOS' },
+  { value: 'novos', label: 'NOVOS MÉDICOS CADASTRADOS' },
 ] as const;
 
 export const OPCOES_DIAS = [
@@ -32,7 +32,6 @@ export const OPCOES_SHIFT = [
 export const FILTROS_TURNO = [
   { value: 'MANHA', label: 'Manhã', emoji: '☀️' },
   { value: 'TARDE', label: 'Tarde', emoji: '🌤️' },
-  { value: 'NOITE', label: 'Noite', emoji: '🌙' },
 ] as const;
 
 /* ── Categorias de local ── */

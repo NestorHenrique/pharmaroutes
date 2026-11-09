@@ -63,6 +63,32 @@ const THEME_KEY = 'pharma_theme';
 
 type Theme = 'onix' | 'marfim';
 
+/** Segunda-feira da semana de `d` (YYYY-MM-DD, horário local): a semana vira à 00:00 de segunda */
+function mondayOf(d: Date = new Date()): string {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+
+/** Semana ativa salva no aparelho: { week, monday }. Formato antigo (só o número) conta como vencido. */
+function readActiveWeek(): { week: CycleWeek; monday: string } | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_WEEK_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === 'number') {
+      const week = normalizeCycleWeeks([parsed])[0];
+      return week ? { week, monday: '' } : null;
+    }
+    if (parsed && typeof parsed === 'object') {
+      const o = parsed as { week?: unknown; monday?: unknown };
+      const week = normalizeCycleWeeks([Number(o.week)])[0];
+      if (week && typeof o.monday === 'string') return { week, monday: o.monday };
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 function endOfToday(): string {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
@@ -186,11 +212,14 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
-  const [sortMode, setSortMode] = useState<SortMode>('historico');
+  const [sortMode, setSortMode] = useState<SortMode>('manual');
   /** null = Todas as semanas do ciclo */
   const [selectedWeek, setSelectedWeek] = useState<CycleWeek | null>(null);
   /** "Estou visitando na": semana em que os visitados entram automaticamente */
   const [activeWeek, setActiveWeek] = useState<CycleWeek | null>(null);
+  /** pergunta da semana (abre no início de cada semana) e a semana da semana passada */
+  const [weekPrompt, setWeekPrompt] = useState(false);
+  const [lastWeek, setLastWeek] = useState<CycleWeek | null>(null);
 
   /* UI */
   const [showAddForm, setShowAddForm] = useState(false);
@@ -246,18 +275,35 @@ export default function HomePage() {
       if (saved === 'historico' || saved === 'manual') setSortMode(saved);
       const week = normalizeCycleWeeks([Number(localStorage.getItem(CYCLE_WEEK_KEY))])[0];
       if (week) setSelectedWeek(week);
-      const active = normalizeCycleWeeks([Number(localStorage.getItem(ACTIVE_WEEK_KEY))])[0];
-      if (active) setActiveWeek(active);
+      // Semana ativa vale até a próxima segunda-feira; depois pergunta de novo
+      const savedWeek = readActiveWeek();
+      if (savedWeek && savedWeek.monday === mondayOf()) setActiveWeek(savedWeek.week);
+      else {
+        if (savedWeek) setLastWeek(savedWeek.week);
+        setWeekPrompt(true);
+      }
     } catch { /* ignore */ }
   }, []);
 
   const changeActiveWeek = (week: CycleWeek | null) => {
     setActiveWeek(week);
+    setWeekPrompt(false);
     try {
-      if (week) localStorage.setItem(ACTIVE_WEEK_KEY, String(week));
+      if (week) localStorage.setItem(ACTIVE_WEEK_KEY, JSON.stringify({ week, monday: mondayOf() }));
       else localStorage.removeItem(ACTIVE_WEEK_KEY);
     } catch { /* ignore */ }
   };
+
+  // App aberto na virada da semana: na segunda-feira a semana escolhida expira
+  useEffect(() => {
+    if (!activeWeek) return;
+    const saved = readActiveWeek();
+    if (saved && saved.monday !== mondayOf()) {
+      setLastWeek(saved.week);
+      setActiveWeek(null);
+      setWeekPrompt(true);
+    }
+  }, [now, activeWeek]);
 
   const changeWeek = (week: CycleWeek | null) => {
     setSelectedWeek(week);
@@ -1042,6 +1088,7 @@ export default function HomePage() {
     (selectedWeek ? 1 : 0) +
     (selectedCategory ? 1 : 0) +
     (turnoFilter ? 1 : 0) +
+    (sortMode === 'historico' ? 1 : 0) +
     (portfolioActive ? 1 : 0);
   const dayLabel = TABS_NAVEGACAO.find((t) => t.value === routeDay)?.label ?? '';
 
@@ -1124,10 +1171,15 @@ export default function HomePage() {
       <header className="sticky top-0 z-20 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 pt-4 pb-3 flex flex-col gap-3">
         <div className="flex justify-between items-center gap-3">
           <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 truncate">
+            <button
+              type="button"
+              onClick={() => setWeekPrompt(true)}
+              className="self-start bg-transparent border-0 p-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 truncate hover:text-slate-200"
+            >
               {dayLabel}
-              {activeWeek ? ` · ${cycleWeekLabel(activeWeek)}` : ''}
-            </span>
+              {' · '}
+              {activeWeek ? cycleWeekLabel(activeWeek) : 'Escolher semana'}
+            </button>
             <h1 className="m-0 flex items-center gap-2 text-2xl font-bold tracking-tight text-white">
               Rota de hoje
               <span
@@ -1270,7 +1322,7 @@ export default function HomePage() {
                       selectedCategory === f.value ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    {f.emoji} {f.label}
+                    {f.label}
                   </button>
                 ))}
                 <button
@@ -1288,13 +1340,13 @@ export default function HomePage() {
                     portfolioActive ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  {portfolioActive ? '🎯 Minha carteira' : '👥 Todos'}
+                  {portfolioActive ? 'Minha carteira' : 'Todos'}
                 </button>
               </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Turno e ordem</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Turno e ordenação</span>
               <div className="flex gap-1.5 flex-wrap">
                 {FILTROS_TURNO.map((t) => (
                   <button
@@ -1306,16 +1358,21 @@ export default function HomePage() {
                       turnoFilter === t.value ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    {t.emoji} {t.label}
+                    {t.label}
                   </button>
                 ))}
                 <button
                   type="button"
                   onClick={() => changeSortMode(sortMode === 'historico' ? 'manual' : 'historico')}
-                  title="Média histórica = horário médio de atendimento · Manual = a ordem que você arrasta"
-                  className="h-8 px-3 rounded-full text-xs border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200"
+                  aria-pressed={sortMode === 'historico'}
+                  title="Ordena pelo horário médio em que cada médico costuma atender"
+                  className={`h-8 px-3 rounded-full text-xs ${
+                    sortMode === 'historico'
+                      ? 'border-0 bg-slate-100 text-slate-950 font-semibold'
+                      : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
+                  }`}
                 >
-                  {sortMode === 'historico' ? '⏱ Ordem: média histórica' : '✋ Ordem: manual'}
+                  Média histórica
                 </button>
               </div>
             </div>
@@ -1328,6 +1385,7 @@ export default function HomePage() {
                   changeWeek(null);
                   setSelectedCategory(null);
                   setTurnoFilter(null);
+                  changeSortMode('manual');
                 }}
                 className="self-start h-8 px-3 rounded-full text-xs border border-slate-700 bg-transparent text-slate-300 hover:text-red-400"
               >
@@ -1355,6 +1413,13 @@ export default function HomePage() {
           onLogout={handleLogout}
           portfolioActive={portfolioActive}
           onTogglePortfolio={() => saveProfile({ show_all: !profile.show_all })}
+          activeWeekLabel={activeWeek ? cycleWeekLabel(activeWeek) : null}
+          onChangeWeek={() => {
+            setShowProfile(false);
+            setWeekPrompt(true);
+          }}
+          cycleVisitedCount={cycleVisits.size}
+          onRenewCycle={renewCycle}
         />
       )}
 
@@ -1387,7 +1452,7 @@ export default function HomePage() {
               onClick={() => openSheet(nextDoctor.id)}
               className="text-left bg-transparent border-0 p-0 flex flex-col gap-1"
             >
-              <span className="text-lg font-semibold text-white">{nextDoctor.descricao}</span>
+              <span className="text-lg font-semibold uppercase text-white">{nextDoctor.descricao}</span>
               <span className="text-sm text-slate-400">
                 {[nextDoctor.complemento || 'Consultório próprio', nextDoctor.bairro].filter(Boolean).join(' · ')}
               </span>
@@ -1413,43 +1478,6 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* Ciclo de visitas */}
-        {!isCategoryMode && (
-          <div className="flex flex-col gap-2.5 rounded-2xl border border-slate-800 bg-slate-900 px-3.5 py-3">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Semana que estou visitando">
-              <span className="text-xs text-slate-400 whitespace-nowrap shrink-0 mr-1">Estou visitando na</span>
-              {CYCLE_WEEKS.map((w) => (
-                <button
-                  key={w}
-                  type="button"
-                  onClick={() => changeActiveWeek(activeWeek === w ? null : w)}
-                  aria-pressed={activeWeek === w}
-                  className={`h-8 px-3 rounded-full text-xs whitespace-nowrap shrink-0 ${
-                    activeWeek === w ? 'border-0 bg-blue-600 text-white font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {cycleWeekLabel(w)}
-                </button>
-              ))}
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-slate-400">
-                {selectedWeek ? `${cycleWeekLabel(selectedWeek)} · ` : 'Ciclo · '}
-                <strong className="text-slate-100">{cycleVisitedCount}</strong> de {filteredDoctors.length} visitado
-                {cycleVisitedCount !== 1 ? 's' : ''}
-              </span>
-              <button
-                type="button"
-                onClick={renewCycle}
-                disabled={cycleVisits.size === 0}
-                className="shrink-0 h-8 px-3 rounded-full border border-slate-700 bg-transparent text-xs font-medium text-slate-200 hover:text-white disabled:opacity-40"
-              >
-                🔄 Renovar ciclo
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Contagem */}
         <div className="flex justify-between items-center gap-2 text-xs text-slate-500 flex-wrap px-0.5">
           <span>
@@ -1464,7 +1492,7 @@ export default function HomePage() {
             )}
             {loading && <span className="text-blue-400"> · Atualizando...</span>}
           </span>
-          <span>{sortMode === 'historico' ? '⏱ Média histórica' : '✋ Ordem manual'}</span>
+          {sortMode === 'historico' && <span>Média histórica</span>}
         </div>
 
         {/* Cards em 3 blocos */}
@@ -1500,7 +1528,7 @@ export default function HomePage() {
           style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
         >
           <div className="mx-auto max-w-xl rounded-[22px] border border-slate-700 bg-slate-900/95 backdrop-blur-md shadow-2xl shadow-black/40 p-2 flex flex-col gap-1.5">
-            <span className="px-2 text-[11px] text-slate-400 truncate">{targetDoc.descricao}</span>
+            <span className="px-2 text-[11px] uppercase text-slate-400 truncate">{targetDoc.descricao}</span>
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
@@ -1544,6 +1572,57 @@ export default function HomePage() {
         </nav>
       )}
 
+      {/* Pergunta da semana: abre no começo de cada semana (segunda-feira) */}
+      {weekPrompt && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 animate-[fade-in_.18s_ease-out]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="week-prompt-title"
+            className="w-full sm:max-w-md rounded-t-[28px] sm:rounded-[28px] border-t sm:border border-slate-700 bg-slate-900 px-5 pt-6 flex flex-col gap-4 animate-[sheet-up_.24s_cubic-bezier(.2,.8,.2,1)]"
+            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 20px)' }}
+          >
+            <div className="flex flex-col gap-1">
+              <h2 id="week-prompt-title" className="m-0 text-xl font-bold tracking-tight text-white">
+                Qual semana você está visitando esta semana?
+              </h2>
+              <span className="text-sm text-slate-400">
+                Fica salvo até a próxima segunda-feira. Os médicos que você marcar como visitados entram nessa semana.
+              </span>
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              {CYCLE_WEEKS.map((w) => {
+                const suggested = !activeWeek && lastWeek !== null && w === ((lastWeek % 5) + 1);
+                const current = activeWeek === w;
+                return (
+                  <button
+                    key={w}
+                    type="button"
+                    onClick={() => changeActiveWeek(w)}
+                    aria-pressed={current}
+                    className={`h-16 rounded-2xl text-sm font-bold flex flex-col items-center justify-center gap-0.5 ${
+                      current || suggested
+                        ? 'border-0 bg-blue-600 text-white'
+                        : 'border border-slate-700 bg-slate-800 text-slate-100'
+                    }`}
+                  >
+                    <span className="text-lg leading-none">{w}ª</span>
+                    <span className="text-[10px] font-medium opacity-80">{suggested ? 'sugerida' : 'Sem'}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setWeekPrompt(false)}
+              className="h-11 rounded-xl border border-slate-700 bg-transparent text-sm text-slate-300 hover:text-white"
+            >
+              {activeWeek ? 'Fechar' : 'Agora não'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Ficha do médico (sobe de baixo) */}
       {sheetDoc && (
         <DoctorSheet
@@ -1575,7 +1654,7 @@ export default function HomePage() {
           className="pointer-events-none fixed left-3 right-3 top-0 z-50 rounded-2xl border border-blue-600 bg-slate-900/95 px-3 py-3 text-sm font-semibold uppercase text-white shadow-xl"
           style={{ transform: `translateY(${ghost.y - 28}px)` }}
         >
-          ☰ {ghost.name}
+          {ghost.name}
         </div>
       )}
     </div>

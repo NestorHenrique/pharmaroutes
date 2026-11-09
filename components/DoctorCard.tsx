@@ -276,7 +276,7 @@ function DoctorCard({
     return (
       <div
         id={`doc-${doc.id}`}
-        className={`rounded-2xl border px-3.5 py-3 flex items-center gap-3 transition-colors ${
+        className={`relative rounded-2xl border px-3.5 py-3 flex items-center gap-3 transition-colors active:bg-slate-800 ${
           muted ? 'border-slate-800 bg-transparent opacity-60' : `bg-slate-900 ${tone?.border ?? 'border-slate-800'}`
         }`}
       >
@@ -286,7 +286,7 @@ function DoctorCard({
             aria-label="Arrastar para reordenar"
             onTouchStart={(e) => onDragHandleTouchStart(doc.id, e.touches[0]?.clientY ?? 0)}
             style={{ touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
-            className="select-none -ml-1 size-9 shrink-0 rounded-lg text-slate-500 active:bg-slate-800 flex items-center justify-center"
+            className="relative z-10 select-none -ml-1 size-9 shrink-0 rounded-lg text-slate-500 active:bg-slate-800 flex items-center justify-center"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <path d="M5 8h14M5 12h14M5 16h14" />
@@ -305,10 +305,10 @@ function DoctorCard({
           type="button"
           onClick={() => onToggleExpand(doc.id)}
           aria-expanded={false}
-          className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 flex flex-col gap-0.5"
+          className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 flex flex-col gap-0.5 before:absolute before:inset-0 before:rounded-2xl before:content-['']"
         >
           <span
-            className={`text-[15px] font-semibold truncate ${visitedAt ? 'text-slate-500 line-through' : 'text-white'}`}
+            className={`text-[15px] font-semibold uppercase truncate ${visitedAt ? 'text-slate-500 line-through' : 'text-white'}`}
           >
             {doc.descricao}
             {isNew && <span className="ml-1.5 align-middle text-[9px] font-bold text-green-400 no-underline">NOVO</span>}
@@ -330,7 +330,7 @@ function DoctorCard({
           <button
             type="button"
             onClick={() => onToggleCycleVisit(doc.id, false)}
-            className="shrink-0 h-8 px-2.5 rounded-lg border border-slate-700 bg-transparent text-xs text-slate-300 hover:text-white"
+            className="relative z-10 shrink-0 h-8 px-2.5 rounded-lg border border-slate-700 bg-slate-900 text-xs text-slate-300 hover:text-white"
           >
             Desfazer
           </button>
@@ -381,7 +381,7 @@ function DoctorCard({
             className={`rounded-md px-2.5 py-1.5 text-[11px] flex items-center justify-between border border-white/10 ${meta.bg} ${meta.text}`}
           >
             <span>
-              {meta.emoji} <strong>{isVisit ? 'Visitado' : meta.label}</strong>
+              <strong>{isVisit ? 'Visitado' : meta.label}</strong>
               {showTime && <span className="text-slate-300"> — às {formatTime(s.created_at)}</span>}
               {isVisit && s.rep_name && <span className="text-slate-400"> · {s.rep_name}</span>}
               {meta.duration !== null && remaining !== null && remaining > 0 && (
@@ -402,7 +402,7 @@ function DoctorCard({
       <div className="flex justify-between items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <h3 className="m-0 text-sm font-semibold text-white uppercase break-words">{doc.descricao}</h3>
+            <h3 className="m-0 text-base font-semibold text-white uppercase break-words">{doc.descricao}</h3>
             {/* OCR — preparação visual: 🟢 confirmado · 🟡 encaixe/alterado · 🔴 ausente */}
             {doc.ocr_status && (
               <span

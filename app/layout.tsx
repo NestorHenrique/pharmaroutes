@@ -4,11 +4,12 @@ import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
 
-// Não bloqueamos o zoom do usuário (acessibilidade, WCAG 1.4.4).
-// O zoom automático do iOS ao focar campos é evitado com inputs de 16px no mobile.
+// Sem zoom automático do iOS ao tocar em campos: maximumScale 1 + inputs de 16px (globals.css).
+// O iOS continua permitindo o zoom de pinça do usuário.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 1,
   themeColor: '#0B0B0D',
   // Escuro por padrão (Ônix); o tema claro (Marfim) é escolhido no app
   colorScheme: 'dark light',

@@ -173,7 +173,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         type="text"
         placeholder="Nome do Médico *"
         value={form.descricao}
-        onChange={(e) => setField('descricao', e.target.value)}
+        onChange={(e) => setField('descricao', e.target.value.toUpperCase())}
         className={inputCls}
         autoFocus
       />
@@ -300,7 +300,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
           onClick={() => gps.capture((url) => setField('map_link', url))}
           className="bg-green-700 text-white border-none px-3 rounded text-[11px] font-semibold shrink-0 hover:bg-green-600 disabled:opacity-50"
         >
-          {gps.loading ? '...' : '📍 GPS'}
+          {gps.loading ? '...' : 'GPS'}
         </button>
       </div>
       {gps.status && (
@@ -315,7 +315,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
           onClick={gps.retry}
           className="self-start rounded border border-sky-500 bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
         >
-          📍 {GPS_ACTIVATE_LABEL}
+          {GPS_ACTIVATE_LABEL}
         </button>
       )}
 

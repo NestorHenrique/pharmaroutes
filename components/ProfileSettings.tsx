@@ -18,6 +18,12 @@ interface ProfileSettingsProps {
   /** filtro "Minha carteira" ligado */
   portfolioActive: boolean;
   onTogglePortfolio: () => void;
+  /** semana do ciclo que o representante está visitando (null = não escolhida) */
+  activeWeekLabel: string | null;
+  onChangeWeek: () => void;
+  /** visitados no ciclo atual */
+  cycleVisitedCount: number;
+  onRenewCycle: () => void;
 }
 
 const inputCls =
@@ -43,6 +49,10 @@ export default function ProfileSettings({
   onLogout,
   portfolioActive,
   onTogglePortfolio,
+  activeWeekLabel,
+  onChangeWeek,
+  cycleVisitedCount,
+  onRenewCycle,
 }: ProfileSettingsProps) {
   const [displayName, setDisplayName] = useState(profile.display_name ?? '');
   const [specialties, setSpecialties] = useState<string[]>(profile.specialties);
@@ -165,6 +175,38 @@ export default function ProfileSettings({
             placeholder="Como aparece em “Visitado” e “Atualizado por”"
             className={inputCls}
           />
+        </section>
+
+        {/* Ciclo de visitas */}
+        <section className={cardCls}>
+          <span className={titleCls}>Ciclo de visitas</span>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col">
+              <span className="text-sm text-slate-300">Semana que estou visitando</span>
+              <span className="text-base font-semibold text-white">{activeWeekLabel ?? 'Não escolhida'}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onChangeWeek}
+              className="h-10 px-4 shrink-0 rounded-xl border border-slate-700 bg-transparent text-sm text-slate-200 hover:text-white"
+            >
+              Trocar
+            </button>
+          </div>
+          <div className="h-px bg-slate-800" />
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm text-slate-300">
+              {cycleVisitedCount} médico{cycleVisitedCount !== 1 ? 's' : ''} visitado{cycleVisitedCount !== 1 ? 's' : ''} neste ciclo
+            </span>
+            <button
+              type="button"
+              onClick={onRenewCycle}
+              disabled={cycleVisitedCount === 0}
+              className="h-10 px-4 shrink-0 rounded-xl border-0 bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 disabled:opacity-40"
+            >
+              Renovar ciclo
+            </button>
+          </div>
         </section>
 
         {/* Carteira */}

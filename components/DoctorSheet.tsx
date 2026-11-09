@@ -129,7 +129,7 @@ export default function DoctorSheet({
         {/* Cabeçalho */}
         <div className="flex justify-between items-start gap-3">
           <div className="flex flex-col gap-1 min-w-0">
-            <h2 className="m-0 text-[22px] font-bold tracking-tight text-white break-words">
+            <h2 className="m-0 text-[22px] font-bold tracking-tight uppercase text-white break-words">
               {doc.descricao}
               {isNewDoctor(doc) && <span className="ml-2 align-middle text-[10px] font-bold text-green-400">NOVO</span>}
             </h2>
@@ -261,7 +261,6 @@ export default function DoctorSheet({
                   }`}
                 >
                   <span className="text-sm font-semibold">
-                    {active ? '● ' : ''}
                     {q.label}
                   </span>
                   {active && (
@@ -296,7 +295,6 @@ export default function DoctorSheet({
                   }`}
                 >
                   <span className="text-sm font-semibold">
-                    {active ? '● ' : ''}
                     {a.label}
                   </span>
                   {active?.return_date && (
@@ -368,7 +366,7 @@ export default function DoctorSheet({
                 : 'border-0 bg-emerald-600 text-white hover:bg-emerald-500'
             }`}
           >
-            {visitedAt ? 'Desfazer' : '✓ Visitado'}
+            {visitedAt ? 'Desfazer visita' : 'Visitado'}
           </button>
         </div>
         {!visitedAt && activeWeekLabel && (
