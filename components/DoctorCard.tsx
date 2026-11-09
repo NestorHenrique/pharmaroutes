@@ -20,7 +20,7 @@ import {
   clearDraft,
   formatMinutes,
 } from '@/utils';
-import { useGeolocation } from '@/hooks/useGeolocation';
+import { useGeolocation, GPS_ACTIVATE_LABEL } from '@/hooks/useGeolocation';
 import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
 import AgendaEditor from '@/components/AgendaEditor';
@@ -434,6 +434,16 @@ function DoctorCard({
             <div role="status" className={`text-[10px] ${gps.status.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
               {gps.status.text}
             </div>
+          )}
+          {gps.needsActivation && (
+            <button
+              type="button"
+              disabled={gps.loading}
+              onClick={gps.retry}
+              className="self-start rounded border border-sky-500 bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+            >
+              📍 {GPS_ACTIVATE_LABEL}
+            </button>
           )}
 
           <input type="text" placeholder="Observações do Propagandista" value={editForm.observacoes ?? ''} onChange={(e) => setField('observacoes', e.target.value)} className={inputCls} />
