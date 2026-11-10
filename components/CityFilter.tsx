@@ -156,18 +156,18 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
               </button>
             </div>
 
-            {/* Selecionadas */}
+            {/* Selecionadas: quebram em linhas (sem passar da tela); se forem muitas, rolam só essa área */}
             {draft.length > 0 && (
-              <div className="flex gap-1.5 overflow-x-auto px-5 pt-3 no-scrollbar">
+              <div className="flex max-h-[7.5rem] shrink-0 flex-wrap gap-1.5 overflow-y-auto px-5 pt-3">
                 {draft.map((key) => (
                   <button
                     key={key}
                     type="button"
                     onClick={() => toggle(key)}
                     aria-label={`Remover ${labelFor(key)}`}
-                    className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-sky-500/50 bg-sky-500/15 px-3 text-xs font-semibold text-sky-300"
+                    className="flex h-8 max-w-full shrink-0 items-center gap-1.5 rounded-full border border-sky-500/50 bg-sky-500/15 px-3 text-xs font-semibold text-sky-300"
                   >
-                    {labelFor(key)}
+                    <span className="truncate">{labelFor(key)}</span>
                     <span aria-hidden="true">×</span>
                   </button>
                 ))}
@@ -175,7 +175,7 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
             )}
 
             {/* Busca + atalhos */}
-            <div className="flex flex-col gap-2 px-5 pt-3">
+            <div className="flex shrink-0 flex-col gap-2 px-5 pt-3">
               <input
                 type="search"
                 value={query}

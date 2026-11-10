@@ -75,6 +75,7 @@ const ACTIVE_WEEK_KEY = 'pharma_active_week';
 const THEME_KEY = 'pharma_theme';
 const BOTTOM_OPEN_KEY = 'pharma_bottom_open';
 const UNAVAILABLE_OPEN_KEY = 'pharma_unavailable_open';
+const ROUTE_CLOSED_KEY = 'pharma_route_closed';
 
 /** No estado contraído cada sub-lista de "Em atendimento" mostra só os mais recentes */
 const COLLAPSED_VISIBLE = 2;
@@ -371,6 +372,8 @@ export default function HomePage() {
   /** "Visitados e indisponíveis" começa recolhida; a escolha fica salva no aparelho */
   const [bottomOpen, setBottomOpen] = useState(false);
   const [unavailOpen, setUnavailOpen] = useState(false);
+  /** "Rota" começa expandida; se o usuário recolher, a escolha fica salva no aparelho */
+  const [routeClosed, setRouteClosed] = useState(false);
   /** sub-listas de "Em atendimento" abertas por inteiro (as demais mostram só as mais recentes) */
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showAddForm, setShowAddForm] = useState(false);
@@ -426,6 +429,7 @@ export default function HomePage() {
       if (saved === 'historico' || saved === 'manual') setSortMode(saved);
       if (localStorage.getItem(BOTTOM_OPEN_KEY) === '1') setBottomOpen(true);
       if (localStorage.getItem(UNAVAILABLE_OPEN_KEY) === '1') setUnavailOpen(true);
+      if (localStorage.getItem(ROUTE_CLOSED_KEY) === '1') setRouteClosed(true);
       const week = normalizeCycleWeeks([Number(localStorage.getItem(CYCLE_WEEK_KEY))])[0];
       if (week) setSelectedWeek(week);
       // Semana ativa vale até a próxima segunda-feira; depois pergunta de novo
@@ -479,6 +483,14 @@ export default function HomePage() {
     setUnavailOpen(next);
     try {
       localStorage.setItem(UNAVAILABLE_OPEN_KEY, next ? '1' : '0');
+    } catch { /* ignore */ }
+  };
+
+  const toggleRouteClosed = () => {
+    const next = !routeClosed;
+    setRouteClosed(next);
+    try {
+      localStorage.setItem(ROUTE_CLOSED_KEY, next ? '1' : '0');
     } catch { /* ignore */ }
   };
 
@@ -1333,6 +1345,7 @@ export default function HomePage() {
 
   const middleIndex = useMemo(() => new Map(middleIds.map((id, i) => [id, i])), [middleIds]);
 
+  const routeShown = !routeClosed || searchQuery.trim() !== '';
   const bottomShown = bottomOpen || searchQuery.trim() !== '';
   const unavailShown = unavailOpen || searchQuery.trim() !== '';
 
@@ -1999,9 +2012,15 @@ export default function HomePage() {
             })}
 
             {feed.middle.length > 0 && (
-              <SectionTitle>Rota · {feed.middle.length}</SectionTitle>
+              <CollapsibleTitle
+                title="Rota"
+                count={feed.middle.length}
+                open={routeShown}
+                onToggle={toggleRouteClosed}
+                hint={routeShown ? 'Recolher' : 'Expandir'}
+              />
             )}
-            {feed.middle.map((doc) => renderCard(doc, 'middle'))}
+            {routeShown && feed.middle.map((doc) => renderCard(doc, 'middle'))}
 
             {feed.visited.length > 0 && (
               <CollapsibleTitle
