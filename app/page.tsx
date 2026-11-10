@@ -43,9 +43,15 @@ import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { useRepProfile } from '@/hooks/useRepProfile';
 import { useDoctorFilters } from '@/hooks/useDoctorFilters';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { useVisits } from '@/hooks/useVisits';
+import { visitorsOf, visitorsSummary } from '@/lib/visits';
+import { matchDoctor, SEARCH_SCOPES } from '@/lib/search';
+import type { SearchScope } from '@/lib/search';
+import type { Visitor } from '@/lib/visits';
 import type { SortMode } from '@/hooks/useDoctorFilters';
 import DoctorCard from '@/components/DoctorCard';
 import DoctorSheet from '@/components/DoctorSheet';
+import { RepAvatar } from '@/components/RepAvatar';
 import AddDoctorForm from '@/components/AddDoctorForm';
 import ProfileSettings from '@/components/ProfileSettings';
 import CityFilter from '@/components/CityFilter';
@@ -116,6 +122,11 @@ function initialTab(): string | null {
   const today = getTodayDayCode();
   return OPCOES_DIAS.some((d) => d.value === today) ? today : null;
 }
+
+const NO_VISITORS: Visitor[] = [];
+
+/** Nome do dia para frases ("na terça") */
+const DAY_LONG: Record<string, string> = { seg: 'segunda', ter: 'terça', qua: 'quarta', qui: 'quinta', sex: 'sexta' };
 
 function isLive(s: Pick<DoctorStatus, 'expires_at'>, nowMs: number): boolean {
   return !s.expires_at || new Date(s.expires_at).getTime() > nowMs;
@@ -330,6 +341,8 @@ export default function HomePage() {
   const [selectedTab, setSelectedTab] = useState<string | null>(initialTab);
   const [turnoFilter, setTurnoFilter] = useState<Shift | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchScope, setSearchScope] = useState<SearchScope>('tudo');
+  const [searchFocus, setSearchFocus] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedCities, setSelectedCities] = useState<string[]>([]);
   const [sortMode, setSortMode] = useState<SortMode>('manual');
@@ -645,13 +658,21 @@ export default function HomePage() {
 
   /* ═══════════════════ Modo offline: fila + sincronização ═══════════════════ */
 
+  /* Visitas do ciclo: cada representante tem as suas */
+  const { visitMap, profiles: repProfiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits } = useVisits(
+    userId,
+    accessToken,
+    actorName,
+  );
+
   const offline = useOfflineQueue(
     userId,
     useCallback(() => {
       fetchStatuses();
       fetchDoctors();
       fetchEvents();
-    }, [fetchStatuses, fetchDoctors, fetchEvents]),
+      void refetchVisits();
+    }, [fetchStatuses, fetchDoctors, fetchEvents, refetchVisits]),
   );
 
   /* ═══════════════════ Status Actions (otimistas) ═══════════════════ */
@@ -879,13 +900,17 @@ export default function HomePage() {
         created_by_name: actorName,
         change_source: 'app',
       };
-      let { data: inserted, error } = await supabase.from('doctors').insert(row).select('id').single();
+      let toInsert: Record<string, unknown> = row;
+      let { data: inserted, error } = await supabase.from('doctors').insert(toInsert).select('id').single();
 
-      // Migração v6 ainda não rodada (coluna created_by_name inexistente): grava sem ela
-      if (error && isMissingColumn(error, 'created_by_name')) {
-        const { created_by_name: _omit, ...legacyRow } = row;
-        void _omit;
-        ({ data: inserted, error } = await supabase.from('doctors').insert(legacyRow).select('id').single());
+      // Migrações v6/v7 ainda não rodadas (coluna inexistente): grava sem as colunas novas
+      for (const col of ['created_by_name', 'whatsapp_medico', 'whatsapp_clinica']) {
+        if (error && isMissingColumn(error, col)) {
+          const { [col]: _omit, ...rest } = toInsert;
+          void _omit;
+          toInsert = rest;
+          ({ data: inserted, error } = await supabase.from('doctors').insert(toInsert).select('id').single());
+        }
       }
 
       if (error) {
@@ -946,7 +971,8 @@ export default function HomePage() {
   const liveStatusMap = useMemo(() => {
     const out: Record<string, DoctorStatus[]> = {};
     for (const [docId, list] of Object.entries(statusMap)) {
-      const live = list.filter((s) => isLive(s, now));
+      // 'visitado_hoje' sem expiração é a visita antiga do ciclo (agora em doctor_visits): ignora
+      const live = list.filter((s) => isLive(s, now) && !(s.status_type === CYCLE_VISIT_STATUS && !s.expires_at));
       if (live.length) out[docId] = live;
     }
     return out;
@@ -961,23 +987,16 @@ export default function HomePage() {
   /* ═══════════════════ Ciclo: visitas (doctor_statuses) ═══════════════════ */
 
   /** Médicos que ESTE representante marcou visitado no ciclo: doctor_id -> visited_at */
-  const cycleVisits = useMemo(() => {
-    const out = new Map<string, string>();
-    for (const [docId, list] of Object.entries(liveStatusMap)) {
-      const v = list.find((s) => s.status_type === CYCLE_VISIT_STATUS && s.created_by === sessionUserId);
-      if (v) out.set(docId, v.created_at);
-    }
-    return out;
-  }, [liveStatusMap, sessionUserId]);
+  const cycleVisits = myVisits;
 
   /** Marca/desfaz "Visitado". Com semana ativa, o médico entra nela e fica na sequência da visita. */
   const toggleCycleVisit = useCallback(
     (doctorId: string, visited: boolean) => {
       if (!visited) {
-        void clearDoctorStatus(doctorId, CYCLE_VISIT_STATUS);
+        void undoVisited(doctorId);
         return;
       }
-      void setDoctorStatus(doctorId, CYCLE_VISIT_STATUS, { persistent: true });
+      void markVisited(doctorId);
 
       if (activeWeek) {
         const key = cycleWeekKey(activeWeek);
@@ -992,39 +1011,19 @@ export default function HomePage() {
         if (list.join(',') !== current.join(',')) void saveRouteOrder(key, list);
       }
     },
-    [clearDoctorStatus, setDoctorStatus, activeWeek, routeOrder, cycleVisits, saveRouteOrder],
+    [undoVisited, markVisited, activeWeek, routeOrder, cycleVisits, saveRouteOrder],
   );
 
-  /** Novo ciclo: zera só os "Visitado" deste representante (semanas e ordem da rota ficam) */
+  /** Novo ciclo: zera só os "Visitado" deste representante (semanas, ordem da rota e horários médios ficam) */
   const renewCycle = useCallback(async () => {
     if (!sessionUserId) return;
-    if (isOffline()) {
-      alert('Sem internet. Renove o ciclo quando a conexão voltar.');
-      return;
-    }
     const ok = confirm(
-      'Renovar o ciclo de visitas? Todos os médicos voltam para pendente. Semanas e ordem da rota continuam iguais.',
+      'Renovar o ciclo de visitas? Só as SUAS visitas voltam para pendente; as dos outros representantes não mudam. Semanas e ordem da rota continuam iguais.',
     );
     if (!ok) return;
-
-    setStatusMap((prev) => {
-      const next: Record<string, DoctorStatus[]> = {};
-      for (const [docId, list] of Object.entries(prev)) {
-        next[docId] = list.filter((s) => !(s.status_type === CYCLE_VISIT_STATUS && s.created_by === sessionUserId));
-      }
-      return next;
-    });
-    const { error } = await supabase
-      .from('doctor_statuses')
-      .delete()
-      .eq('status_type', CYCLE_VISIT_STATUS)
-      .eq('created_by', sessionUserId);
-    if (error) {
-      console.error('Erro ao renovar o ciclo:', error.message, '|', error.details, '|', error.code);
-      alert('Não foi possível renovar o ciclo. Tente novamente.');
-      fetchStatuses();
-    }
-  }, [sessionUserId, fetchStatuses]);
+    const done = await renewMine();
+    if (!done) alert('Não foi possível renovar o ciclo. Tente novamente.');
+  }, [sessionUserId, renewMine]);
 
   /** Médicos com as semanas DESTE representante */
   const doctorsWithWeeks = useMemo(
@@ -1033,7 +1032,7 @@ export default function HomePage() {
   );
 
   const filteredDoctors = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = searchQuery.trim();
     const specSet = new Set(profile?.specialties ?? []);
     const citySet = new Set(selectedCities);
 
@@ -1065,13 +1064,34 @@ export default function HomePage() {
         if (!portfolio.has(d.id) && !(code && specSet.has(code))) return false;
       }
 
-      if (q) {
-        const hay = `${d.descricao} ${d.bairro} ${d.complemento} ${d.crm} ${d.especialidade ?? ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
+      if (q && !matchDoctor(d, q, searchScope).matched) return false;
       return true;
     });
-  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, turnoFilter, searchQuery, portfolioActive, profile, portfolio]);
+  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, turnoFilter, searchQuery, searchScope, portfolioActive, profile, portfolio]);
+
+  /** Médicos de cada cidade no dia escolhido (para o filtro de cidades); sem dia = sem divisão */
+  const cityDayCounts = useMemo(() => {
+    if (!selectedTab || selectedTab === 'novos') return undefined;
+    const out: Record<string, number> = {};
+    for (const d of doctors) {
+      if (!getAgenda(d).some((e) => e.day === selectedTab)) continue;
+      const k = cityKey(d.cidade);
+      out[k] = (out[k] ?? 0) + 1;
+    }
+    return out;
+  }, [doctors, selectedTab]);
+  const dayLongLabel = selectedTab ? DAY_LONG[selectedTab] : undefined;
+
+  /** Onde a busca bateu em cada médico (só quando não foi no nome): "Bairro: Centro" */
+  const searchHints = useMemo(() => {
+    const out = new Map<string, string>();
+    if (!searchQuery.trim()) return out;
+    for (const d of filteredDoctors) {
+      const m = matchDoctor(d, searchQuery, searchScope);
+      if (m.hint) out.set(d.id, m.hint);
+    }
+    return out;
+  }, [filteredDoctors, searchQuery, searchScope]);
 
   /* ═══════════════════ Ordenação em 3 blocos ═══════════════════
    * TOPO:  Último Paciente / Rep. no Consultório / Aguardando Médico (mais recente primeiro).
@@ -1286,12 +1306,23 @@ export default function HomePage() {
     isCategoryMode
       ? (liveStatusMap[id] || []).find((s) => s.status_type === 'visitado_hoje')?.created_at ?? null
       : cycleVisits.get(id) ?? null;
-  /** Registro de visita mais recente de qualquer representante (para "Visitado por [Nome]") */
-  const visitRecordOf = (id: string): DoctorStatus | null =>
-    (liveStatusMap[id] || []).find((s) => s.status_type === CYCLE_VISIT_STATUS) ?? null;
+  /** Quem visitou o médico no ciclo (eu primeiro), com nome e foto */
+  const visitorsByDoctor = useMemo(() => {
+    const out: Record<string, Visitor[]> = {};
+    for (const [docId, list] of Object.entries(visitMap)) {
+      const v = visitorsOf(list, repProfiles, sessionUserId);
+      if (v.length) out[docId] = v;
+    }
+    return out;
+  }, [visitMap, repProfiles, sessionUserId]);
+  const visitorsFor = (id: string): Visitor[] => visitorsByDoctor[id] ?? NO_VISITORS;
   const visitLabelOf = (id: string): string | null => {
-    const v = visitRecordOf(id);
-    return v ? formatVisitAudit(v.rep_name, v.created_at, now) : null;
+    if (isCategoryMode) {
+      // PSM/SAMU/Hospital: visita do dia continua em doctor_statuses
+      const v = (liveStatusMap[id] || []).find((s) => s.status_type === 'visitado_hoje');
+      return v ? formatVisitAudit(v.rep_name, v.created_at, now) : null;
+    }
+    return visitorsSummary(visitorsFor(id), (name, iso) => formatVisitAudit(name, iso, now));
   };
   const toggleVisited = (id: string) => {
     const visited = Boolean(visitedAtOf(id));
@@ -1336,6 +1367,8 @@ export default function HomePage() {
         expected={sortMode === 'historico' ? feed.expected.get(doc.id) ?? null : null}
         onDragHandleTouchStart={manual ? startTouchDrag : undefined}
         cycleVisitedAt={isCategoryMode ? null : cycleVisits.get(doc.id) ?? null}
+        visitors={isCategoryMode ? undefined : visitorsFor(doc.id)}
+        searchHint={searchHints.get(doc.id) ?? null}
         onToggleCycleVisit={isCategoryMode ? undefined : toggleCycleVisit}
         activeWeekLabel={activeWeek ? cycleWeekLabel(activeWeek) : null}
         expanded={editingId === doc.id}
@@ -1454,10 +1487,14 @@ export default function HomePage() {
               )}
             </button>
             <button type="button" onClick={() => setShowProfile(true)} aria-label="Meu perfil" className={iconBtn}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <circle cx="12" cy="8" r="4" />
-                <path d="M4 21a8 8 0 0 1 16 0" />
-              </svg>
+              {profile?.avatar_url ? (
+                <RepAvatar name={actorName} src={profile.avatar_url} size={34} />
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="8" r="4" />
+                  <path d="M4 21a8 8 0 0 1 16 0" />
+                </svg>
+              )}
             </button>
           </div>
         </div>
@@ -1470,13 +1507,31 @@ export default function HomePage() {
               <path d="m20 20-3.5-3.5" />
             </svg>
             <input
-              type="text"
+              type="search"
               aria-label="Buscar"
-              placeholder="Buscar médico, clínica, bairro..."
+              placeholder="Buscar médico, CRM, bairro, telefone..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1 min-w-0 border-0 bg-transparent text-base sm:text-sm text-slate-100 outline-hidden placeholder:text-slate-500"
+              onFocus={() => setSearchFocus(true)}
+              onBlur={() => setTimeout(() => setSearchFocus(false), 200)}
+              className="flex-1 min-w-0 border-0 bg-transparent text-base sm:text-sm text-slate-100 outline-hidden placeholder:text-slate-500 [&::-webkit-search-cancel-button]:hidden"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                aria-label="Limpar busca"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchScope('tudo');
+                }}
+                className="size-6 shrink-0 rounded-full border-0 bg-slate-700 text-slate-200 flex items-center justify-center"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            )}
           </label>
           <button
             type="button"
@@ -1498,9 +1553,31 @@ export default function HomePage() {
           </button>
         </div>
 
+        {/* Onde procurar (aparece enquanto busca) */}
+        {(searchFocus || searchQuery.trim() !== '') && (
+          <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Onde procurar">
+            {SEARCH_SCOPES.map((sc) => (
+              <button
+                key={sc.value}
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => setSearchScope(sc.value)}
+                aria-pressed={searchScope === sc.value}
+                className={`h-8 px-3 rounded-full text-xs whitespace-nowrap shrink-0 ${
+                  searchScope === sc.value
+                    ? 'border-0 bg-slate-100 text-slate-950 font-semibold'
+                    : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {sc.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
-          {TABS_NAVEGACAO.map((tab) => (
+          {TABS_NAVEGACAO.filter((tab) => tab.value !== 'novos').map((tab) => (
             <button
               key={tab.value}
               type="button"
@@ -1511,11 +1588,25 @@ export default function HomePage() {
               }`}
             >
               {tab.label}
-              {tab.value === 'novos' && newCount > 0 && (
-                <span className="ml-1 rounded-full bg-green-600 px-1.5 text-[10px] text-white">{newCount}</span>
-              )}
             </button>
           ))}
+        </div>
+
+        {/* Novos médicos cadastrados (logo abaixo dos dias) */}
+        <div className="flex">
+          <button
+            type="button"
+            onClick={() => setSelectedTab(selectedTab === 'novos' ? null : 'novos')}
+            aria-pressed={selectedTab === 'novos'}
+            className={`h-9 px-4 rounded-full text-[13px] whitespace-nowrap flex items-center gap-1.5 ${
+              selectedTab === 'novos' ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200 font-medium'
+            }`}
+          >
+            NOVOS MÉDICOS CADASTRADOS
+            {newCount > 0 && (
+              <span className="rounded-full bg-green-600 px-1.5 text-[10px] text-white">{newCount}</span>
+            )}
+          </button>
         </div>
 
         {/* Filtros recolhidos */}
@@ -1523,7 +1614,13 @@ export default function HomePage() {
           <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-3">
             <div className="flex flex-col gap-1.5">
               <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Cidades</span>
-              <CityFilter options={cityOptions} selected={selectedCities} onChange={setSelectedCities} />
+              <CityFilter
+                options={cityOptions}
+                selected={selectedCities}
+                onChange={setSelectedCities}
+                dayCounts={cityDayCounts}
+                dayLabel={dayLongLabel}
+              />
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -1746,19 +1843,25 @@ export default function HomePage() {
               <SectionTitle tone="text-red-400">Em atendimento · {topDoctors.length}</SectionTitle>
             )}
             {attendanceGroups.map((g) => {
+              // Sempre recolhida: 2 cards + botão azul "Ver todos (N)" logo abaixo do último
               const collapsible = g.docs.length > COLLAPSED_VISIBLE;
-              const open = !collapsible || Boolean(openGroups[g.type]);
+              const open = collapsible && Boolean(openGroups[g.type]);
               return (
                 <div key={g.type} className="flex flex-col gap-2.5">
-                  <CollapsibleTitle
-                    tone={g.tone}
-                    title={g.title}
-                    count={g.docs.length}
-                    open={open}
-                    onToggle={collapsible ? () => toggleGroup(g.type) : undefined}
-                    hint={collapsible ? (open ? 'Mostrar menos' : 'Ver todos') : undefined}
-                  />
+                  <SectionTitle tone={g.tone}>
+                    {g.title} ({g.docs.length})
+                  </SectionTitle>
                   {(open ? g.docs : g.docs.slice(0, COLLAPSED_VISIBLE)).map((doc) => renderCard(doc, 'top'))}
+                  {collapsible && (
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(g.type)}
+                      aria-expanded={open}
+                      className="h-11 w-full rounded-[14px] border border-blue-400/55 bg-blue-500/15 text-sm font-bold text-blue-300 hover:bg-blue-500/25"
+                    >
+                      {open ? 'Mostrar menos' : `Ver todos (${g.docs.length})`}
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -1895,6 +1998,7 @@ export default function HomePage() {
           expected={feed.expected.get(sheetDoc.id) ?? null}
           visitedAt={visitedAtOf(sheetDoc.id)}
           visitLabel={visitLabelOf(sheetDoc.id)}
+          visitors={isCategoryMode ? undefined : visitorsFor(sheetDoc.id)}
           activeWeekLabel={!isCategoryMode && activeWeek ? cycleWeekLabel(activeWeek) : null}
           onToggleVisited={() => toggleVisited(sheetDoc.id)}
           onSetStatus={setDoctorStatus}

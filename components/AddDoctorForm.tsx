@@ -45,6 +45,8 @@ type FormState = {
   bairro: string;
   cidade: string;
   telefone: string;
+  whatsapp_medico: string;
+  whatsapp_clinica: string;
   email: string;
   map_link: string;
   observacoes: string;
@@ -65,6 +67,8 @@ const DEFAULTS: FormState = {
   bairro: '',
   cidade: '',
   telefone: '',
+  whatsapp_medico: '',
+  whatsapp_clinica: '',
   email: '',
   map_link: '',
   observacoes: '',
@@ -132,6 +136,8 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
     const weeks = normalizeCycleWeeks(form.cycle_weeks);
     if (weeks.length) payload.cycle_weeks = weeks;
     if (form.rqe.trim()) payload.rqe = form.rqe.trim();
+    if (form.whatsapp_medico.trim()) payload.whatsapp_medico = form.whatsapp_medico.trim();
+    if (form.whatsapp_clinica.trim()) payload.whatsapp_clinica = form.whatsapp_clinica.trim();
 
     try {
       const result = await onAdd(payload);
@@ -349,9 +355,15 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         />
       </div>
 
+      {/* WhatsApps (médico e clínica, separados) */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <input type="tel" inputMode="tel" placeholder="WhatsApp médico" value={form.whatsapp_medico} onChange={(e) => setField('whatsapp_medico', e.target.value)} className={inputCls} />
+        <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica} onChange={(e) => setField('whatsapp_clinica', e.target.value)} className={inputCls} />
+      </div>
+
       {/* Telefone + Email */}
       <div className="grid grid-cols-2 gap-1.5">
-        <input type="tel" placeholder="Telefone (WhatsApp)" value={form.telefone} onChange={(e) => setField('telefone', e.target.value)} className={inputCls} />
+        <input type="tel" placeholder="Telefone fixo" value={form.telefone} onChange={(e) => setField('telefone', e.target.value)} className={inputCls} />
         <input type="email" placeholder="Email" value={form.email} onChange={(e) => setField('email', e.target.value)} className={inputCls} />
       </div>
 

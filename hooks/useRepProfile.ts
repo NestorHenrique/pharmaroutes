@@ -67,6 +67,7 @@ export function useRepProfile(userId: string | null) {
         display_name: p?.display_name ?? null,
         specialties: p?.specialties ?? [],
         show_all: p?.show_all ?? true,
+        avatar_url: p?.avatar_url ?? null,
       });
       setPortfolio(new Set(((links as { doctor_id: string }[] | null) ?? []).map((l) => l.doctor_id)));
     })();
@@ -84,6 +85,7 @@ export function useRepProfile(userId: string | null) {
         display_name: profile?.display_name ?? null,
         specialties: profile?.specialties ?? [],
         show_all: profile?.show_all ?? true,
+        avatar_url: profile?.avatar_url ?? null,
         ...patch,
       };
       const prev = profile;

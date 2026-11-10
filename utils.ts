@@ -310,6 +310,18 @@ export function buildWhatsAppUrl(telefone: string | null | undefined): string | 
   return `https://wa.me/${num}`;
 }
 
+/** Os dois WhatsApps do médico. Sem WhatsApp da clínica, o telefone cadastrado serve de reserva. */
+export function doctorWhatsApps(doc: {
+  whatsapp_medico?: string | null;
+  whatsapp_clinica?: string | null;
+  telefone?: string | null;
+}): { medico: string | null; clinica: string | null } {
+  return {
+    medico: buildWhatsAppUrl(doc.whatsapp_medico),
+    clinica: buildWhatsAppUrl(doc.whatsapp_clinica) ?? buildWhatsAppUrl(doc.telefone),
+  };
+}
+
 /* ── Tempo relativo ── */
 
 export function timeAgo(dateStr: string | null | undefined): string {

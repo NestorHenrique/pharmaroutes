@@ -30,6 +30,24 @@ export async function executeOp(op: QueuedOp): Promise<ExecResult> {
           .eq('status_type', op.status_type);
         return classify('limpar status', error, status);
       }
+      case 'visit_upsert': {
+        const { error, status } = await supabase
+          .from('doctor_visits')
+          .upsert(op.record, { onConflict: 'doctor_id,user_id' });
+        return classify('visita', error, status);
+      }
+      case 'visit_delete': {
+        const { error, status } = await supabase
+          .from('doctor_visits')
+          .delete()
+          .eq('doctor_id', op.doctor_id)
+          .eq('user_id', op.owner);
+        return classify('desfazer visita', error, status);
+      }
+      case 'visits_clear': {
+        const { error, status } = await supabase.from('doctor_visits').delete().eq('user_id', op.owner);
+        return classify('renovar ciclo', error, status);
+      }
       case 'doctor_update': {
         const { error, status } = await supabase.from('doctors').update(op.fields).eq('id', op.doctor_id);
         return classify('edição de médico', error, status);

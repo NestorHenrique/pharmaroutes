@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RepProfile } from '@/types/doctor';
 import { ESPECIALIDADES } from '@/constants';
+import { RepAvatar } from '@/components/RepAvatar';
+import { fileToAvatarDataUrl } from '@/lib/avatar';
 import { getPushCity, getPushSupport, sendTestPush, subscribeToCity, unsubscribePush } from '@/lib/push';
 
 interface ProfileSettingsProps {
@@ -31,12 +33,6 @@ const inputCls =
 const cardCls = 'rounded-2xl border border-slate-800 bg-slate-950 p-4 flex flex-col gap-3';
 const titleCls = 'text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400';
 
-function initials(name: string, email: string): string {
-  const base = name.trim() || email.split('@')[0] || '?';
-  const parts = base.split(/\s+/).filter(Boolean);
-  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
-}
-
 export default function ProfileSettings({
   userId,
   email,
@@ -58,6 +54,38 @@ export default function ProfileSettings({
   const [specialties, setSpecialties] = useState<string[]>(profile.specialties);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  // Foto de perfil: salva na hora ao escolher/remover
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [avatar, setAvatar] = useState<string | null>(profile.avatar_url ?? null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoMsg, setPhotoMsg] = useState<string | null>(null);
+
+  const changePhoto = async (file: File | undefined) => {
+    if (!file) return;
+    setPhotoBusy(true);
+    setPhotoMsg(null);
+    try {
+      const dataUrl = await fileToAvatarDataUrl(file);
+      const ok = await onSave({ avatar_url: dataUrl });
+      if (ok) setAvatar(dataUrl);
+      else setPhotoMsg('Não foi possível salvar a foto. Tente novamente.');
+    } catch (err) {
+      setPhotoMsg((err as Error).message || 'Não foi possível usar essa foto.');
+    } finally {
+      setPhotoBusy(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const removePhoto = async () => {
+    setPhotoBusy(true);
+    setPhotoMsg(null);
+    const ok = await onSave({ avatar_url: null });
+    if (ok) setAvatar(null);
+    else setPhotoMsg('Não foi possível remover a foto.');
+    setPhotoBusy(false);
+  };
 
   // Push
   const [pushCity, setPushCity] = useState<string | null>(null);
@@ -144,9 +172,28 @@ export default function ProfileSettings({
 
         {/* Identidade */}
         <div className="flex items-center gap-3">
-          <div className="size-14 shrink-0 rounded-full bg-blue-600 text-white text-lg font-bold flex items-center justify-center">
-            {initials(displayName, email)}
-          </div>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={photoBusy}
+            aria-label="Trocar foto de perfil"
+            className="relative size-14 shrink-0 rounded-full border-0 bg-transparent p-0 disabled:opacity-60"
+          >
+            <RepAvatar name={displayName.trim() || email.split('@')[0] || 'Eu'} src={avatar} size={56} me className="text-lg" />
+            <span className="absolute -bottom-0.5 -right-0.5 flex size-5 items-center justify-center rounded-full border-2 border-slate-900 bg-slate-700 text-slate-100" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 8h3l2-3h6l2 3h3v11H4Z" />
+                <circle cx="12" cy="13" r="3.5" />
+              </svg>
+            </span>
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => void changePhoto(e.target.files?.[0])}
+          />
           <div className="flex-1 min-w-0 flex flex-col">
             <h2 className="m-0 text-xl font-bold tracking-tight text-white truncate">{displayName.trim() || 'Meu perfil'}</h2>
             <span className="text-sm text-slate-400 truncate">{email}</span>
@@ -162,6 +209,22 @@ export default function ProfileSettings({
             </svg>
           </button>
         </div>
+
+        {(avatar || photoMsg) && (
+          <div className="-mt-2 flex items-center gap-3 text-xs">
+            {avatar && (
+              <button
+                type="button"
+                onClick={() => void removePhoto()}
+                disabled={photoBusy}
+                className="border-0 bg-transparent p-0 text-slate-400 underline disabled:opacity-60"
+              >
+                Remover foto
+              </button>
+            )}
+            {photoMsg && <span role="status" className="text-red-400">{photoMsg}</span>}
+          </div>
+        )}
 
         {/* Nome */}
         <section className={cardCls}>

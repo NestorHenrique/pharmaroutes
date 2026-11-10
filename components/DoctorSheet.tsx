@@ -7,9 +7,11 @@ import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import type { ComboOption } from '@/components/ComboBox';
 import DoctorEditForm from '@/components/DoctorEditForm';
 import DoctorHistory from '@/components/DoctorHistory';
+import { RepAvatar } from '@/components/RepAvatar';
+import type { Visitor } from '@/lib/visits';
 import { STATUS_META } from '@/types/status';
 import {
-  buildWhatsAppUrl,
+  doctorWhatsApps,
   formatAgendaBadge,
   formatElapsed,
   formatMinutes,
@@ -28,6 +30,8 @@ interface DoctorSheetProps {
   visitedAt: string | null;
   /** auditoria da visita ("Visitado por Maria hoje às 10:30"), de qualquer representante */
   visitLabel?: string | null;
+  /** quem visitou no ciclo (eu primeiro) */
+  visitors?: readonly Visitor[];
   /** semana ativa: o visitado entra nela automaticamente */
   activeWeekLabel?: string | null;
   onToggleVisited: () => void;
@@ -69,12 +73,40 @@ function shortDate(iso: string): string {
   });
 }
 
+/** Botão de WhatsApp; sem número fica desligado */
+function WhatsButton({ href, label: text }: { href: string | null; label: string }) {
+  const cls =
+    'h-[52px] rounded-2xl border text-sm font-semibold no-underline flex items-center justify-center gap-2';
+  const icon = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.7-5.4A8.4 8.4 0 1 1 21 11.5Z" />
+    </svg>
+  );
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`${cls} border-emerald-600/50 bg-emerald-500/10 text-emerald-300`}
+    >
+      {icon}
+      {text}
+    </a>
+  ) : (
+    <button type="button" disabled className={`${cls} border-slate-700 bg-slate-800 text-slate-100 opacity-40`}>
+      {icon}
+      {text}
+    </button>
+  );
+}
+
 export default function DoctorSheet({
   doc,
   statuses,
   expected,
   visitedAt,
   visitLabel,
+  visitors,
   activeWeekLabel,
   onToggleVisited,
   onSetStatus,
@@ -107,7 +139,7 @@ export default function DoctorSheet({
   const has = (t: DoctorStatusType) => statuses.find((s) => s.status_type === t);
   const agenda = getAgenda(doc);
   const weeks = normalizeCycleWeeks(doc.cycle_weeks);
-  const whatsAppUrl = buildWhatsAppUrl(doc.telefone);
+  const whats = doctorWhatsApps(doc);
   const address = [[doc.endereco, doc.numero].filter(Boolean).join(', '), doc.bairro, doc.cidade]
     .filter(Boolean)
     .join(' · ');
@@ -184,28 +216,57 @@ export default function DoctorSheet({
               </svg>
             </button>
             {menuOpen && (
-              <div className="absolute right-0 top-12 z-10 w-48 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl shadow-black/40 flex flex-col">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setMode('edit');
-                  }}
-                  className="text-left px-3 py-3 rounded-lg bg-transparent text-sm text-slate-100 hover:bg-slate-800"
+              <>
+                <div className="fixed inset-0 z-10" aria-hidden="true" onClick={() => setMenuOpen(false)} />
+                <div
+                  role="menu"
+                  className="absolute right-0 top-12 z-20 w-64 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 p-1.5 shadow-2xl shadow-black/60 flex flex-col"
                 >
-                  Editar dados
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete();
-                  }}
-                  className="text-left px-3 py-3 rounded-lg bg-transparent text-sm text-red-400 hover:bg-slate-800"
-                >
-                  Excluir médico
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setMode('edit');
+                    }}
+                    className="flex items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800 active:bg-slate-800"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-sm font-semibold text-slate-100">Editar dados</span>
+                      <span className="text-xs text-slate-400">Telefones, endereço, agenda</span>
+                    </span>
+                  </button>
+                  <div className="mx-2 my-1 h-px bg-slate-800" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onDelete();
+                    }}
+                    className="flex items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-red-500/10 active:bg-red-500/10"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-red-500/15 text-red-400">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M3 6h18" />
+                        <path d="M8 6V4h8v2" />
+                        <path d="M19 6l-1 14H6L5 6" />
+                        <path d="M10 11v5M14 11v5" />
+                      </svg>
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-sm font-semibold text-red-400">Excluir médico</span>
+                      <span className="text-xs text-slate-400">Fica guardado no histórico</span>
+                    </span>
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -269,6 +330,32 @@ export default function DoctorSheet({
             </>
           )}
         </div>
+
+        {/* Quem visitou (cada representante tem a sua visita) */}
+        {visitors && visitors.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className={label}>Quem visitou · {visitors.length}</span>
+            <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+              {visitors.map((v) => (
+                <li
+                  key={v.userId}
+                  className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2"
+                >
+                  <RepAvatar name={v.name} src={v.avatarUrl} me={v.isMe} size={32} />
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-sm font-semibold text-slate-100">
+                      {v.name}
+                      {v.isMe && <span className="ml-1.5 text-[11px] font-bold text-[#c9a86a]">VOCÊ</span>}
+                    </span>
+                    <span className="text-xs text-emerald-400">
+                      {shortDate(v.visitedAt)} às {formatTime(v.visitedAt)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Status de um toque */}
         <div className="flex flex-col gap-2">
@@ -359,25 +446,11 @@ export default function DoctorSheet({
         </div>
 
         {/* Ações */}
-        <div className="grid grid-cols-3 gap-2 pt-1">
-          {whatsAppUrl ? (
-            <a
-              href={whatsAppUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-[52px] rounded-2xl border border-slate-700 bg-slate-800 text-slate-100 text-sm font-semibold no-underline flex items-center justify-center"
-            >
-              WhatsApp
-            </a>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="h-[52px] rounded-2xl border border-slate-700 bg-slate-800 text-slate-100 text-sm font-semibold opacity-40"
-            >
-              WhatsApp
-            </button>
-          )}
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          <WhatsButton href={whats.medico} label="WhatsApp médico" />
+          <WhatsButton href={whats.clinica} label="WhatsApp clínica" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             disabled={!onNavigate}

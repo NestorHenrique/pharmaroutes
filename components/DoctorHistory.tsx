@@ -25,6 +25,8 @@ const FIELD_LABELS: Record<string, string> = {
   bairro: 'Bairro',
   endereco: 'Endereço',
   telefone: 'Telefone',
+  whatsapp_medico: 'WhatsApp médico',
+  whatsapp_clinica: 'WhatsApp clínica',
   agenda: 'Agenda',
   dias_semana: 'Dias',
   turno: 'Turno',

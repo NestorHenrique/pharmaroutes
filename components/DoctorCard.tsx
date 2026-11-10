@@ -7,7 +7,7 @@ import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { STATUS_META, UNAVAILABLE_STATUSES } from '@/types/status';
 import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
 import {
-  buildWhatsAppUrl,
+  doctorWhatsApps,
   isNewDoctor,
   getAgenda,
   formatAgendaBadge,
@@ -29,6 +29,9 @@ import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
+import { VisitorStack } from '@/components/RepAvatar';
+import { visitorsSummary } from '@/lib/visits';
+import type { Visitor } from '@/lib/visits';
 import type { ComboOption } from '@/components/ComboBox';
 
 /* ── Props ── */
@@ -51,6 +54,10 @@ interface DoctorCardProps {
   onDragHandleTouchStart?: (docId: string, clientY: number) => void;
   /** ciclo de 5 semanas: quando este representante marcou visitado (null = pendente) */
   cycleVisitedAt?: string | null;
+  /** onde a busca bateu quando não foi no nome ("Bairro: Centro") */
+  searchHint?: string | null;
+  /** quem visitou no ciclo (eu primeiro); cada representante tem a sua visita */
+  visitors?: readonly Visitor[];
   /** marca/desfaz a visita do ciclo; ausente = botão oculto */
   onToggleCycleVisit?: (docId: string, visited: boolean) => void;
   /** semana ativa ("Estou visitando na"): o visitado entra nela automaticamente */
@@ -113,6 +120,8 @@ function DoctorCard({
   tier = 'middle',
   onDragHandleTouchStart,
   cycleVisitedAt = null,
+  visitors,
+  searchHint = null,
   onToggleCycleVisit,
   activeWeekLabel = null,
   expanded = true,
@@ -134,7 +143,7 @@ function DoctorCard({
   const isNew = isNewDoctor(doc);
   const agenda = getAgenda(doc);
   const specCode = specialtyCode(doc.especialidade);
-  const whatsAppUrl = buildWhatsAppUrl(doc.telefone);
+  const whats = doctorWhatsApps(doc);
 
   /* ── Status derivados ── */
   const has = (t: DoctorStatusType) => statuses.some((s) => s.status_type === t);
@@ -152,7 +161,7 @@ function DoctorCard({
     highlightCls = 'border-sky-500 bg-sky-950/40 shadow-[0_0_0_1px_rgba(14,165,233,0.35)]';
   } else if (has('aguardando_medico')) {
     highlightCls = 'border-amber-400 bg-amber-950/30';
-  } else if (visited) {
+  } else if (visited || cycleVisitedAt) {
     highlightCls = 'border-emerald-500 bg-emerald-950/40';
   }
 
@@ -179,6 +188,8 @@ function DoctorCard({
       cidade: doc.cidade || '',
       observacoes: doc.observacoes || '',
       telefone: doc.telefone || '',
+      whatsapp_medico: doc.whatsapp_medico || '',
+      whatsapp_clinica: doc.whatsapp_clinica || '',
       email: doc.email || '',
       map_link: doc.map_link || '',
       categoria: doc.categoria || 'consultorio',
@@ -219,6 +230,11 @@ function DoctorCard({
         map_link: editForm.map_link ?? '',
         categoria: editForm.categoria,
       };
+      // WhatsApps: só envia se mudou (não quebra a edição antes da migração v7)
+      const wm = (editForm.whatsapp_medico || '').trim();
+      if (wm !== (doc.whatsapp_medico || '')) payload.whatsapp_medico = wm || null;
+      const wc = (editForm.whatsapp_clinica || '').trim();
+      if (wc !== (doc.whatsapp_clinica || '')) payload.whatsapp_clinica = wc || null;
       // Semanas do ciclo: só envia se mudou (não quebra a edição antes da migração v5)
       const weeks = normalizeCycleWeeks(editForm.cycle_weeks);
       if (weeks.join(',') !== normalizeCycleWeeks(doc.cycle_weeks).join(',')) payload.cycle_weeks = weeks;
@@ -266,20 +282,24 @@ function DoctorCard({
     };
     const tone = lead ? leadTone[lead.status_type] : undefined;
     const visitedAt = cycleVisitedAt ?? (categoryMode ? visited?.created_at ?? null : null);
-    /* Visita de OUTRO representante: só informa quem e quando, sem tirar o médico da rota */
-    const otherVisit = !visitedAt && visited ? visited : null;
+    const otherVisitors = !visitedAt && visitors?.length ? visitors : null;
     const place = [doc.complemento || 'Consultório próprio', doc.bairro].filter(Boolean).join(' · ');
     let subline = place;
     if (tier === 'top' && lead && TOP_PRIORITY_STATUSES.includes(lead.status_type)) {
       // Em atendimento: tempo decorrido crescente
       subline = `${STATUS_META[lead.status_type].label} · ${formatElapsed(lead.created_at, now)}`;
     } else if (visitedAt) {
-      subline = formatVisitAudit(visited?.rep_name, visitedAt, now);
+      subline =
+        visitorsSummary(visitors ?? [], (name, iso) => formatVisitAudit(name, iso, now)) ??
+        formatVisitAudit(null, visitedAt, now);
     } else if (lead) {
       const label = STATUS_META[lead.status_type].label;
       subline = STATUS_META[lead.status_type].showTime ? `${label} · ${formatTime(lead.created_at)}` : label;
-    } else if (otherVisit) {
-      subline = formatVisitAudit(otherVisit.rep_name, otherVisit.created_at, now);
+    } else if (searchHint && !otherVisitors) {
+      subline = `Achou em ${searchHint}`;
+    } else if (otherVisitors) {
+      // Visita de OUTRO representante: só informa quem e quando, sem tirar o médico da rota
+      subline = visitorsSummary(otherVisitors, (name, iso) => formatVisitAudit(name, iso, now)) ?? place;
     }
 
     return (
@@ -335,6 +355,7 @@ function DoctorCard({
             {formatMinutes(expected.startMinutes)}
           </span>
         )}
+        {visitors && visitors.length > 0 && <VisitorStack visitors={visitors} />}
         {cycleVisitedAt && onToggleCycleVisit ? (
           <button
             type="button"
@@ -633,7 +654,9 @@ function DoctorCard({
           </div>
 
           <div className="grid grid-cols-2 gap-1.5">
-            <input type="tel" placeholder="Telefone" value={editForm.telefone ?? ''} onChange={(e) => setField('telefone', e.target.value)} className={inputCls} />
+            <input type="tel" placeholder="Telefone fixo" value={editForm.telefone ?? ''} onChange={(e) => setField('telefone', e.target.value)} className={inputCls} />
+            <input type="tel" placeholder="WhatsApp médico" value={editForm.whatsapp_medico ?? ''} onChange={(e) => setField('whatsapp_medico', e.target.value)} className={inputCls} />
+            <input type="tel" placeholder="WhatsApp clínica" value={editForm.whatsapp_clinica ?? ''} onChange={(e) => setField('whatsapp_clinica', e.target.value)} className={inputCls} />
             <input type="text" placeholder="Clínica / Local (PSM, SAMU, Hospital...)" value={editForm.complemento ?? ''} onChange={(e) => setField('complemento', e.target.value)} className={inputCls} />
           </div>
 
@@ -807,16 +830,20 @@ function DoctorCard({
               {doc.map_link ? 'GPS Fixo' : 'GPS'}
             </button>
 
-            {whatsAppUrl && (
-              <button
-                onClick={() => openExternal(whatsAppUrl)}
-                disabled={muted}
-                className={`px-[9px] py-1 border-none rounded text-[11px] font-semibold ${
-                  muted ? 'cursor-not-allowed bg-slate-800 text-slate-500' : 'bg-green-700 text-white hover:bg-green-600'
-                }`}
-              >
-                WhatsApp
-              </button>
+            {([['WhatsApp médico', whats.medico], ['WhatsApp clínica', whats.clinica]] as const).map(
+              ([text, url]) =>
+                url && (
+                  <button
+                    key={text}
+                    onClick={() => openExternal(url)}
+                    disabled={muted}
+                    className={`px-[9px] py-1 border-none rounded text-[11px] font-semibold ${
+                      muted ? 'cursor-not-allowed bg-slate-800 text-slate-500' : 'bg-green-700 text-white hover:bg-green-600'
+                    }`}
+                  >
+                    {text}
+                  </button>
+                ),
             )}
           </div>
         </div>
