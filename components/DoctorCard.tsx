@@ -33,6 +33,8 @@ import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
 import { VisitorStack } from '@/components/RepAvatar';
 import { visitorsSummary } from '@/lib/visits';
+import type { PresenceItem } from '@/lib/visits';
+import PresenceTags from '@/components/PresenceTags';
 import type { Visitor } from '@/lib/visits';
 import type { ComboOption } from '@/components/ComboBox';
 
@@ -60,6 +62,8 @@ interface DoctorCardProps {
   searchHint?: string | null;
   /** quem visitou no ciclo (eu primeiro); cada representante tem a sua visita */
   visitors?: readonly Visitor[];
+  /** quem está no consultório / visitou, com a hora (etiquetas) */
+  presence?: readonly PresenceItem[];
   /** marca/desfaz a visita do ciclo; ausente = botão oculto */
   onToggleCycleVisit?: (docId: string, visited: boolean) => void;
   /** semana ativa ("Estou visitando na"): o visitado entra nela automaticamente */
@@ -119,6 +123,7 @@ function DoctorCard({
   onDragHandleTouchStart,
   cycleVisitedAt = null,
   visitors,
+  presence,
   searchHint = null,
   onToggleCycleVisit,
   activeWeekLabel = null,
@@ -343,6 +348,7 @@ function DoctorCard({
           <span className={`text-xs uppercase truncate ${visitedAt ? 'text-emerald-400' : tone?.text ?? 'text-slate-400'}`}>
             {subline}
           </span>
+          {presence && presence.length > 0 && <PresenceTags items={presence} className="mt-1" />}
         </button>
 
         {expected && !visitedAt && (

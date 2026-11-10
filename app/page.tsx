@@ -45,15 +45,17 @@ import { useRepProfile } from '@/hooks/useRepProfile';
 import { useDoctorFilters } from '@/hooks/useDoctorFilters';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useVisits } from '@/hooks/useVisits';
-import { visitorsOf, visitorsSummary } from '@/lib/visits';
+import { presenceItems, visitorsOf, visitorsSummary } from '@/lib/visits';
 import { matchDoctor, SEARCH_SCOPES } from '@/lib/search';
 import type { SearchScope } from '@/lib/search';
-import type { Visitor } from '@/lib/visits';
+import type { PresenceItem, Visitor } from '@/lib/visits';
+import PresenceTags from '@/components/PresenceTags';
 import type { SortMode } from '@/hooks/useDoctorFilters';
 import DoctorCard from '@/components/DoctorCard';
 import DoctorSheet from '@/components/DoctorSheet';
 import { RepAvatar } from '@/components/RepAvatar';
 import AddDoctorForm from '@/components/AddDoctorForm';
+import BottomSheet from '@/components/BottomSheet';
 import ProfileSettings from '@/components/ProfileSettings';
 import CityFilter from '@/components/CityFilter';
 import type { ComboOption } from '@/components/ComboBox';
@@ -1135,6 +1137,18 @@ export default function HomePage() {
   }, [doctors, selectedTab]);
   const dayLongLabel = selectedTab ? DAY_LONG[selectedTab] : undefined;
 
+  /** Sugestões ao digitar: acha em TODOS os médicos (não só no dia aberto) e leva direto à ficha */
+  const suggestions = useMemo(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) return [];
+    const out: { doc: Doctor; hint: string | null }[] = [];
+    for (const d of doctorsWithWeeks) {
+      const m = matchDoctor(d, q, searchScope);
+      if (m.matched) out.push({ doc: d, hint: m.hint ?? null });
+    }
+    return out;
+  }, [doctorsWithWeeks, searchQuery, searchScope]);
+
   /** Onde a busca bateu em cada médico (só quando não foi no nome): "Bairro: Centro" */
   const searchHints = useMemo(() => {
     const out = new Map<string, string>();
@@ -1378,6 +1392,8 @@ export default function HomePage() {
     }
     return visitorsSummary(visitorsFor(id), (name, iso) => formatVisitAudit(name, iso, now));
   };
+  const presenceFor = (id: string): PresenceItem[] =>
+    presenceItems(liveStatusMap[id], isCategoryMode ? undefined : visitorsFor(id));
   const toggleVisited = (id: string) => {
     const visited = Boolean(visitedAtOf(id));
     if (isCategoryMode) {
@@ -1425,6 +1441,7 @@ export default function HomePage() {
         onDragHandleTouchStart={manual ? startTouchDrag : undefined}
         cycleVisitedAt={isCategoryMode ? null : cycleVisits.get(doc.id) ?? null}
         visitors={isCategoryMode ? undefined : visitorsFor(doc.id)}
+        presence={presenceFor(doc.id)}
         searchHint={searchHints.get(doc.id) ?? null}
         onToggleCycleVisit={isCategoryMode ? undefined : toggleCycleVisit}
         activeWeekLabel={activeWeek ? cycleWeekLabel(activeWeek) : null}
@@ -1632,6 +1649,45 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* Sugestões: toque no nome e abre a ficha do médico */}
+        {searchFocus && suggestions.length > 0 && (
+          <div
+            role="listbox"
+            aria-label="Médicos encontrados"
+            className="flex max-h-[38dvh] flex-col overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900"
+          >
+            <span className="px-3.5 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+              {suggestions.length} encontrado{suggestions.length !== 1 ? 's' : ''}
+            </span>
+            {suggestions.slice(0, 8).map(({ doc, hint }) => (
+              <button
+                key={doc.id}
+                type="button"
+                role="option"
+                aria-selected="false"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setSearchFocus(false);
+                  (document.activeElement as HTMLElement | null)?.blur?.();
+                  openSheet(doc.id);
+                }}
+                className="flex min-h-12 w-full flex-col items-start justify-center gap-0.5 border-0 border-t border-slate-800 bg-transparent px-3.5 py-2 text-left first:border-t-0 hover:bg-slate-800 active:bg-slate-800"
+              >
+                <span className="w-full truncate text-sm font-semibold uppercase text-white">{doc.descricao}</span>
+                <span className="w-full truncate text-xs uppercase text-slate-400">
+                  {[doc.especialidade, doc.complemento, doc.cidade].filter(Boolean).join(' · ')}
+                  {hint ? ` · ${hint}` : ''}
+                </span>
+              </button>
+            ))}
+            {suggestions.length > 8 && (
+              <span className="px-3.5 py-2 text-xs text-slate-500">
+                Mais {suggestions.length - 8} na lista abaixo. Continue digitando para afinar.
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
           {TABS_NAVEGACAO.filter((tab) => tab.value !== 'novos').map((tab) => (
@@ -1668,7 +1724,36 @@ export default function HomePage() {
 
         {/* Filtros recolhidos */}
         {showFilters && (
-          <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-3">
+          <BottomSheet
+            title="Filtros"
+            onClose={() => setShowFilters(false)}
+            footer={
+              <>
+                {activeFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedCities([]);
+                      changeWeek(null);
+                      setSelectedCategory(null);
+                      setTurnoFilter(null);
+                      changeSortMode('manual');
+                    }}
+                    className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-4 text-sm font-medium text-slate-300 hover:text-red-400"
+                  >
+                    Limpar
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(false)}
+                  className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500"
+                >
+                  Ver {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''}
+                </button>
+              </>
+            }
+          >
             <div className="flex flex-col gap-1.5">
               <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Cidades</span>
               <CityFilter
@@ -1766,23 +1851,7 @@ export default function HomePage() {
                 </button>
               </div>
             </div>
-
-            {activeFilterCount > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedCities([]);
-                  changeWeek(null);
-                  setSelectedCategory(null);
-                  setTurnoFilter(null);
-                  changeSortMode('manual');
-                }}
-                className="self-start h-8 px-3 rounded-full text-xs border border-slate-700 bg-transparent text-slate-300 hover:text-red-400"
-              >
-                Limpar filtros
-              </button>
-            )}
-          </div>
+          </BottomSheet>
         )}
       </header>
 
@@ -1816,7 +1885,9 @@ export default function HomePage() {
       {/* Conteúdo */}
       <main className="px-4 pt-4 pb-36 flex flex-col gap-2.5">
         {showAddForm && (
+          <BottomSheet onClose={() => setShowAddForm(false)} dismissOnBackdrop={false}>
           <AddDoctorForm
+            embedded
             onAdd={addDoctor}
             onLinkPortfolio={linkDoctor}
             isInPortfolio={isInPortfolio}
@@ -1824,6 +1895,7 @@ export default function HomePage() {
             cityOptions={cityComboOptions}
             findDuplicate={findDuplicate}
           />
+          </BottomSheet>
         )}
 
         {/* Próximo da rota */}
@@ -1849,8 +1921,11 @@ export default function HomePage() {
               </span>
             </button>
             <div className="flex justify-between items-center gap-2">
-              <span className="text-sm text-slate-200">
+              <span className="min-w-0 text-sm text-slate-200">
                 {(() => {
+                  // Colegas no consultório / que já visitaram: nome e hora no lugar do "esperado"
+                  const presence = presenceFor(nextDoctor.id);
+                  if (presence.length > 0) return <PresenceTags items={presence} />;
                   const e = feed.expected.get(nextDoctor.id);
                   const expectedText = e ? `${formatMinutes(e.startMinutes)} esperado` : null;
                   // Se um colega já visitou, mostra quem e quando (sem mexer na rota do dia)
@@ -2066,6 +2141,7 @@ export default function HomePage() {
           visitedAt={visitedAtOf(sheetDoc.id)}
           visitLabel={visitLabelOf(sheetDoc.id)}
           visitors={isCategoryMode ? undefined : visitorsFor(sheetDoc.id)}
+          presence={presenceFor(sheetDoc.id)}
           activeWeekLabel={!isCategoryMode && activeWeek ? cycleWeekLabel(activeWeek) : null}
           onToggleVisited={() => toggleVisited(sheetDoc.id)}
           onSetStatus={setDoctorStatus}
