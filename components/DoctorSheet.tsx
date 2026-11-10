@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Doctor, ExpectedVisit } from '@/types/doctor';
 import { TOP_PRIORITY_STATUSES, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
@@ -122,6 +122,7 @@ export default function DoctorSheet({
   onDelete,
   onClose,
 }: DoctorSheetProps) {
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mode, setMode] = useState<'status' | 'edit'>('status');
   const [absence, setAbsence] = useState<DoctorStatusType | null>(null);
@@ -164,6 +165,7 @@ export default function DoctorSheet({
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 animate-[fade-in_.18s_ease-out]" onClick={onClose}>
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Ficha de ${doc.descricao}`}
@@ -280,7 +282,11 @@ export default function DoctorSheet({
             doc={doc}
             cityOptions={cityOptions}
             onUpdateDoctor={onUpdateDoctor}
-            onDone={() => setMode('status')}
+            onDone={() => {
+              setMode('status');
+              // Voltou do Editar: sobe ao topo para o botão de fechar ficar à vista
+              panelRef.current?.scrollTo({ top: 0 });
+            }}
           />
         ) : (
           <>
