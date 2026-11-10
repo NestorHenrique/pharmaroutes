@@ -145,6 +145,7 @@ const LOCATION_PATTERNS: Record<string, RegExp> = {
   psm: /\bpsm\b|\bpronto[\s-]*socorro\b/,
   samu: /\bsamu\b/,
   hospital: /\bhosp(ital)?\b/,
+  ubs: /\bubs\b|\bunidade basica\b/,
 };
 
 export function matchesLocation(doc: Pick<Doctor, 'categoria' | 'complemento'>, category: string): boolean {
@@ -326,6 +327,33 @@ export function timeAgo(dateStr: string | null | undefined): string {
 
 export function formatTime(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** Minutos inteiros desde `iso` (nunca negativo) */
+export function elapsedMinutes(iso: string, nowMs: number = Date.now()): number {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return 0;
+  return Math.max(0, Math.floor((nowMs - t) / 60_000));
+}
+
+/** Tempo crescente dos status em atendimento: "há 4 min (às 14:05)" */
+export function formatElapsed(iso: string, nowMs: number = Date.now()): string {
+  const m = elapsedMinutes(iso, nowMs);
+  const ago = m < 1 ? 'agora' : m < 60 ? `há ${m} min` : `há ${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`;
+  return `${ago} (às ${formatTime(iso)})`;
+}
+
+/**
+ * Auditoria da visita no card: "Visitado por Maria hoje às 10:30"
+ * ou, se foi em outro dia, "Visitado por Maria em 05/11 às 10:30".
+ */
+export function formatVisitAudit(repName: string | null | undefined, iso: string, nowMs: number = Date.now()): string {
+  const d = new Date(iso);
+  const n = new Date(nowMs);
+  const sameDay = d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+  const when = sameDay ? 'hoje' : `em ${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
+  const who = repName?.trim() ? ` por ${repName.trim()}` : '';
+  return `Visitado${who} ${when} às ${formatTime(iso)}`;
 }
 
 export function minutesRemaining(expiresAt: string | null | undefined): number | null {

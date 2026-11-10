@@ -27,7 +27,7 @@ export interface Doctor {
   created_at: string;
   updated_by: string;
   /* ── v2 ── */
-  categoria?: 'consultorio' | 'psm' | 'samu' | 'hospital';
+  categoria?: 'consultorio' | 'psm' | 'samu' | 'hospital' | 'ubs';
   updated_at?: string;
   updated_by_name?: string;
   change_source?: string;
@@ -41,6 +41,11 @@ export interface Doctor {
   /* ── v5 ── */
   /** semanas do ciclo (1..5) em que o médico entra na rota */
   cycle_weeks?: number[] | null;
+  /* ── v6 ── */
+  /** Registro de Qualificação de Especialista */
+  rqe?: string | null;
+  /** quem cadastrou o médico (auditoria) */
+  created_by_name?: string | null;
 }
 
 /* ── Ciclo de 5 semanas ── */

@@ -23,6 +23,7 @@ import {
   canonicalCity,
   cityKey,
   formatMinutes,
+  formatVisitAudit,
   getAgenda,
   getTodayDayCode,
   isNewDoctor,
@@ -33,12 +34,15 @@ import {
   ROUTE_HISTORY_DAYS,
 } from '@/utils';
 import { ensureServiceWorker, notifyCity } from '@/lib/push';
+import { enqueue, isNetworkError, isOffline, pendingOps } from '@/lib/offlineQueue';
+import type { QueuedOp } from '@/lib/offlineQueue';
 
 import LoginScreen from '@/components/LoginScreen';
 import InstallBanner from '@/components/InstallBanner';
 import { useInstallPrompt } from '@/hooks/useInstallPrompt';
 import { useRepProfile } from '@/hooks/useRepProfile';
 import { useDoctorFilters } from '@/hooks/useDoctorFilters';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import type { SortMode } from '@/hooks/useDoctorFilters';
 import DoctorCard from '@/components/DoctorCard';
 import DoctorSheet from '@/components/DoctorSheet';
@@ -60,6 +64,10 @@ const SORT_MODE_KEY = 'pharma_sort_mode';
 const CYCLE_WEEK_KEY = 'pharma_cycle_week';
 const ACTIVE_WEEK_KEY = 'pharma_active_week';
 const THEME_KEY = 'pharma_theme';
+const BOTTOM_OPEN_KEY = 'pharma_bottom_open';
+
+/** No estado contraído cada sub-lista de "Em atendimento" mostra só os mais recentes */
+const COLLAPSED_VISIBLE = 2;
 
 type Theme = 'onix' | 'marfim';
 
@@ -89,6 +97,11 @@ function readActiveWeek(): { week: CycleWeek; monday: string } | null {
   return null;
 }
 
+/** O PostgREST reclama de coluna que ainda não existe (migração pendente): PGRST204 */
+function isMissingColumn(error: { code?: string; message?: string }, column: string): boolean {
+  return (error.code === 'PGRST204' || /column/i.test(error.message ?? '')) && (error.message ?? '').includes(column);
+}
+
 function endOfToday(): string {
   const d = new Date();
   d.setHours(23, 59, 59, 999);
@@ -106,6 +119,55 @@ function initialTab(): string | null {
 
 function isLive(s: Pick<DoctorStatus, 'expires_at'>, nowMs: number): boolean {
   return !s.expires_at || new Date(s.expires_at).getTime() > nowMs;
+}
+
+/** Status marcados sem internet que ainda não subiram: continuam na tela mesmo após recarregar */
+function overlayPendingStatuses(map: Record<string, DoctorStatus[]>, owner: string): Record<string, DoctorStatus[]> {
+  let out = map;
+  for (const op of pendingOps(owner)) {
+    if (op.kind === 'status_upsert') {
+      out = upsertStatus(out, { id: `pending-${op.id}`, ...op.record });
+    } else if (op.kind === 'status_delete') {
+      out = { ...out, [op.doctor_id]: (out[op.doctor_id] || []).filter((s) => s.status_type !== op.status_type) };
+    }
+  }
+  return out;
+}
+
+/** Edições de médico feitas sem internet por cima da lista que veio do servidor */
+function overlayPendingDoctors(list: Doctor[], owner: string): Doctor[] {
+  const edits = new Map<string, Partial<Doctor>>();
+  for (const op of pendingOps(owner) as QueuedOp[]) {
+    if (op.kind === 'doctor_update') edits.set(op.doctor_id, op.fields as Partial<Doctor>);
+  }
+  if (edits.size === 0) return list;
+  return list.map((d) => (edits.has(d.id) ? { ...d, ...edits.get(d.id) } : d));
+}
+
+/* Última lista de médicos que o servidor mandou: o app abre na hora e também sem sinal */
+const DOCTORS_CACHE_KEY = 'pharma_doctors_cache_v1';
+
+function saveDoctorsCache(owner: string, list: Doctor[]): void {
+  try {
+    localStorage.setItem(DOCTORS_CACHE_KEY, JSON.stringify({ owner, list }));
+  } catch { /* sem espaço: segue sem cache */ }
+}
+
+function loadDoctorsCache(owner: string): Doctor[] | null {
+  try {
+    const raw = localStorage.getItem(DOCTORS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { owner?: string; list?: Doctor[] };
+    return parsed.owner === owner && Array.isArray(parsed.list) ? parsed.list : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDoctorsCache(): void {
+  try {
+    localStorage.removeItem(DOCTORS_CACHE_KEY);
+  } catch { /* ignore */ }
 }
 
 /** Insere ou troca o status (um por médico + tipo) */
@@ -167,6 +229,64 @@ function SectionTitle({ tone, children }: { tone: string; children: ReactNode })
   return <div className={`mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] ${tone}`}>{children}</div>;
 }
 
+/** Título de lista que recolhe/expande (setinha + contador). `onToggle` ausente = título fixo. */
+function CollapsibleTitle({
+  tone,
+  title,
+  count,
+  open,
+  onToggle,
+  hint,
+}: {
+  tone: string;
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle?: () => void;
+  hint?: string;
+}) {
+  const label = (
+    <>
+      {title} ({count})
+    </>
+  );
+  if (!onToggle) return <SectionTitle tone={tone}>{label}</SectionTitle>;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className={`mt-2 flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left text-[11px] font-semibold uppercase tracking-[0.14em] ${tone}`}
+    >
+      <span>{label}</span>
+      <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium normal-case tracking-normal text-slate-500">
+        {hint}
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={open ? 'rotate-180' : ''}
+          aria-hidden="true"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
+/** Sub-listas de "Em atendimento", na ordem de prioridade (igual a TOP_ORDER) */
+const ATTENDANCE_GROUPS: { type: DoctorStatusType; title: string; tone: string }[] = [
+  { type: 'representante_no_consultorio', title: 'Representante no consultório', tone: 'text-sky-400' },
+  { type: 'ultimo_paciente', title: 'Último paciente', tone: 'text-red-400' },
+  { type: 'aguardando_medico', title: 'Aguardando médico', tone: 'text-amber-400' },
+];
+
 /** Abre Maps/WhatsApp fora do app sem descarregar o PWA (ver DoctorCard.openExternal) */
 function openExternal(url: string) {
   const a = document.createElement('a');
@@ -222,6 +342,10 @@ export default function HomePage() {
   const [lastWeek, setLastWeek] = useState<CycleWeek | null>(null);
 
   /* UI */
+  /** "Visitados e indisponíveis" começa recolhida; a escolha fica salva no aparelho */
+  const [bottomOpen, setBottomOpen] = useState(false);
+  /** sub-listas de "Em atendimento" abertas por inteiro (as demais mostram só as mais recentes) */
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
 
@@ -273,6 +397,7 @@ export default function HomePage() {
     try {
       const saved = localStorage.getItem(SORT_MODE_KEY);
       if (saved === 'historico' || saved === 'manual') setSortMode(saved);
+      if (localStorage.getItem(BOTTOM_OPEN_KEY) === '1') setBottomOpen(true);
       const week = normalizeCycleWeeks([Number(localStorage.getItem(CYCLE_WEEK_KEY))])[0];
       if (week) setSelectedWeek(week);
       // Semana ativa vale até a próxima segunda-feira; depois pergunta de novo
@@ -313,6 +438,14 @@ export default function HomePage() {
     } catch { /* ignore */ }
   };
 
+  const toggleBottomOpen = () => {
+    const next = !bottomOpen;
+    setBottomOpen(next);
+    try {
+      localStorage.setItem(BOTTOM_OPEN_KEY, next ? '1' : '0');
+    } catch { /* ignore */ }
+  };
+
   const changeSortMode = (mode: SortMode) => {
     setSortMode(mode);
     try {
@@ -334,7 +467,8 @@ export default function HomePage() {
       if (error) {
         console.error('Erro ao buscar médicos:', error.message, '|', error.details, '|', error.hint, '|', error.code);
       } else {
-        setDoctors(data as Doctor[]);
+        saveDoctorsCache(session.user.id, data as Doctor[]);
+        setDoctors(overlayPendingDoctors(data as Doctor[], session.user.id));
       }
     } finally {
       setLoading(false);
@@ -344,6 +478,13 @@ export default function HomePage() {
   useEffect(() => {
     fetchDoctors();
   }, [fetchDoctors]);
+
+  // Abre já com a última lista salva (e funciona sem sinal); a busca acima atualiza em seguida
+  useEffect(() => {
+    if (!userId) return;
+    const cached = loadDoctorsCache(userId);
+    if (cached?.length) setDoctors((prev) => (prev.length ? prev : overlayPendingDoctors(cached, userId)));
+  }, [userId]);
 
   /* ═══════════════════ Statuses: Realtime + reserva ═══════════════════ */
 
@@ -365,7 +506,7 @@ export default function HomePage() {
       if (!map[s.doctor_id]) map[s.doctor_id] = [];
       map[s.doctor_id].push(s);
     }
-    setStatusMap(map);
+    setStatusMap(overlayPendingStatuses(map, session.user.id));
   }, [session]);
 
   // Histórico para a média móvel
@@ -502,6 +643,17 @@ export default function HomePage() {
     return () => clearInterval(t);
   }, []);
 
+  /* ═══════════════════ Modo offline: fila + sincronização ═══════════════════ */
+
+  const offline = useOfflineQueue(
+    userId,
+    useCallback(() => {
+      fetchStatuses();
+      fetchDoctors();
+      fetchEvents();
+    }, [fetchStatuses, fetchDoctors, fetchEvents]),
+  );
+
   /* ═══════════════════ Status Actions (otimistas) ═══════════════════ */
 
   const setDoctorStatus = useCallback(
@@ -540,12 +692,23 @@ export default function HomePage() {
         setEvents((prev) => [{ doctor_id: doctorId, status_type: type, event_at: createdAt }, ...prev]);
       }
 
+      // Sem internet: guarda no aparelho e envia quando a conexão voltar (a tela já mostra o status)
+      const queue = () => enqueue(session.user.id, { kind: 'status_upsert', record });
+      if (isOffline()) {
+        queue();
+        return;
+      }
+
       // 2) Grava; o Realtime avisa os outros aparelhos
-      const { error } = await supabase
+      const { error, status } = await supabase
         .from('doctor_statuses')
         .upsert(record, { onConflict: 'doctor_id,status_type' });
 
       if (error) {
+        if (isNetworkError(error, status)) {
+          queue(); // a rede falhou no meio: não desfaz, tenta de novo depois
+          return;
+        }
         console.error('Erro ao setar status:', error.message, '|', error.details, '|', error.hint, '|', error.code);
         setStatusMap((prev) => {
           const others = (prev[doctorId] || []).filter((s) => s.id !== optimistic.id);
@@ -567,18 +730,30 @@ export default function HomePage() {
         [doctorId]: (prev[doctorId] || []).filter((s) => s.status_type !== type),
       }));
 
-      const { error } = await supabase
+      const queue = () => {
+        if (userId) enqueue(userId, { kind: 'status_delete', doctor_id: doctorId, status_type: type });
+      };
+      if (isOffline()) {
+        queue();
+        return;
+      }
+
+      const { error, status } = await supabase
         .from('doctor_statuses')
         .delete()
         .eq('doctor_id', doctorId)
         .eq('status_type', type);
 
       if (error) {
+        if (isNetworkError(error, status)) {
+          queue();
+          return;
+        }
         console.error('Erro ao limpar status:', error.message, '|', error.details, '|', error.hint, '|', error.code);
         if (previous) setStatusMap((prev) => upsertStatus(prev, previous));
       }
     },
-    [statusMap],
+    [statusMap, userId],
   );
 
   /* ═══════════════════ Cidades ═══════════════════ */
@@ -643,19 +818,39 @@ export default function HomePage() {
       if (weeks !== undefined && !(await setDoctorWeeks(docId, weeks))) return false;
       if (Object.keys(fields).length === 0) return true;
 
-      const { error } = await supabase
-        .from('doctors')
-        .update({ ...prepare(fields), updated_by_name: actorName, change_source: 'app' })
-        .eq('id', docId);
+      const payload = { ...prepare(fields), updated_by_name: actorName, change_source: 'app' };
+      const previous = doctors.find((d) => d.id === docId);
+
+      // 1) A tela muda na hora (o selo "Atualizado por" também)
+      setDoctors((prev) =>
+        prev.map((d) => (d.id === docId ? { ...d, ...payload, updated_at: new Date().toISOString() } : d)),
+      );
+
+      // Sem internet: guarda a edição no aparelho e envia quando a conexão voltar
+      const queue = () => {
+        if (userId) enqueue(userId, { kind: 'doctor_update', doctor_id: docId, fields: payload });
+      };
+      if (isOffline()) {
+        queue();
+        return true;
+      }
+
+      // 2) Grava
+      const { error, status } = await supabase.from('doctors').update(payload).eq('id', docId);
 
       if (error) {
+        if (isNetworkError(error, status)) {
+          queue();
+          return true;
+        }
         console.error('Erro ao atualizar médico:', error.message, '|', error.details, '|', error.code);
+        if (previous) setDoctors((prev) => prev.map((d) => (d.id === docId ? previous : d)));
         return false;
       }
-      await fetchDoctors();
+      void fetchDoctors(); // confirma com o servidor sem travar a tela
       return true;
     },
-    [prepare, actorName, fetchDoctors, setDoctorWeeks],
+    [prepare, actorName, fetchDoctors, setDoctorWeeks, doctors, userId],
   );
 
   const findDuplicate = useCallback(
@@ -676,17 +871,22 @@ export default function HomePage() {
       if (dup) return { ok: false, error: DUPLICATE_MSG, duplicate: dup };
 
       const { cycle_weeks: weeks, ...fields } = data;
-      const { data: inserted, error } = await supabase
-        .from('doctors')
-        .insert({
-          ...prepare(fields),
-          created_via: 'APP_FIELD',
-          updated_by: session?.user.id || '',
-          updated_by_name: actorName,
-          change_source: 'app',
-        })
-        .select('id')
-        .single();
+      const row = {
+        ...prepare(fields),
+        created_via: 'APP_FIELD',
+        updated_by: session?.user.id || '',
+        updated_by_name: actorName,
+        created_by_name: actorName,
+        change_source: 'app',
+      };
+      let { data: inserted, error } = await supabase.from('doctors').insert(row).select('id').single();
+
+      // Migração v6 ainda não rodada (coluna created_by_name inexistente): grava sem ela
+      if (error && isMissingColumn(error, 'created_by_name')) {
+        const { created_by_name: _omit, ...legacyRow } = row;
+        void _omit;
+        ({ data: inserted, error } = await supabase.from('doctors').insert(legacyRow).select('id').single());
+      }
 
       if (error) {
         if (error.code === '23505') {
@@ -732,6 +932,7 @@ export default function HomePage() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    clearDoctorsCache();
     setSession(null);
   };
 
@@ -797,6 +998,10 @@ export default function HomePage() {
   /** Novo ciclo: zera só os "Visitado" deste representante (semanas e ordem da rota ficam) */
   const renewCycle = useCallback(async () => {
     if (!sessionUserId) return;
+    if (isOffline()) {
+      alert('Sem internet. Renove o ciclo quando a conexão voltar.');
+      return;
+    }
     const ok = confirm(
       'Renovar o ciclo de visitas? Todos os médicos voltam para pendente. Semanas e ordem da rota continuam iguais.',
     );
@@ -906,6 +1111,25 @@ export default function HomePage() {
     () => [...topDoctors, ...feed.middle, ...feed.bottom],
     [topDoctors, feed.middle, feed.bottom],
   );
+
+  /* "Em atendimento": uma sub-lista por status. O médico entra na do status mais prioritário
+   * que tem ativo (Rep. no Consultório → Último Paciente → Aguardando); dentro dela, o marcado
+   * há menos tempo vem primeiro. */
+  const attendanceGroups = useMemo(() => {
+    const byType = new Map<DoctorStatusType, { doc: Doctor; at: number }[]>();
+    for (const doc of feed.top) {
+      const list = liveStatusMap[doc.id] || [];
+      const lead = TOP_ORDER.find((t) => list.some((s) => s.status_type === t)) ?? 'aguardando_medico';
+      const at = new Date(list.find((s) => s.status_type === lead)?.created_at ?? 0).getTime();
+      byType.set(lead, [...(byType.get(lead) ?? []), { doc, at }]);
+    }
+    return ATTENDANCE_GROUPS.map((g) => ({
+      ...g,
+      docs: (byType.get(g.type) ?? []).sort((a, b) => b.at - a.at).map((x) => x.doc),
+    })).filter((g) => g.docs.length > 0);
+  }, [feed.top, liveStatusMap]);
+
+  const toggleGroup = (type: string) => setOpenGroups((cur) => ({ ...cur, [type]: !cur[type] }));
 
   const applyMiddleOrder = useCallback(
     (visible: string[]) => {
@@ -1022,6 +1246,8 @@ export default function HomePage() {
 
   const middleIndex = useMemo(() => new Map(middleIds.map((id, i) => [id, i])), [middleIds]);
 
+  const bottomShown = bottomOpen || searchQuery.trim() !== '';
+
   const cycleVisitedCount = filteredDoctors.filter((d) => cycleVisits.has(d.id)).length;
 
   const visitedCount = isCategoryMode
@@ -1060,6 +1286,13 @@ export default function HomePage() {
     isCategoryMode
       ? (liveStatusMap[id] || []).find((s) => s.status_type === 'visitado_hoje')?.created_at ?? null
       : cycleVisits.get(id) ?? null;
+  /** Registro de visita mais recente de qualquer representante (para "Visitado por [Nome]") */
+  const visitRecordOf = (id: string): DoctorStatus | null =>
+    (liveStatusMap[id] || []).find((s) => s.status_type === CYCLE_VISIT_STATUS) ?? null;
+  const visitLabelOf = (id: string): string | null => {
+    const v = visitRecordOf(id);
+    return v ? formatVisitAudit(v.rep_name, v.created_at, now) : null;
+  };
   const toggleVisited = (id: string) => {
     const visited = Boolean(visitedAtOf(id));
     if (isCategoryMode) {
@@ -1109,6 +1342,7 @@ export default function HomePage() {
         onToggleExpand={openSheet}
         autoEdit={editingId === doc.id}
         onEditEnd={endEdit}
+        now={tier === 'top' || tier === 'bottom' ? now : undefined}
       />
     );
     if (!manual) return card;
@@ -1179,6 +1413,15 @@ export default function HomePage() {
                 title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 8 s)'}
                 className={`size-2 rounded-full ${realtimeOn ? 'bg-emerald-500' : 'bg-slate-600'}`}
               />
+              {(!offline.online || offline.pending > 0) && (
+                <span
+                  role="status"
+                  className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold tracking-normal text-amber-400"
+                >
+                  {!offline.online ? 'Sem internet' : offline.syncing ? 'Enviando' : 'Pendente'}
+                  {offline.pending > 0 && ` · ${offline.pending} ${offline.pending === 1 ? 'alteração' : 'alterações'}`}
+                </span>
+              )}
             </h1>
           </div>
           <div className="flex gap-1.5 items-center">
@@ -1425,6 +1668,7 @@ export default function HomePage() {
             isInPortfolio={isInPortfolio}
             onCancel={() => setShowAddForm(false)}
             cityOptions={cityComboOptions}
+            findDuplicate={findDuplicate}
           />
         )}
 
@@ -1454,7 +1698,11 @@ export default function HomePage() {
               <span className="text-sm text-slate-200">
                 {(() => {
                   const e = feed.expected.get(nextDoctor.id);
-                  return e ? `${formatMinutes(e.startMinutes)} esperado` : 'Sem horário médio ainda';
+                  const expectedText = e ? `${formatMinutes(e.startMinutes)} esperado` : null;
+                  // Se um colega já visitou, mostra quem e quando (sem mexer na rota do dia)
+                  const visit = visitLabelOf(nextDoctor.id);
+                  if (visit) return expectedText ? `${visit} · ${expectedText}` : visit;
+                  return expectedText ?? 'Sem horário médio ainda';
                 })()}
               </span>
               <button
@@ -1497,7 +1745,23 @@ export default function HomePage() {
             {topDoctors.length > 0 && (
               <SectionTitle tone="text-red-400">Em atendimento · {topDoctors.length}</SectionTitle>
             )}
-            {topDoctors.map((doc) => renderCard(doc, 'top'))}
+            {attendanceGroups.map((g) => {
+              const collapsible = g.docs.length > COLLAPSED_VISIBLE;
+              const open = !collapsible || Boolean(openGroups[g.type]);
+              return (
+                <div key={g.type} className="flex flex-col gap-2.5">
+                  <CollapsibleTitle
+                    tone={g.tone}
+                    title={g.title}
+                    count={g.docs.length}
+                    open={open}
+                    onToggle={collapsible ? () => toggleGroup(g.type) : undefined}
+                    hint={collapsible ? (open ? 'Mostrar menos' : 'Ver todos') : undefined}
+                  />
+                  {(open ? g.docs : g.docs.slice(0, COLLAPSED_VISIBLE)).map((doc) => renderCard(doc, 'top'))}
+                </div>
+              );
+            })}
 
             {feed.middle.length > 0 && (
               <SectionTitle tone="text-slate-400">Rota · {feed.middle.length}</SectionTitle>
@@ -1505,9 +1769,16 @@ export default function HomePage() {
             {feed.middle.map((doc) => renderCard(doc, 'middle'))}
 
             {feed.bottom.length > 0 && (
-              <SectionTitle tone="text-slate-500">Visitados e indisponíveis · {feed.bottom.length}</SectionTitle>
+              <CollapsibleTitle
+                tone="text-slate-500"
+                title="Visitados e indisponíveis"
+                count={feed.bottom.length}
+                open={bottomShown}
+                onToggle={toggleBottomOpen}
+                hint={bottomShown ? 'Recolher' : 'Expandir'}
+              />
             )}
-            {feed.bottom.map((doc) => renderCard(doc, 'bottom'))}
+            {bottomShown && feed.bottom.map((doc) => renderCard(doc, 'bottom'))}
           </>
         )}
         </FeedErrorBoundary>
@@ -1623,6 +1894,7 @@ export default function HomePage() {
           statuses={liveStatusMap[sheetDoc.id] || []}
           expected={feed.expected.get(sheetDoc.id) ?? null}
           visitedAt={visitedAtOf(sheetDoc.id)}
+          visitLabel={visitLabelOf(sheetDoc.id)}
           activeWeekLabel={!isCategoryMode && activeWeek ? cycleWeekLabel(activeWeek) : null}
           onToggleVisited={() => toggleVisited(sheetDoc.id)}
           onSetStatus={setDoctorStatus}

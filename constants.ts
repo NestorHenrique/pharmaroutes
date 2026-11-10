@@ -38,6 +38,7 @@ export const FILTROS_TURNO = [
 
 export const CATEGORIAS = [
   { value: 'consultorio', label: 'Consultório' },
+  { value: 'ubs',         label: 'UBS' },
   { value: 'psm',         label: 'PSM' },
   { value: 'samu',        label: 'SAMU' },
   { value: 'hospital',    label: 'Hospital' },

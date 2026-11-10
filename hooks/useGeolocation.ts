@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { reverseGeocode } from '@/lib/geocode';
+import type { ReverseAddress } from '@/lib/geocode';
 
 export type GpsStatus = { type: 'ok' | 'error'; text: string } | null;
 
@@ -67,9 +69,22 @@ function mapsSearchUrl(address: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 }
 
+/** Posição devolvida junto com o link do Maps */
+export interface GeoPoint {
+  lat: number;
+  lon: number;
+  /** precisão em metros */
+  accuracy: number;
+}
+
 export interface CaptureOptions {
   /** endereço digitado: vira link do Maps se o GPS falhar (plano C) */
   fallbackAddress?: string;
+  /**
+   * Se informado, depois de capturar a posição busca endereço, bairro e cidade
+   * (geocodificação reversa) e entrega aqui para preencher o formulário.
+   */
+  onAddress?: (address: ReverseAddress) => void;
 }
 
 export function useGeolocation() {
@@ -80,7 +95,7 @@ export function useGeolocation() {
   /** link do Maps montado pelo endereço, oferecido quando o GPS falha */
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
 
-  const lastSuccess = useRef<((url: string) => void) | null>(null);
+  const lastSuccess = useRef<((url: string, point?: GeoPoint) => void) | null>(null);
   const lastOptions = useRef<CaptureOptions | undefined>(undefined);
   /** cada toque é uma tentativa; respostas atrasadas de tentativas antigas são ignoradas */
   const attempt = useRef(0);
@@ -111,7 +126,7 @@ export function useGeolocation() {
    * invocados de forma síncrona aqui dentro (nada de await/Promise antes), que é o que o
    * WebKit exige para mostrar o pedido de permissão no app da Tela de Início.
    */
-  const capture = useCallback((onSuccess: (url: string) => void, opts?: CaptureOptions) => {
+  const capture = useCallback((onSuccess: (url: string, point?: GeoPoint) => void, opts?: CaptureOptions) => {
     lastSuccess.current = onSuccess;
     lastOptions.current = opts;
     const address = opts?.fallbackAddress?.trim() || '';
@@ -137,18 +152,31 @@ export function useGeolocation() {
       watchId = null;
     };
 
+    /** Geocodificação reversa: roda DEPOIS do toque (só o pedido de GPS precisa do gesto) */
+    const lookupAddress = async (lat: number, lon: number, base: string, onAddress: (a: ReverseAddress) => void) => {
+      const addr = await reverseGeocode(lat, lon);
+      if (id !== attempt.current) return; // outro toque já começou
+      if (!addr) {
+        setStatus({ type: 'ok', text: `${base} Não achei o endereço; confira e preencha à mão.` });
+        return;
+      }
+      onAddress(addr);
+      const street = addr.numero ? `${addr.endereco}, ${addr.numero}` : addr.endereco;
+      const line = [street, addr.bairro, addr.cidade].filter(Boolean).join(' · ');
+      setStatus({ type: 'ok', text: `${base} Endereço preenchido: ${line}. Confira antes de salvar.` });
+    };
+
     const success = (pos: GeolocationPosition, reduced: boolean) => {
       if (settled || id !== attempt.current) return;
       finish();
       const { latitude, longitude, accuracy } = pos.coords;
-      onSuccess(`https://www.google.com/maps?q=${latitude},${longitude}`);
+      onSuccess(`https://www.google.com/maps?q=${latitude},${longitude}`, { lat: latitude, lon: longitude, accuracy });
       setNeedsActivation(false);
       setFallbackUrl(null);
-      setStatus({
-        type: 'ok',
-        text: `Localização capturada (±${Math.round(accuracy)} m)${reduced ? ' · precisão reduzida' : ''}.`,
-      });
+      const base = `Localização capturada (±${Math.round(accuracy)} m)${reduced ? ' · precisão reduzida' : ''}.`;
+      setStatus({ type: 'ok', text: opts?.onAddress ? `${base} Buscando endereço…` : base });
       setLoading(false);
+      if (opts?.onAddress) void lookupAddress(latitude, longitude, base, opts.onAddress);
     };
 
     const fail = (code: number) => {

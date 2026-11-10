@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { RepProfile } from '@/types/doctor';
+import { enqueue, isNetworkError, isOffline } from '@/lib/offlineQueue';
 
 /** Linha de rep_route_order — UNIQUE(user_id, day_of_week) */
 interface RouteOrderRow {
@@ -122,29 +123,49 @@ export function useRepProfile(userId: string | null) {
     async (day: string, doctorIds: string[]): Promise<boolean> => {
       // 1) Sessão válida: a policy de RLS compara user_id com auth.uid(),
       //    então usamos o id da sessão atual, não um valor guardado no estado.
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+      //    Sem internet não dá para perguntar ao servidor: usa o id da sessão já aberta.
+      let uid = userId;
+      if (!isOffline()) {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
-      if (authError || !user?.id) {
-        console.error('Erro ao salvar ordem da rota: usuário não autenticado.', authError?.message ?? '');
+        if (authError && isNetworkError(authError, (authError as { status?: number }).status)) {
+          // a rede caiu agora: segue com o id da sessão e guarda na fila
+        } else if (authError || !user?.id) {
+          console.error('Erro ao salvar ordem da rota: usuário não autenticado.', authError?.message ?? '');
+          return false;
+        } else {
+          if (userId && user.id !== userId) {
+            console.error('Erro ao salvar ordem da rota: a sessão mudou. Recarregue o app.');
+            return false;
+          }
+          uid = user.id;
+        }
+      }
+      if (!uid) {
+        console.error('Erro ao salvar ordem da rota: usuário não autenticado.');
         return false;
       }
-      if (userId && user.id !== userId) {
-        console.error('Erro ao salvar ordem da rota: a sessão mudou. Recarregue o app.');
-        return false;
-      }
+      const owner = uid;
 
       const previous = routeOrder[day];
       setRouteOrder((cur) => ({ ...cur, [day]: doctorIds })); // otimista
 
+      // Sem internet: a ordem fica no aparelho e sobe quando a conexão voltar
+      const queue = () => enqueue(owner, { kind: 'route_order', day, doctor_ids: doctorIds });
+      if (isOffline()) {
+        queue();
+        return true;
+      }
+
       // 2) Upsert com o alvo do UNIQUE(user_id, day_of_week)
-      const { error } = await supabase
+      const { error, status } = await supabase
         .from('rep_route_order')
         .upsert(
           {
-            user_id: user.id,
+            user_id: owner,
             day_of_week: day,
             ordered_doctor_ids: doctorIds,
             updated_at: new Date().toISOString(),
@@ -153,6 +174,10 @@ export function useRepProfile(userId: string | null) {
         );
 
       if (error) {
+        if (isNetworkError(error, status)) {
+          queue();
+          return true;
+        }
         // 3) Log completo
         logSupabaseError('Erro ao salvar ordem da rota:', error);
         setRouteOrder((cur) => ({ ...cur, [day]: previous ?? [] }));
