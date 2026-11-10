@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import type { AgendaEntry, Doctor } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
-import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
-import { clearDraft, getAgenda, loadDraft, saveDraft, specialtyCode } from '@/utils';
+import { CATEGORIAS } from '@/constants';
+import { SPECIALTY_LIST, clearDraft, getAgenda, loadDraft, normalizeCrm, saveDraft, specialtyCode } from '@/utils';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
 import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
@@ -24,7 +24,7 @@ interface DoctorEditFormProps {
 
 type EditForm = Partial<Doctor> & { agenda: AgendaEntry[] };
 
-const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({ value: e.label, label: e.label, hint: e.code }));
+const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
 
 const inputCls =
   'w-full min-w-0 box-border h-11 px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
@@ -37,7 +37,6 @@ function initialForm(doc: Doctor): EditForm {
     uf: doc.uf || 'PI',
     agenda: getAgenda(doc),
     especialidade: doc.especialidade || '',
-    rqe: doc.rqe || '',
     complemento: doc.complemento || '',
     endereco: doc.endereco || '',
     numero: doc.numero || '',
@@ -105,15 +104,12 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
       };
       // Nome, CRM e UF só vão se mudaram
       if (nome !== (doc.descricao || '')) payload.descricao = nome;
-      const crm = (form.crm || '').trim();
-      if (crm !== (doc.crm || '')) payload.crm = crm;
+      const crm = normalizeCrm(form.crm);
+      if (crm !== normalizeCrm(doc.crm)) payload.crm = crm;
       const uf = (form.uf || '').trim().toUpperCase() || 'PI';
       if (uf !== (doc.uf || 'PI')) payload.uf = uf;
       const weeks = normalizeCycleWeeks(form.cycle_weeks);
       if (weeks.join(',') !== normalizeCycleWeeks(doc.cycle_weeks).join(',')) payload.cycle_weeks = weeks;
-      // RQE só vai se mudou (não quebra a edição antes da migração v6)
-      const rqe = (form.rqe || '').trim();
-      if (rqe !== (doc.rqe || '')) payload.rqe = rqe || null;
       // WhatsApps só vão se mudaram (não quebra a edição antes da migração v7)
       const wm = (form.whatsapp_medico || '').trim();
       if (wm !== (doc.whatsapp_medico || '')) payload.whatsapp_medico = wm || null;
@@ -211,15 +207,6 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
             {specCode ?? '—'}
           </span>
         </div>
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder="RQE"
-          aria-label="RQE"
-          value={form.rqe ?? ''}
-          onChange={(e) => set('rqe', e.target.value)}
-          className={inputCls}
-        />
         <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Categoria do local">
           {CATEGORIAS.map((c) => {
             const on = (form.categoria ?? 'consultorio') === c.value;
@@ -320,7 +307,6 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
           <input type="tel" inputMode="tel" placeholder="WhatsApp médico" value={form.whatsapp_medico ?? ''} onChange={(e) => set('whatsapp_medico', e.target.value)} className={inputCls} />
           <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica ?? ''} onChange={(e) => set('whatsapp_clinica', e.target.value)} className={inputCls} />
         </div>
-        <input type="tel" placeholder="Telefone fixo" value={form.telefone ?? ''} onChange={(e) => set('telefone', e.target.value)} className={inputCls} />
         <textarea
           placeholder="Observações do propagandista"
           value={form.observacoes ?? ''}

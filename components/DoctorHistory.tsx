@@ -18,7 +18,6 @@ const FIELD_LABELS: Record<string, string> = {
   descricao: 'Nome',
   crm: 'CRM',
   uf: 'UF',
-  rqe: 'RQE',
   especialidade: 'Especialidade',
   categoria: 'Categoria',
   cidade: 'Cidade',

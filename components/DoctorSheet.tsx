@@ -15,6 +15,7 @@ import {
   formatAgendaBadge,
   formatElapsed,
   formatMinutes,
+  formatCrm,
   formatTime,
   getAgenda,
   isNewDoctor,
@@ -177,12 +178,11 @@ export default function DoctorSheet({
             </h2>
             {mode === 'edit' ? (
               <span className="text-sm font-semibold uppercase tracking-[0.08em] text-blue-400">Editando dados</span>
-            ) : (doc.especialidade || doc.crm || doc.rqe) && (
+            ) : (doc.especialidade || doc.crm) && (
               <span className="text-sm uppercase text-slate-400">
                 {[
                   doc.especialidade,
-                  doc.crm && `CRM ${doc.crm.toUpperCase()}${doc.uf ? `/${doc.uf.toUpperCase()}` : ''}`,
-                  doc.rqe && `RQE ${doc.rqe}`,
+                  formatCrm(doc.crm, doc.uf),
                 ]
                   .filter(Boolean)
                   .join(' · ')}
