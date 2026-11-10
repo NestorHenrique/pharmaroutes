@@ -1405,6 +1405,26 @@ export default function HomePage() {
     }
     return visitorsSummary(visitorsFor(id), (name, iso) => formatVisitAudit(name, iso, now));
   };
+  /** Plantonistas de hoje: médicos de PSM/SAMU/Hospital que QUALQUER representante já visitou hoje.
+   * Saem da Rota e da lista de Visitados para ninguém voltar neles quando o plantão troca. */
+  const plantaoIds = useMemo(() => {
+    const out = new Set<string>();
+    if (isCategoryMode) return out;
+    const today = new Date(now).toDateString();
+    for (const d of [...feed.middle, ...feed.visited]) {
+      if (!(['psm', 'samu', 'hospital'] as const).some((c) => matchesLocation(d, c))) continue;
+      const byStatus = (liveStatusMap[d.id] || []).some((s) => s.status_type === 'visitado_hoje');
+      const byVisit = (visitorsByDoctor[d.id] ?? []).some((v) => new Date(v.visitedAt).toDateString() === today);
+      if (byStatus || byVisit) out.add(d.id);
+    }
+    return out;
+  }, [isCategoryMode, now, feed.middle, feed.visited, liveStatusMap, visitorsByDoctor]);
+  const routeList = feed.middle.filter((d) => !plantaoIds.has(d.id));
+  const visitedList = feed.visited.filter((d) => !plantaoIds.has(d.id));
+  const plantaoList = [...feed.middle, ...feed.visited].filter((d) => plantaoIds.has(d.id));
+  const [plantaoOpen, setPlantaoOpen] = useState(false);
+  const plantaoShown = plantaoOpen || searchQuery.trim() !== '';
+
   const presenceFor = (id: string): PresenceItem[] =>
     presenceItems(liveStatusMap[id], isCategoryMode ? undefined : visitorsFor(id));
   const toggleVisited = (id: string) => {
@@ -2011,27 +2031,38 @@ export default function HomePage() {
               );
             })}
 
-            {feed.middle.length > 0 && (
+            {routeList.length > 0 && (
               <CollapsibleTitle
                 title="Rota"
-                count={feed.middle.length}
+                count={routeList.length}
                 open={routeShown}
                 onToggle={toggleRouteClosed}
                 hint={routeShown ? 'Recolher' : 'Expandir'}
               />
             )}
-            {routeShown && feed.middle.map((doc) => renderCard(doc, 'middle'))}
+            {routeShown && routeList.map((doc) => renderCard(doc, 'middle'))}
 
-            {feed.visited.length > 0 && (
+            {plantaoList.length > 0 && (
+              <CollapsibleTitle
+                title="Plantonistas hoje"
+                count={plantaoList.length}
+                open={plantaoShown}
+                onToggle={() => setPlantaoOpen((o) => !o)}
+                hint={plantaoShown ? 'Recolher' : 'Expandir'}
+              />
+            )}
+            {plantaoShown && plantaoList.map((doc) => renderCard(doc, 'bottom'))}
+
+            {visitedList.length > 0 && (
               <CollapsibleTitle
                 title="Visitados"
-                count={feed.visited.length}
+                count={visitedList.length}
                 open={bottomShown}
                 onToggle={toggleBottomOpen}
                 hint={bottomShown ? 'Recolher' : 'Expandir'}
               />
             )}
-            {bottomShown && feed.visited.map((doc) => renderCard(doc, 'bottom'))}
+            {bottomShown && visitedList.map((doc) => renderCard(doc, 'bottom'))}
 
             {feed.unavailable.length > 0 && (
               <CollapsibleTitle

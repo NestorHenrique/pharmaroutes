@@ -296,6 +296,15 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         </div>
       </div>
 
+      {/* Clínica / Local */}
+      <input
+        type="text"
+        placeholder="Clínica / Local (PSM, SAMU, Hospital...)"
+        value={form.complemento}
+        onChange={(e) => setField('complemento', e.target.value)}
+        className={inputCls}
+      />
+
       {/* Dias + turno por dia */}
       <AgendaEditor value={form.agenda || []} onChange={(a) => setField('agenda', a)} />
 
@@ -324,16 +333,8 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         </div>
       </div>
 
-      {/* Clínica / Local */}
-      <input
-        type="text"
-        placeholder="Clínica / Local (PSM, SAMU, Hospital...)"
-        value={form.complemento}
-        onChange={(e) => setField('complemento', e.target.value)}
-        className={inputCls}
-      />
-
       {/* Endereço + Número */}
+      <FormTitle>Endereço</FormTitle>
       <div className="grid grid-cols-[2fr_1fr] gap-1.5">
         <input type="text" placeholder="Endereço" value={form.endereco} onChange={(e) => setField('endereco', e.target.value)} className={inputCls} />
         <input type="text" placeholder="Número" value={form.numero} onChange={(e) => setField('numero', e.target.value)} className={inputCls} />
