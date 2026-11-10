@@ -11,6 +11,7 @@ import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '
 import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
+import FormTitle from '@/components/FormTitle';
 import type { ComboOption } from '@/components/ComboBox';
 
 const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
@@ -289,18 +290,27 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
 
       {/* Categoria do Local */}
       <div>
-        <span className="text-[10px] text-slate-500 block mb-[3px]">Categoria do Local:</span>
-        <select
-          value={form.categoria}
-          onChange={(e) => setField('categoria', e.target.value)}
-          className={inputCls}
-        >
-          {CATEGORIAS.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
+        <div className="mb-1.5">
+          <FormTitle>Categoria do local</FormTitle>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Categoria do local">
+          {CATEGORIAS.map((c) => {
+            const on = form.categoria === c.value;
+            return (
+              <button
+                key={c.value}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setField('categoria', c.value)}
+                className={`h-11 rounded-xl text-sm ${
+                  on ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-700 bg-slate-900 text-slate-300'
+                }`}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Dias + turno por dia */}
@@ -308,8 +318,10 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
 
       {/* Semanas do ciclo */}
       <div>
-        <span className="text-[10px] text-slate-500 block mb-[3px]">Semanas do ciclo:</span>
-        <div className="flex gap-1 flex-wrap" role="group" aria-label="Semanas do ciclo">
+        <div className="mb-1.5">
+          <FormTitle>Semanas do ciclo</FormTitle>
+        </div>
+        <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="Semanas do ciclo">
           {CYCLE_WEEKS.map((w) => {
             const on = (form.cycle_weeks ?? []).includes(w);
             return (
@@ -318,8 +330,8 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
                 type="button"
                 aria-pressed={on}
                 onClick={() => setField('cycle_weeks', normalizeCycleWeeks(on ? (form.cycle_weeks ?? []).filter((x) => x !== w) : [...(form.cycle_weeks ?? []), w]))}
-                className={`px-2 py-1 rounded text-[10px] font-semibold border ${
-                  on ? 'border-violet-500 bg-violet-500/20 text-violet-200' : 'border-slate-700 bg-slate-800 text-slate-400'
+                className={`h-11 rounded-xl text-sm font-semibold ${
+                  on ? 'border-0 bg-blue-600 text-white' : 'border border-slate-700 bg-slate-900 text-slate-400'
                 }`}
               >
                 {cycleWeekLabel(w)}

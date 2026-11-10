@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { CityOption } from '@/utils';
-import { normalizeText } from '@/utils';
+import { normalizeText, prettyCity } from '@/utils';
 
 interface CityFilterProps {
   options: CityOption[];
@@ -42,7 +43,7 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
     };
   }, [open]);
 
-  const labelFor = (key: string) => options.find((o) => o.value === key)?.label ?? key;
+  const labelFor = (key: string) => prettyCity(options.find((o) => o.value === key)?.label ?? key);
   const hasDay = Boolean(dayCounts);
   const todayOf = (key: string) => dayCounts?.[key] ?? 0;
 
@@ -85,7 +86,7 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
           }`}
         >
           <input type="checkbox" checked={checked} onChange={() => toggle(o.value)} className="size-5 accent-sky-500" />
-          <span className="flex-1 truncate text-[15px] text-slate-100">{o.label}</span>
+          <span className="flex-1 truncate text-[15px] text-slate-100">{prettyCity(o.label)}</span>
           <span className="text-sm tabular-nums text-slate-400">
             {showDay ? (
               <>
@@ -119,9 +120,10 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
         </svg>
       </button>
 
-      {open && (
+      {open &&
+        createPortal(
         <div
-          className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 animate-[fade-in_.18s_ease-out]"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 animate-[fade-in_.18s_ease-out]"
           onClick={() => setOpen(false)}
         >
           <div
@@ -225,18 +227,29 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
               )}
             </div>
 
-            {/* Aplicar */}
-            <div className="shrink-0 border-t border-slate-800 px-5 pt-3" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}>
+            {/* Cancelar + Aplicar */}
+            <div
+              className="grid shrink-0 grid-cols-[1fr_2fr] gap-2 border-t border-slate-800 px-5 pt-3"
+              style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 16px)' }}
+            >
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="h-12 rounded-2xl border border-slate-700 bg-slate-800 text-sm font-semibold text-slate-100"
+              >
+                Cancelar
+              </button>
               <button
                 type="button"
                 onClick={apply}
-                className="h-12 w-full rounded-2xl border-0 bg-slate-100 text-base font-bold text-slate-950"
+                className="h-12 rounded-2xl border-0 bg-slate-100 text-base font-bold text-slate-950"
               >
                 Aplicar · {resultCount} médicos
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
