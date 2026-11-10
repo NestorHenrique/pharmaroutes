@@ -27,6 +27,8 @@ interface AddDoctorFormProps {
   cityOptions: ComboOption[];
   /** CRM + UF já cadastrado? Usado antes da busca, para não buscar quem já está na base */
   findDuplicate?: (crm: string, uf: string) => Doctor | undefined;
+  /** dentro de uma folha (BottomSheet): sem moldura própria */
+  embedded?: boolean;
 }
 
 type FormState = {
@@ -76,7 +78,7 @@ const inputCls =
 
 /* ── Component ── */
 
-export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, onCancel, cityOptions, findDuplicate }: AddDoctorFormProps) {
+export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, onCancel, cityOptions, findDuplicate, embedded = false }: AddDoctorFormProps) {
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -201,9 +203,9 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
   const code = specialtyCode(form.especialidade);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3">
+    <div className={embedded ? 'flex flex-col gap-3' : 'bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3'}>
       <div className="flex justify-between items-center">
-        <h3 className="text-lg font-bold tracking-tight text-white m-0">Novo médico</h3>
+        <FormTitle>Novo médico</FormTitle>
         {restored && (
           <span className="text-[10px] text-amber-400 bg-amber-900/30 px-1.5 py-0.5 rounded">
             Rascunho restaurado

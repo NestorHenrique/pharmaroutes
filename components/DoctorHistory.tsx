@@ -14,23 +14,30 @@ interface AuditRow {
   changes: Record<string, { de: unknown; para: unknown }> | null;
 }
 
-const FIELD_LABELS: Record<string, string> = {
-  descricao: 'Nome',
-  crm: 'CRM',
-  uf: 'UF',
-  especialidade: 'Especialidade',
-  categoria: 'Categoria',
-  cidade: 'Cidade',
-  bairro: 'Bairro',
-  endereco: 'Endereço',
-  telefone: 'Telefone',
-  whatsapp_medico: 'WhatsApp médico',
-  whatsapp_clinica: 'WhatsApp clínica',
-  agenda: 'Agenda',
-  dias_semana: 'Dias',
-  turno: 'Turno',
-  latitude: 'Latitude',
-  longitude: 'Longitude',
+/** Campo técnico -> frase simples (campos do mesmo assunto viram uma frase só) */
+const FIELD_PHRASES: Record<string, string> = {
+  descricao: 'Mudou o nome',
+  crm: 'Mudou o CRM',
+  uf: 'Mudou a UF',
+  especialidade: 'Mudou a especialidade',
+  categoria: 'Mudou o tipo de local',
+  complemento: 'Mudou o local',
+  cidade: 'Mudou o endereço',
+  bairro: 'Mudou o endereço',
+  endereco: 'Mudou o endereço',
+  numero: 'Mudou o endereço',
+  telefone: 'Mudou o telefone',
+  whatsapp_medico: 'Mudou o WhatsApp do médico',
+  whatsapp_clinica: 'Mudou o WhatsApp da clínica',
+  email: 'Mudou o email',
+  map_link: 'Atualizou o GPS',
+  latitude: 'Atualizou o GPS',
+  longitude: 'Atualizou o GPS',
+  agenda: 'Mudou os dias de atendimento',
+  dias_semana: 'Mudou os dias de atendimento',
+  turno: 'Mudou os dias de atendimento',
+  observacoes: 'Mudou a observação',
+  cycle_weeks: 'Mudou as semanas do ciclo',
 };
 
 const MAX_ROWS = 20;
@@ -43,20 +50,21 @@ function fmtDateTime(iso: string): string {
   return `${date} ${time}`;
 }
 
-function fmtValue(v: unknown): string {
-  if (v === null || v === undefined || v === '') return 'vazio';
-  if (typeof v === 'object') return '…';
-  const s = String(v);
-  return s.length > 28 ? `${s.slice(0, 27)}…` : s;
+function sameValue(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown) => (v === null || v === undefined ? '' : String(v).trim().toLowerCase());
+  return norm(a) === norm(b);
 }
 
+/** Frases simples do que mudou; ignora trocas que só mudam maiúscula/minúscula ou vazio → vazio */
 function describe(row: AuditRow): string {
-  if (row.action === 'INSERT') return 'Cadastro';
-  const entries = Object.entries(row.changes ?? {});
-  if (!entries.length) return 'Edição';
-  return entries
-    .map(([k, c]) => `${FIELD_LABELS[k] ?? k}: ${fmtValue(c?.de)} → ${fmtValue(c?.para)}`)
-    .join(' · ');
+  if (row.action === 'INSERT') return 'Cadastro do médico';
+  const phrases: string[] = [];
+  for (const [k, c] of Object.entries(row.changes ?? {})) {
+    if (sameValue(c?.de, c?.para)) continue;
+    const phrase = FIELD_PHRASES[k];
+    if (phrase && !phrases.includes(phrase)) phrases.push(phrase);
+  }
+  return phrases.length ? phrases.join(' · ') : 'Edição';
 }
 
 export default function DoctorHistory({ doc }: { doc: Doctor }) {

@@ -4,6 +4,7 @@
  */
 
 import type { DoctorVisit } from '@/types/doctor';
+import type { DoctorStatus } from '@/types/status';
 
 export type VisitMap = Record<string, DoctorVisit[]>;
 
@@ -104,4 +105,68 @@ export function visitorsSummary(
   const [lead, ...rest] = visitors;
   if (rest.length === 0) return format(lead.name, lead.visitedAt);
   return `Visitado por ${firstName(lead.name)} e mais ${rest.length}`;
+}
+
+/* ── Quem está no consultório / quem visitou (tag do card e da ficha) ── */
+
+export interface PresenceItem {
+  key: string;
+  kind: 'office' | 'visit';
+  /** primeiro nome */
+  name: string;
+  /** ISO do momento (chegou / visitou) */
+  at: string;
+  isMe?: boolean;
+}
+
+function hhmm(iso: string): string {
+  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** "Arthur no consultório 16:50" / "Nestor visitou 16:55" */
+export function presenceText(item: PresenceItem): string {
+  return `${item.name} ${item.kind === 'office' ? 'no consultório' : 'visitou'} ${hhmm(item.at)}`;
+}
+
+/**
+ * Presença de representantes no médico: quem está no consultório agora (status ativo) e quem já visitou.
+ * No consultório vem primeiro; depois as visitas, da mais recente para a mais antiga.
+ */
+export function presenceItems(
+  statuses: readonly DoctorStatus[] | undefined,
+  visitors: readonly Visitor[] | undefined,
+): PresenceItem[] {
+  const out: PresenceItem[] = [];
+  for (const s of statuses ?? []) {
+    if (s.status_type === 'representante_no_consultorio') {
+      out.push({
+        key: `o:${s.id}`,
+        kind: 'office',
+        name: firstName(s.rep_name?.trim() || 'Representante'),
+        at: s.created_at,
+      });
+    }
+  }
+  const visits: PresenceItem[] = (visitors ?? []).map((v) => ({
+    key: `v:${v.userId}`,
+    kind: 'visit',
+    name: firstName(v.name),
+    at: v.visitedAt,
+    isMe: v.isMe,
+  }));
+  // PSM/SAMU/Hospital: a visita do dia fica em doctor_statuses
+  if (visits.length === 0) {
+    for (const s of statuses ?? []) {
+      if (s.status_type === 'visitado_hoje') {
+        visits.push({
+          key: `d:${s.id}`,
+          kind: 'visit',
+          name: firstName(s.rep_name?.trim() || 'Representante'),
+          at: s.created_at,
+        });
+      }
+    }
+  }
+  visits.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  return [...out, ...visits];
 }

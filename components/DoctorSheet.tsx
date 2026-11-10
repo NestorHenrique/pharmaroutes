@@ -8,7 +8,8 @@ import type { ComboOption } from '@/components/ComboBox';
 import DoctorEditForm from '@/components/DoctorEditForm';
 import DoctorHistory from '@/components/DoctorHistory';
 import { RepAvatar } from '@/components/RepAvatar';
-import type { Visitor } from '@/lib/visits';
+import type { PresenceItem, Visitor } from '@/lib/visits';
+import PresenceTags from '@/components/PresenceTags';
 import { STATUS_META } from '@/types/status';
 import {
   doctorWhatsApps,
@@ -33,6 +34,8 @@ interface DoctorSheetProps {
   visitLabel?: string | null;
   /** quem visitou no ciclo (eu primeiro) */
   visitors?: readonly Visitor[];
+  /** quem está no consultório / visitou, com a hora */
+  presence?: readonly PresenceItem[];
   /** semana ativa: o visitado entra nela automaticamente */
   activeWeekLabel?: string | null;
   onToggleVisited: () => void;
@@ -108,6 +111,7 @@ export default function DoctorSheet({
   visitedAt,
   visitLabel,
   visitors,
+  presence,
   activeWeekLabel,
   onToggleVisited,
   onSetStatus,
@@ -330,6 +334,14 @@ export default function DoctorSheet({
             </>
           )}
         </div>
+
+        {/* Colegas no consultório / que visitaram, com a hora (mesma etiqueta do card) */}
+        {presence && presence.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <span className={label}>Representantes</span>
+            <PresenceTags items={presence} max={presence.length} />
+          </div>
+        )}
 
         {/* Quem visitou (cada representante tem a sua visita) */}
         {visitors && visitors.length > 0 && (
