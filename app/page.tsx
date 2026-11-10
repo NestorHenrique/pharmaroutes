@@ -72,6 +72,7 @@ const CYCLE_WEEK_KEY = 'pharma_cycle_week';
 const ACTIVE_WEEK_KEY = 'pharma_active_week';
 const THEME_KEY = 'pharma_theme';
 const BOTTOM_OPEN_KEY = 'pharma_bottom_open';
+const UNAVAILABLE_OPEN_KEY = 'pharma_unavailable_open';
 
 /** No estado contraído cada sub-lista de "Em atendimento" mostra só os mais recentes */
 const COLLAPSED_VISIBLE = 2;
@@ -237,8 +238,14 @@ class FeedErrorBoundary extends Component<{ resetKey: number; children: ReactNod
   }
 }
 
-function SectionTitle({ tone, children }: { tone: string; children: ReactNode }) {
-  return <div className={`mt-2 text-[11px] font-semibold uppercase tracking-[0.14em] ${tone}`}>{children}</div>;
+/** Mesmo modelo dos títulos do cadastro (FormTitle): barrinha + texto forte. Sem `tone` usa a cor de destaque do tema. */
+function SectionTitle({ tone, children }: { tone?: string; children: ReactNode }) {
+  return (
+    <div className={`mt-2 flex items-center gap-2 ${tone ?? 'text-blue-400'}`}>
+      <span className={`h-4 w-1 shrink-0 rounded-full ${tone ? 'bg-current' : 'bg-blue-600'}`} aria-hidden="true" />
+      <span className="text-[13px] font-bold uppercase tracking-[0.1em]">{children}</span>
+    </div>
+  );
 }
 
 /** Título de lista que recolhe/expande (setinha + contador). `onToggle` ausente = título fixo. */
@@ -250,7 +257,7 @@ function CollapsibleTitle({
   onToggle,
   hint,
 }: {
-  tone: string;
+  tone?: string;
   title: string;
   count: number;
   open: boolean;
@@ -268,9 +275,12 @@ function CollapsibleTitle({
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className={`mt-2 flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left text-[11px] font-semibold uppercase tracking-[0.14em] ${tone}`}
+      className={`mt-2 flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left ${tone ?? 'text-blue-400'}`}
     >
-      <span>{label}</span>
+      <span className="flex items-center gap-2">
+        <span className={`h-4 w-1 shrink-0 rounded-full ${tone ? 'bg-current' : 'bg-blue-600'}`} aria-hidden="true" />
+        <span className="text-[13px] font-bold uppercase tracking-[0.1em]">{label}</span>
+      </span>
       <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium normal-case tracking-normal text-slate-500">
         {hint}
         <svg
@@ -358,6 +368,7 @@ export default function HomePage() {
   /* UI */
   /** "Visitados e indisponíveis" começa recolhida; a escolha fica salva no aparelho */
   const [bottomOpen, setBottomOpen] = useState(false);
+  const [unavailOpen, setUnavailOpen] = useState(false);
   /** sub-listas de "Em atendimento" abertas por inteiro (as demais mostram só as mais recentes) */
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showAddForm, setShowAddForm] = useState(false);
@@ -412,6 +423,7 @@ export default function HomePage() {
       const saved = localStorage.getItem(SORT_MODE_KEY);
       if (saved === 'historico' || saved === 'manual') setSortMode(saved);
       if (localStorage.getItem(BOTTOM_OPEN_KEY) === '1') setBottomOpen(true);
+      if (localStorage.getItem(UNAVAILABLE_OPEN_KEY) === '1') setUnavailOpen(true);
       const week = normalizeCycleWeeks([Number(localStorage.getItem(CYCLE_WEEK_KEY))])[0];
       if (week) setSelectedWeek(week);
       // Semana ativa vale até a próxima segunda-feira; depois pergunta de novo
@@ -457,6 +469,14 @@ export default function HomePage() {
     setBottomOpen(next);
     try {
       localStorage.setItem(BOTTOM_OPEN_KEY, next ? '1' : '0');
+    } catch { /* ignore */ }
+  };
+
+  const toggleUnavailOpen = () => {
+    const next = !unavailOpen;
+    setUnavailOpen(next);
+    try {
+      localStorage.setItem(UNAVAILABLE_OPEN_KEY, next ? '1' : '0');
     } catch { /* ignore */ }
   };
 
@@ -778,6 +798,17 @@ export default function HomePage() {
     [statusMap, userId],
   );
 
+  /** Marcou "Visitado": o atendimento acabou, então tira Rep. no consultório / Último paciente / Aguardando */
+  const clearAttendanceStatuses = useCallback(
+    (doctorId: string) => {
+      const active = statusMap[doctorId] || [];
+      for (const type of TOP_ORDER) {
+        if (active.some((s) => s.status_type === type)) void clearDoctorStatus(doctorId, type);
+      }
+    },
+    [statusMap, clearDoctorStatus],
+  );
+
   /* ═══════════════════ Cidades ═══════════════════ */
 
   const cityOptions = useMemo(() => buildCityOptions(doctors.map((d) => d.cidade)), [doctors]);
@@ -793,6 +824,9 @@ export default function HomePage() {
       const out: Partial<Doctor> = { ...data };
       if (data.agenda) out.dias_semana = agendaToDias(data.agenda);
       if (data.cidade !== undefined) out.cidade = canonicalCity(data.cidade, cityOptions);
+      // CRM só com números ("CRM 8786/PI" é montado na tela) e UF sempre em maiúsculas
+      if (typeof data.crm === 'string') out.crm = normalizeCrm(data.crm);
+      if (typeof data.uf === 'string') out.uf = data.uf.trim().toUpperCase();
       return out;
     },
     [cityOptions],
@@ -1015,6 +1049,7 @@ export default function HomePage() {
         return;
       }
       void markVisited(doctorId);
+      clearAttendanceStatuses(doctorId);
 
       if (activeWeek) {
         const key = cycleWeekKey(activeWeek);
@@ -1029,7 +1064,7 @@ export default function HomePage() {
         if (list.join(',') !== current.join(',')) void saveRouteOrder(key, list);
       }
     },
-    [undoVisited, markVisited, activeWeek, routeOrder, cycleVisits, saveRouteOrder],
+    [undoVisited, markVisited, clearAttendanceStatuses, activeWeek, routeOrder, cycleVisits, saveRouteOrder],
   );
 
   /** Novo ciclo: zera só os "Visitado" deste representante (semanas, ordem da rota e horários médios ficam) */
@@ -1285,6 +1320,7 @@ export default function HomePage() {
   const middleIndex = useMemo(() => new Map(middleIds.map((id, i) => [id, i])), [middleIds]);
 
   const bottomShown = bottomOpen || searchQuery.trim() !== '';
+  const unavailShown = unavailOpen || searchQuery.trim() !== '';
 
   const cycleVisitedCount = filteredDoctors.filter((d) => cycleVisits.has(d.id)).length;
 
@@ -1346,7 +1382,10 @@ export default function HomePage() {
     const visited = Boolean(visitedAtOf(id));
     if (isCategoryMode) {
       if (visited) void clearDoctorStatus(id, 'visitado_hoje');
-      else void setDoctorStatus(id, 'visitado_hoje');
+      else {
+        void setDoctorStatus(id, 'visitado_hoje');
+        clearAttendanceStatuses(id);
+      }
     } else {
       toggleCycleVisit(id, !visited);
     }
@@ -1885,21 +1924,31 @@ export default function HomePage() {
             })}
 
             {feed.middle.length > 0 && (
-              <SectionTitle tone="text-slate-400">Rota · {feed.middle.length}</SectionTitle>
+              <SectionTitle>Rota · {feed.middle.length}</SectionTitle>
             )}
             {feed.middle.map((doc) => renderCard(doc, 'middle'))}
 
-            {feed.bottom.length > 0 && (
+            {feed.visited.length > 0 && (
               <CollapsibleTitle
-                tone="text-slate-500"
-                title="Visitados e indisponíveis"
-                count={feed.bottom.length}
+                title="Visitados"
+                count={feed.visited.length}
                 open={bottomShown}
                 onToggle={toggleBottomOpen}
                 hint={bottomShown ? 'Recolher' : 'Expandir'}
               />
             )}
-            {bottomShown && feed.bottom.map((doc) => renderCard(doc, 'bottom'))}
+            {bottomShown && feed.visited.map((doc) => renderCard(doc, 'bottom'))}
+
+            {feed.unavailable.length > 0 && (
+              <CollapsibleTitle
+                title="Indisponíveis"
+                count={feed.unavailable.length}
+                open={unavailShown}
+                onToggle={toggleUnavailOpen}
+                hint={unavailShown ? 'Recolher' : 'Expandir'}
+              />
+            )}
+            {unavailShown && feed.unavailable.map((doc) => renderCard(doc, 'bottom'))}
           </>
         )}
         </FeedErrorBoundary>

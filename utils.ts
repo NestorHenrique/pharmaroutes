@@ -450,3 +450,17 @@ export function clearDraft(key: string): void {
     localStorage.removeItem(FORM_PREFIX + key);
   } catch { /* ignore */ }
 }
+
+
+/** "CRM 8786/PI" (sem letras na frente do número) */
+export function formatCrm(crm: string | null | undefined, uf?: string | null): string {
+  const n = normalizeCrm(crm);
+  if (!n) return '';
+  const u = (uf || '').trim().toUpperCase();
+  return `CRM ${n}${u ? `/${u}` : ''}`;
+}
+
+/** Especialidades em ordem alfabética (A–Z) para as listas de seleção */
+export const SPECIALTY_LIST: { value: string; label: string; hint: string }[] = [...ESPECIALIDADES]
+  .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+  .map((e) => ({ value: e.label, label: e.label, hint: e.code }));

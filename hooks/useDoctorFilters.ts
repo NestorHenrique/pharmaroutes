@@ -172,7 +172,12 @@ interface Params {
 export interface DoctorFeed {
   top: Doctor[];
   middle: Doctor[];
+  /** fim da lista: visitados e depois indisponíveis (junção das duas listas abaixo) */
   bottom: Doctor[];
+  /** visitados (ciclo/dia) */
+  visited: Doctor[];
+  /** indisponíveis (férias, viagem...): sempre por último */
+  unavailable: Doctor[];
   /** ids do bloco do meio, na ordem exibida (base das setas ▲▼) */
   middleIds: string[];
   expected: Map<string, ExpectedVisit>;
@@ -204,7 +209,8 @@ export function useDoctorFilters({
     const manualIndex = new Map((manualOrder ?? []).map((id, i) => [id, i]));
     const top: { d: Doctor; ts: number }[] = [];
     const middle: Doctor[] = [];
-    const bottom: { d: Doctor; ts: number }[] = [];
+    const visited: { d: Doctor; ts: number }[] = [];
+    const unavailable: { d: Doctor; ts: number }[] = [];
 
     for (const d of doctors) {
       const list = statusMap[d.id] ?? [];
@@ -217,13 +223,18 @@ export function useDoctorFilters({
         ts = new Date(visitedAt).getTime();
       }
       if (tier === 'top') top.push({ d, ts });
-      else if (tier === 'bottom') bottom.push({ d, ts });
+      else if (tier === 'bottom') {
+        // Indisponível (férias, viagem...) vence: vai para a lista do fim; o resto é visitado
+        if (list.some((s) => UNAVAILABLE_STATUSES.includes(s.status_type))) unavailable.push({ d, ts });
+        else visited.push({ d, ts });
+      }
       else middle.push(d);
     }
 
     // Topo: marcado mais recentemente primeiro. Fim: concluído por último fica por último.
     top.sort((a, b) => b.ts - a.ts);
-    bottom.sort((a, b) => a.ts - b.ts);
+    visited.sort((a, b) => a.ts - b.ts);
+    unavailable.sort((a, b) => a.ts - b.ts);
 
     if (sortMode === 'historico') {
       middle.sort((a, b) => {
@@ -242,7 +253,9 @@ export function useDoctorFilters({
     return {
       top: top.map((x) => x.d),
       middle,
-      bottom: bottom.map((x) => x.d),
+      bottom: [...visited, ...unavailable].map((x) => x.d),
+      visited: visited.map((x) => x.d),
+      unavailable: unavailable.map((x) => x.d),
       middleIds: middle.map((d) => d.id),
       expected,
     };

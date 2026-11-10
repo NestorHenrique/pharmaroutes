@@ -3,8 +3,8 @@
 import { useState, useCallback } from 'react';
 import type { AddDoctorResult, AgendaEntry, Doctor } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
-import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
-import { normalizeCrm, sortAgenda, specialtyCode } from '@/utils';
+import { CATEGORIAS } from '@/constants';
+import { SPECIALTY_LIST, formatCrm, normalizeCrm, sortAgenda, specialtyCode } from '@/utils';
 import { lookupCrm } from '@/lib/crmLookup';
 import { useFormPersistence } from '@/hooks/useFormPersistence';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
@@ -14,11 +14,7 @@ import ComboBox from '@/components/ComboBox';
 import FormTitle from '@/components/FormTitle';
 import type { ComboOption } from '@/components/ComboBox';
 
-const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
-  value: e.label,
-  label: e.label,
-  hint: e.code,
-}));
+const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
 
 /* ── Types ── */
 
@@ -38,7 +34,6 @@ type FormState = {
   crm: string;
   uf: string;
   especialidade: string;
-  rqe: string;
   agenda: AgendaEntry[];
   complemento: string;
   endereco: string;
@@ -60,7 +55,6 @@ const DEFAULTS: FormState = {
   crm: '',
   uf: 'PI',
   especialidade: '',
-  rqe: '',
   agenda: [],
   complemento: '',
   endereco: '',
@@ -118,7 +112,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
 
     const payload: Partial<Doctor> = {
       descricao: form.descricao.trim(),
-      crm: form.crm.trim(),
+      crm: normalizeCrm(form.crm),
       uf: form.uf.trim().toUpperCase() || 'PI',
       especialidade: form.especialidade.trim() || null,
       agenda: sortAgenda(form.agenda || []),
@@ -136,7 +130,6 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
     // Só envia se marcado/preenchido (funciona mesmo antes das migrações v5 e v6)
     const weeks = normalizeCycleWeeks(form.cycle_weeks);
     if (weeks.length) payload.cycle_weeks = weeks;
-    if (form.rqe.trim()) payload.rqe = form.rqe.trim();
     if (form.whatsapp_medico.trim()) payload.whatsapp_medico = form.whatsapp_medico.trim();
     if (form.whatsapp_clinica.trim()) payload.whatsapp_clinica = form.whatsapp_clinica.trim();
 
@@ -176,14 +169,13 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         setLookupMsg({ type: 'error', text: res.message });
         return;
       }
-      const { nome, especialidade, rqe } = res.data;
+      const { nome, especialidade } = res.data;
       setForm((prev) => ({
         ...prev,
         descricao: nome ? nome.toUpperCase() : prev.descricao,
         especialidade: especialidade || prev.especialidade,
-        rqe: rqe || prev.rqe,
       }));
-      const filled = [nome && 'nome', especialidade && 'especialidade', rqe && 'RQE'].filter(Boolean).join(', ');
+      const filled = [nome && 'nome', especialidade && 'especialidade'].filter(Boolean).join(', ');
       setLookupMsg({ type: 'ok', text: `Preenchido: ${filled}. Confira antes de salvar.` });
     } finally {
       setLooking(false);
@@ -277,17 +269,6 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         </span>
       </div>
 
-      {/* RQE */}
-      <input
-        type="text"
-        inputMode="numeric"
-        placeholder="RQE (opcional)"
-        aria-label="RQE"
-        value={form.rqe}
-        onChange={(e) => setField('rqe', e.target.value)}
-        className={inputCls}
-      />
-
       {/* Categoria do Local */}
       <div>
         <div className="mb-1.5">
@@ -373,9 +354,8 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica} onChange={(e) => setField('whatsapp_clinica', e.target.value)} className={inputCls} />
       </div>
 
-      {/* Telefone + Email */}
-      <div className="grid grid-cols-2 gap-1.5">
-        <input type="tel" placeholder="Telefone fixo" value={form.telefone} onChange={(e) => setField('telefone', e.target.value)} className={inputCls} />
+      {/* Email */}
+      <div className="grid grid-cols-1 gap-1.5">
         <input type="email" placeholder="Email" value={form.email} onChange={(e) => setField('email', e.target.value)} className={inputCls} />
       </div>
 
@@ -445,7 +425,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
           <strong className="text-[12px] text-red-300">Médico já cadastrado na base de dados</strong>
           <span className="text-[11px] text-slate-300">
             {duplicate.descricao}
-            {duplicate.crm && ` · CRM ${duplicate.crm}${duplicate.uf ? `/${duplicate.uf}` : ''}`}
+            {duplicate.crm && ` · ${formatCrm(duplicate.crm, duplicate.uf)}`}
             {duplicate.complemento && ` · ${duplicate.complemento}`}
             {duplicate.cidade && ` · ${duplicate.cidade}`}
           </span>

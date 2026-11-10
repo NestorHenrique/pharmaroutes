@@ -42,7 +42,6 @@ function fieldsOf(d: Doctor): Field[] {
   return [
     f('nome', 'Nome', d.descricao),
     f('crm', 'CRM', d.crm, true),
-    f('crm', 'RQE', d.rqe, true),
     f('especialidade', 'Especialidade', d.especialidade),
     f('local', 'Bairro', d.bairro),
     f('local', 'Cidade', d.cidade),

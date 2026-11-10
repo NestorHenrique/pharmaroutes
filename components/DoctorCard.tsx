@@ -5,7 +5,7 @@ import type { AgendaEntry, Doctor, ExpectedVisit, RouteTier } from '@/types/doct
 import { CYCLE_WEEKS, TOP_PRIORITY_STATUSES, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { STATUS_META, UNAVAILABLE_STATUSES } from '@/types/status';
-import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
+import { CATEGORIAS } from '@/constants';
 import {
   doctorWhatsApps,
   isNewDoctor,
@@ -22,6 +22,8 @@ import {
   saveDraft,
   clearDraft,
   formatMinutes,
+  formatCrm,
+  SPECIALTY_LIST,
 } from '@/utils';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
 import { mergeAddress } from '@/lib/geocode';
@@ -74,11 +76,7 @@ interface DoctorCardProps {
   now?: number;
 }
 
-const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
-  value: e.label,
-  label: e.label,
-  hint: e.code,
-}));
+const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
 
 type EditForm = Partial<Doctor> & { agenda: AgendaEntry[] };
 
@@ -503,10 +501,7 @@ function DoctorCard({
           {(doc.crm || doc.especialidade) && (
             <div className="text-[11px] text-slate-500 mt-1">
               {doc.crm && (
-                <span>
-                  CRM {doc.crm.toUpperCase()}
-                  {doc.uf ? `/${doc.uf.toUpperCase()}` : ''}
-                </span>
+                <span>{formatCrm(doc.crm, doc.uf)}</span>
               )}
               {doc.crm && doc.especialidade && <span> · </span>}
               {doc.especialidade && <span>{doc.especialidade}</span>}
@@ -654,7 +649,6 @@ function DoctorCard({
           </div>
 
           <div className="grid grid-cols-2 gap-1.5">
-            <input type="tel" placeholder="Telefone fixo" value={editForm.telefone ?? ''} onChange={(e) => setField('telefone', e.target.value)} className={inputCls} />
             <input type="tel" placeholder="WhatsApp médico" value={editForm.whatsapp_medico ?? ''} onChange={(e) => setField('whatsapp_medico', e.target.value)} className={inputCls} />
             <input type="tel" placeholder="WhatsApp clínica" value={editForm.whatsapp_clinica ?? ''} onChange={(e) => setField('whatsapp_clinica', e.target.value)} className={inputCls} />
             <input type="text" placeholder="Clínica / Local (PSM, SAMU, Hospital...)" value={editForm.complemento ?? ''} onChange={(e) => setField('complemento', e.target.value)} className={inputCls} />
