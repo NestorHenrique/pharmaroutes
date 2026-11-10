@@ -42,6 +42,8 @@ function initialForm(doc: Doctor): EditForm {
     cidade: doc.cidade || '',
     observacoes: doc.observacoes || '',
     telefone: doc.telefone || '',
+    whatsapp_medico: doc.whatsapp_medico || '',
+    whatsapp_clinica: doc.whatsapp_clinica || '',
     email: doc.email || '',
     map_link: doc.map_link || '',
     categoria: doc.categoria || 'consultorio',
@@ -97,6 +99,11 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
       // RQE só vai se mudou (não quebra a edição antes da migração v6)
       const rqe = (form.rqe || '').trim();
       if (rqe !== (doc.rqe || '')) payload.rqe = rqe || null;
+      // WhatsApps só vão se mudaram (não quebra a edição antes da migração v7)
+      const wm = (form.whatsapp_medico || '').trim();
+      if (wm !== (doc.whatsapp_medico || '')) payload.whatsapp_medico = wm || null;
+      const wc = (form.whatsapp_clinica || '').trim();
+      if (wc !== (doc.whatsapp_clinica || '')) payload.whatsapp_clinica = wc || null;
       const ok = await onUpdateDoctor(doc.id, payload, doc.descricao || '');
       if (ok) {
         clearDraft(draftKey);
@@ -261,7 +268,11 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
       {/* Contato e observação */}
       <section className={cardCls}>
         <span className={label}>Contato e observação</span>
-        <input type="tel" placeholder="Telefone (WhatsApp)" value={form.telefone ?? ''} onChange={(e) => set('telefone', e.target.value)} className={inputCls} />
+        <div className="grid grid-cols-2 gap-1.5">
+          <input type="tel" inputMode="tel" placeholder="WhatsApp médico" value={form.whatsapp_medico ?? ''} onChange={(e) => set('whatsapp_medico', e.target.value)} className={inputCls} />
+          <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica ?? ''} onChange={(e) => set('whatsapp_clinica', e.target.value)} className={inputCls} />
+        </div>
+        <input type="tel" placeholder="Telefone fixo" value={form.telefone ?? ''} onChange={(e) => set('telefone', e.target.value)} className={inputCls} />
         <textarea
           placeholder="Observações do propagandista"
           value={form.observacoes ?? ''}

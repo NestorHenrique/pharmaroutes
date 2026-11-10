@@ -29,9 +29,20 @@ export interface StatusRecord {
   created_by: string;
 }
 
+/** Linha de doctor_visits como o app grava (uma por médico e por representante) */
+export interface VisitRecord {
+  doctor_id: string;
+  user_id: string;
+  rep_name: string | null;
+  visited_at: string;
+}
+
 export type OpInput =
   | { kind: 'status_upsert'; record: StatusRecord }
   | { kind: 'status_delete'; doctor_id: string; status_type: DoctorStatusType }
+  | { kind: 'visit_upsert'; record: VisitRecord }
+  | { kind: 'visit_delete'; doctor_id: string }
+  | { kind: 'visits_clear' }
   | { kind: 'doctor_update'; doctor_id: string; fields: Record<string, unknown> }
   | { kind: 'route_order'; day: string; doctor_ids: string[] };
 
@@ -83,6 +94,12 @@ function targetKey(op: OpInput & { owner: string }): string {
       return `${op.owner}|s|${op.record.doctor_id}|${op.record.status_type}`;
     case 'status_delete':
       return `${op.owner}|s|${op.doctor_id}|${op.status_type}`;
+    case 'visit_upsert':
+      return `${op.owner}|v|${op.record.doctor_id}`;
+    case 'visit_delete':
+      return `${op.owner}|v|${op.doctor_id}`;
+    case 'visits_clear':
+      return `${op.owner}|vclear`;
     case 'doctor_update':
       return `${op.owner}|d|${op.doctor_id}`;
     case 'route_order':
@@ -99,7 +116,12 @@ export function compactQueue(queue: readonly QueuedOp[], incoming: QueuedOp): Qu
   if (previous?.kind === 'doctor_update' && incoming.kind === 'doctor_update') {
     next = { ...incoming, fields: { ...previous.fields, ...incoming.fields } };
   }
-  const out = [...rest, next];
+  let kept = rest;
+  // "Renovar ciclo" offline: visitas pendentes de antes da renovação não valem mais
+  if (incoming.kind === 'visits_clear') {
+    kept = rest.filter((q) => !(q.owner === incoming.owner && (q.kind === 'visit_upsert' || q.kind === 'visit_delete')));
+  }
+  const out = [...kept, next];
   return out.length > MAX_OPS ? out.slice(out.length - MAX_OPS) : out;
 }
 

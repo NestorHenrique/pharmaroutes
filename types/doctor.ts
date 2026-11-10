@@ -46,6 +46,11 @@ export interface Doctor {
   rqe?: string | null;
   /** quem cadastrou o médico (auditoria) */
   created_by_name?: string | null;
+  /* ── v7 ── */
+  /** WhatsApp pessoal do médico (só dígitos ou formatado) */
+  whatsapp_medico?: string | null;
+  /** WhatsApp da clínica / recepção */
+  whatsapp_clinica?: string | null;
 }
 
 /* ── Ciclo de 5 semanas ── */
@@ -128,4 +133,14 @@ export interface RepProfile {
   display_name: string | null;
   specialties: string[];
   show_all: boolean;
+  /** foto de perfil (data URL pequena); null = iniciais */
+  avatar_url?: string | null;
+}
+
+/** Visita do ciclo: uma por médico e por representante (tabela doctor_visits) */
+export interface DoctorVisit {
+  doctor_id: string;
+  user_id: string;
+  rep_name: string | null;
+  visited_at: string;
 }
