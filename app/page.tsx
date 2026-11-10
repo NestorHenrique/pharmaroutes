@@ -29,6 +29,7 @@ import {
   isNewDoctor,
   matchesLocation,
   normalizeCrm,
+  prettyCity,
   shiftCovers,
   specialtyCode,
   ROUTE_HISTORY_DAYS,
@@ -781,7 +782,7 @@ export default function HomePage() {
 
   const cityOptions = useMemo(() => buildCityOptions(doctors.map((d) => d.cidade)), [doctors]);
   const cityComboOptions: ComboOption[] = useMemo(
-    () => cityOptions.map((o) => ({ value: o.label, label: o.label, hint: String(o.count) })),
+    () => cityOptions.map((o) => ({ value: o.label, label: prettyCity(o.label), hint: String(o.count) })),
     [cityOptions],
   );
   const cityLabels = useMemo(() => cityOptions.map((o) => o.label), [cityOptions]);
@@ -836,6 +837,23 @@ export default function HomePage() {
   const updateDoctor = useCallback(
     async (docId: string, data: Partial<Doctor>, _docName: string): Promise<boolean> => {
       const { cycle_weeks: weeks, ...fields } = data;
+
+      // Trocou CRM/UF: não pode bater com outro médico da base
+      if (fields.crm !== undefined || fields.uf !== undefined) {
+        const self = doctors.find((d) => d.id === docId);
+        const crmKey = normalizeCrm(fields.crm ?? self?.crm);
+        const ufKey = (fields.uf ?? self?.uf ?? 'PI').trim().toUpperCase();
+        const clash = crmKey
+          ? doctors.find(
+              (d) => d.id !== docId && normalizeCrm(d.crm) === crmKey && (d.uf || 'PI').trim().toUpperCase() === ufKey,
+            )
+          : undefined;
+        if (clash) {
+          alert(`Esse CRM já está cadastrado para ${clash.descricao}.`);
+          return false;
+        }
+      }
+
       if (weeks !== undefined && !(await setDoctorWeeks(docId, weeks))) return false;
       if (Object.keys(fields).length === 0) return true;
 
@@ -1274,7 +1292,7 @@ export default function HomePage() {
     ? sortedDoctors.filter((d) => (liveStatusMap[d.id] || []).some((s) => s.status_type === 'visitado_hoje')).length
     : 0;
 
-  const cityLabelOf = (key: string) => cityOptions.find((o) => o.value === key)?.label ?? key;
+  const cityLabelOf = (key: string) => prettyCity(cityOptions.find((o) => o.value === key)?.label ?? key);
 
   /* ═══════════════════ Layout: ficha aberta, próximo, barra de ações ═══════════════════ */
 

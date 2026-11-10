@@ -3,6 +3,7 @@
 import type { AgendaEntry, Shift } from '@/types/doctor';
 import { OPCOES_DIAS, OPCOES_SHIFT } from '@/constants';
 import { sortAgenda, dayLabel } from '@/utils';
+import FormTitle from '@/components/FormTitle';
 
 interface AgendaEditorProps {
   value: AgendaEntry[];
@@ -24,7 +25,7 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400 block">Dias e turnos</span>
+      <FormTitle>Dias e turnos</FormTitle>
 
       <div className="flex gap-1">
         {OPCOES_DIAS.map((d) => {
@@ -35,7 +36,7 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
               key={d.value}
               aria-pressed={isChecked}
               onClick={() => toggleDay(d.value)}
-              className={`flex-1 h-10 rounded-xl text-xs font-semibold ${
+              className={`flex-1 h-11 rounded-xl text-sm font-semibold ${
                 isChecked
                   ? 'border-0 bg-blue-600 text-white'
                   : 'border border-slate-700 bg-slate-900 text-slate-400'
@@ -61,7 +62,7 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
                       key={s.value}
                       aria-pressed={active}
                       onClick={() => setShift(e.day, s.value)}
-                      className={`flex-1 h-9 rounded-lg text-xs ${
+                      className={`flex-1 h-11 rounded-xl text-sm ${
                         active
                           ? 'border-0 bg-slate-100 text-slate-950 font-semibold'
                           : 'border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200'

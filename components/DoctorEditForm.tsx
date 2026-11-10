@@ -9,6 +9,7 @@ import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '
 import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
+import FormTitle from '@/components/FormTitle';
 import type { ComboOption } from '@/components/ComboBox';
 
 /* ── Edição do médico dentro da ficha (mesmo visual da ficha de status) ── */
@@ -27,11 +28,13 @@ const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({ value: e.l
 
 const inputCls =
   'w-full min-w-0 box-border h-11 px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
-const label = 'text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400';
 const cardCls = 'rounded-2xl border border-slate-800 bg-slate-950 p-4 flex flex-col gap-3';
 
 function initialForm(doc: Doctor): EditForm {
   return {
+    descricao: doc.descricao || '',
+    crm: doc.crm || '',
+    uf: doc.uf || 'PI',
     agenda: getAgenda(doc),
     especialidade: doc.especialidade || '',
     rqe: doc.rqe || '',
@@ -79,6 +82,12 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
   const save = async () => {
     setSaving(true);
     setError(null);
+    const nome = (form.descricao || '').trim().toUpperCase();
+    if (!nome) {
+      setSaving(false);
+      setError('O nome do médico não pode ficar vazio.');
+      return;
+    }
     try {
       const payload: Partial<Doctor> = {
         agenda: form.agenda,
@@ -94,6 +103,12 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
         map_link: form.map_link ?? '',
         categoria: form.categoria,
       };
+      // Nome, CRM e UF só vão se mudaram
+      if (nome !== (doc.descricao || '')) payload.descricao = nome;
+      const crm = (form.crm || '').trim();
+      if (crm !== (doc.crm || '')) payload.crm = crm;
+      const uf = (form.uf || '').trim().toUpperCase() || 'PI';
+      if (uf !== (doc.uf || 'PI')) payload.uf = uf;
       const weeks = normalizeCycleWeeks(form.cycle_weeks);
       if (weeks.join(',') !== normalizeCycleWeeks(doc.cycle_weeks).join(',')) payload.cycle_weeks = weeks;
       // RQE só vai se mudou (não quebra a edição antes da migração v6)
@@ -123,11 +138,44 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Identificação: nome, CRM e UF */}
+      <section className={cardCls}>
+        <FormTitle>Identificação</FormTitle>
+        <input
+          type="text"
+          placeholder="Nome do médico"
+          aria-label="Nome do médico"
+          value={form.descricao ?? ''}
+          onChange={(e) => set('descricao', e.target.value.toUpperCase())}
+          className={inputCls}
+        />
+        <div className="grid grid-cols-[2fr_1fr] gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="CRM"
+            aria-label="CRM"
+            value={form.crm ?? ''}
+            onChange={(e) => set('crm', e.target.value)}
+            className={inputCls}
+          />
+          <input
+            type="text"
+            placeholder="UF"
+            aria-label="UF"
+            maxLength={2}
+            value={form.uf ?? ''}
+            onChange={(e) => set('uf', e.target.value.toUpperCase())}
+            className={`${inputCls} uppercase`}
+          />
+        </div>
+      </section>
+
       {/* Agenda + semanas */}
       <section className={cardCls}>
         <AgendaEditor value={form.agenda} onChange={(a) => set('agenda', a)} />
         <div className="flex flex-col gap-2">
-          <span className={label}>Semanas do ciclo</span>
+          <FormTitle>Semanas do ciclo</FormTitle>
           <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="Semanas do ciclo">
             {CYCLE_WEEKS.map((w) => {
               const on = weeks.includes(w);
@@ -137,7 +185,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
                   type="button"
                   aria-pressed={on}
                   onClick={() => set('cycle_weeks', normalizeCycleWeeks(on ? weeks.filter((x) => x !== w) : [...weeks, w]))}
-                  className={`h-10 rounded-xl text-xs font-semibold ${
+                  className={`h-11 rounded-xl text-sm font-semibold ${
                     on ? 'border-0 bg-blue-600 text-white' : 'border border-slate-700 bg-slate-900 text-slate-400'
                   }`}
                 >
@@ -151,7 +199,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
 
       {/* Especialidade e categoria */}
       <section className={cardCls}>
-        <span className={label}>Especialidade e local</span>
+        <FormTitle>Especialidade e local</FormTitle>
         <div className="grid grid-cols-[1fr_auto] gap-2 items-center">
           <ComboBox
             value={form.especialidade ?? ''}
@@ -201,7 +249,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
 
       {/* Endereço e GPS */}
       <section className={cardCls}>
-        <span className={label}>Endereço</span>
+        <FormTitle>Endereço</FormTitle>
         <div className="grid grid-cols-[2fr_1fr] gap-2">
           <input type="text" placeholder="Rua / avenida" value={form.endereco ?? ''} onChange={(e) => set('endereco', e.target.value)} className={inputCls} />
           <input type="text" placeholder="Número" value={form.numero ?? ''} onChange={(e) => set('numero', e.target.value)} className={inputCls} />
@@ -267,7 +315,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
 
       {/* Contato e observação */}
       <section className={cardCls}>
-        <span className={label}>Contato e observação</span>
+        <FormTitle>Contato e observação</FormTitle>
         <div className="grid grid-cols-2 gap-1.5">
           <input type="tel" inputMode="tel" placeholder="WhatsApp médico" value={form.whatsapp_medico ?? ''} onChange={(e) => set('whatsapp_medico', e.target.value)} className={inputCls} />
           <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica ?? ''} onChange={(e) => set('whatsapp_clinica', e.target.value)} className={inputCls} />

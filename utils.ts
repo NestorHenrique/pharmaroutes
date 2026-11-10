@@ -17,6 +17,34 @@ export function cityKey(city: string | null | undefined): string {
   return normalizeText(city).replace(/\s+/g, ' ');
 }
 
+/** Grafia correta (com acento) das cidades mais comuns da base */
+const CITY_NAMES = [
+  'Água Branca', 'Parnaíba', 'Matias Olímpio', 'Angical do Piauí', 'Luís Correia', 'Cajueiro da Praia',
+  'José de Freitas', 'União', 'São João da Fronteira', 'Nossa Senhora dos Remédios', 'Lagoa de São Francisco',
+  'Capitão de Campos', 'Ilha Grande', 'Cocal dos Alves', 'São Miguel do Tapuio', 'Prata do Piauí',
+  'Piracuruca', 'Pedro II', 'Buriti dos Lopes', 'Buriti dos Montes', 'Campo Maior', 'Domingos Mourão',
+  'Joaquim Pires', 'Murici dos Portelas', 'São Pedro do Piauí', 'Santa Cruz dos Milagres', 'Jatobá do Piauí',
+];
+const CITY_BY_KEY = new Map(CITY_NAMES.map((n) => [cityKey(n), n]));
+const LOWER_WORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'e']);
+
+/** Nome de cidade para exibir: com acento (lista conhecida) e iniciais maiúsculas ("parnaiba" → "Parnaíba") */
+export function prettyCity(name: string | null | undefined): string {
+  const raw = (name || '').trim().replace(/\s+/g, ' ');
+  if (!raw) return '';
+  const known = CITY_BY_KEY.get(cityKey(raw));
+  if (known) return known;
+  return raw
+    .toLowerCase()
+    .split(' ')
+    .map((w, i) => {
+      if (/^(ii|iii|iv|vi|vii|viii|ix)$/.test(w)) return w.toUpperCase();
+      if (i > 0 && LOWER_WORDS.has(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(' ');
+}
+
 /* ── Dias da semana ── */
 
 export const DAY_ORDER = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];

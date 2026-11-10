@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { normalizeText } from '@/utils';
+import PickerSheet from '@/components/PickerSheet';
 
 export interface ComboOption {
   value: string;
@@ -19,11 +20,13 @@ interface ComboBoxProps {
   /** permite texto que não está na lista (ex.: cidade nova) */
   allowCustom?: boolean;
   size?: 'sm' | 'md';
+  /** título da folha de seleção (padrão: o placeholder) */
+  title?: string;
 }
 
 /**
- * Campo com busca enquanto digita (sem acento: "parnaiba" acha "Parnaíba").
- * Ao sair do campo, se o texto bate com uma opção, usa a grafia da opção.
+ * Campo de seleção: toque abre uma folha por baixo com busca sem acento
+ * ("parnaiba" acha "Parnaíba"), lista grande, Limpar e Cancelar.
  */
 export default function ComboBox({
   value,
@@ -33,121 +36,44 @@ export default function ComboBox({
   ariaLabel,
   allowCustom = true,
   size = 'md',
+  title,
 }: ComboBoxProps) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent | TouchEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
-    };
-    document.addEventListener('mousedown', handler);
-    document.addEventListener('touchstart', handler);
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      document.removeEventListener('touchstart', handler);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, value]);
-
-  const q = normalizeText(open ? query : '');
-  const filtered = q
-    ? options.filter((o) => normalizeText(o.label).includes(q) || normalizeText(o.hint).includes(q))
-    : options;
-
-  /** Fecha e encaixa o texto digitado na grafia oficial, se existir */
-  function close() {
-    setOpen(false);
-    const key = normalizeText(value);
-    if (!key) return;
-    const match = options.find((o) => normalizeText(o.label) === key || normalizeText(o.value) === key);
-    if (match && match.value !== value) onChange(match.value);
-    else if (!match && !allowCustom) onChange('');
-  }
-
-  const pick = (o: ComboOption) => {
-    onChange(o.value);
-    setQuery('');
-    setOpen(false);
-  };
-
-  const pad = size === 'sm' ? 'h-10 px-3 text-base sm:text-sm' : 'h-11 px-3.5 text-base sm:text-sm';
+  const key = normalizeText(value);
+  const match = key ? options.find((o) => normalizeText(o.value) === key || normalizeText(o.label) === key) : undefined;
+  const shown = match?.label ?? value;
+  const pad = size === 'sm' ? 'h-10 px-3' : 'h-11 px-3.5';
 
   return (
-    <div ref={ref} className="relative min-w-0">
-      <div className="flex">
-        <input
-          type="text"
-          value={value}
-          placeholder={placeholder}
-          aria-label={ariaLabel ?? placeholder}
-          autoComplete="off"
-          onFocus={() => {
-            setQuery('');
-            setOpen(true);
-          }}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            onChange(e.target.value);
-            setOpen(true);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') close();
-            if (e.key === 'Enter' && open && filtered.length > 0 && query) {
-              e.preventDefault();
-              pick(filtered[0]);
-            }
-          }}
-          className={`w-full min-w-0 box-border rounded-l-xl border border-slate-700 bg-slate-950 text-slate-100 outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600 ${pad}`}
-        />
-        <button
-          type="button"
-          tabIndex={-1}
-          aria-label="Abrir lista"
-          onClick={() => {
-            setQuery('');
-            setOpen((o) => !o);
-          }}
-          className="shrink-0 rounded-r-xl border border-l-0 border-slate-700 bg-slate-950 px-3 text-xs text-slate-400 hover:text-white"
-        >
-          ▾
-        </button>
-      </div>
+    <>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-label={ariaLabel ?? placeholder}
+        onClick={() => setOpen(true)}
+        className={`flex w-full min-w-0 box-border items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-950 text-left text-base sm:text-sm hover:border-slate-500 ${pad}`}
+      >
+        <span className={`truncate ${shown ? 'text-slate-100' : 'text-slate-500'}`}>{shown || placeholder}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-400" aria-hidden="true">
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
 
       {open && (
-        <ul
-          role="listbox"
-          className="absolute left-0 right-0 top-full z-30 mt-1 max-h-56 overflow-y-auto rounded-md border border-slate-700 bg-slate-900 py-1 shadow-xl shadow-black/40"
-        >
-          {filtered.length === 0 && (
-            <li className="px-2.5 py-1.5 text-[11px] text-slate-500">
-              {allowCustom && value.trim() ? `Novo: "${value.trim()}"` : 'Nada encontrado'}
-            </li>
-          )}
-          {filtered.map((o) => {
-            const selected = normalizeText(o.value) === normalizeText(value);
-            return (
-              <li key={o.value}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => pick(o)}
-                  className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] hover:bg-slate-800 ${
-                    selected ? 'text-sky-300 font-semibold' : 'text-slate-200'
-                  }`}
-                >
-                  <span className="truncate">{o.label}</span>
-                  {o.hint && <span className="shrink-0 text-[10px] font-bold text-slate-500">{o.hint}</span>}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <PickerSheet
+          title={title ?? placeholder ?? 'Selecionar'}
+          options={options}
+          value={value}
+          allowCustom={allowCustom}
+          searchPlaceholder={`Buscar ${(placeholder ?? 'opção').toLowerCase()}...`}
+          onSelect={(v) => {
+            onChange(v);
+            setOpen(false);
+          }}
+          onClose={() => setOpen(false)}
+        />
       )}
-    </div>
+    </>
   );
 }
