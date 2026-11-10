@@ -6,6 +6,7 @@ import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor
 import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
 import { clearDraft, getAgenda, loadDraft, saveDraft, specialtyCode } from '@/utils';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
+import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
 import type { ComboOption } from '@/components/ComboBox';
@@ -33,6 +34,7 @@ function initialForm(doc: Doctor): EditForm {
   return {
     agenda: getAgenda(doc),
     especialidade: doc.especialidade || '',
+    rqe: doc.rqe || '',
     complemento: doc.complemento || '',
     endereco: doc.endereco || '',
     numero: doc.numero || '',
@@ -92,6 +94,9 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
       };
       const weeks = normalizeCycleWeeks(form.cycle_weeks);
       if (weeks.join(',') !== normalizeCycleWeeks(doc.cycle_weeks).join(',')) payload.cycle_weeks = weeks;
+      // RQE só vai se mudou (não quebra a edição antes da migração v6)
+      const rqe = (form.rqe || '').trim();
+      if (rqe !== (doc.rqe || '')) payload.rqe = rqe || null;
       const ok = await onUpdateDoctor(doc.id, payload, doc.descricao || '');
       if (ok) {
         clearDraft(draftKey);
@@ -151,6 +156,15 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
             {specCode ?? '—'}
           </span>
         </div>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="RQE"
+          aria-label="RQE"
+          value={form.rqe ?? ''}
+          onChange={(e) => set('rqe', e.target.value)}
+          className={inputCls}
+        />
         <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Categoria do local">
           {CATEGORIAS.map((c) => {
             const on = (form.categoria ?? 'consultorio') === c.value;
@@ -205,6 +219,8 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
                 fallbackAddress: [[form.endereco, form.numero].filter(Boolean).join(', '), form.bairro, form.cidade]
                   .filter(Boolean)
                   .join(', '),
+                // Toque no GPS também busca endereço, bairro e cidade do ponto atual
+                onAddress: (a) => setForm((p) => mergeAddress(p, a)),
               })
             }
             className="h-11 px-4 shrink-0 rounded-xl border-0 bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 disabled:opacity-50"

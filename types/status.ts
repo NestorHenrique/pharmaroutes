@@ -53,7 +53,7 @@ export const STATUS_META: Record<DoctorStatusType, StatusMeta> = {
     border: 'border-red-500',
     bg: 'bg-red-500/10',
     text: 'text-red-400',
-    duration: 20,
+    duration: 30,
     untilMidnight: false,
     needsReturnDate: false,
     needsRepName: false,

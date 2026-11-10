@@ -152,6 +152,7 @@ Deno.serve(async (req) => {
     url: '/',
   });
 
-  const ttl = status_type === 'ultimo_paciente' ? 1200 : 600;
+  // Mesma duração do status no app: Último Paciente 30 min, Rep. no Consultório 10 min
+  const ttl = status_type === 'ultimo_paciente' ? 1800 : 600;
   return json(await sendAll(admin, subs ?? [], payload, ttl));
 });

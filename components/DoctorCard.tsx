@@ -2,7 +2,7 @@
 
 import { memo, useState, useEffect } from 'react';
 import type { AgendaEntry, Doctor, ExpectedVisit, RouteTier } from '@/types/doctor';
-import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
+import { CYCLE_WEEKS, TOP_PRIORITY_STATUSES, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { STATUS_META, UNAVAILABLE_STATUSES } from '@/types/status';
 import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
@@ -14,6 +14,8 @@ import {
   specialtyCode,
   specialtyLabel,
   formatTime,
+  formatElapsed,
+  formatVisitAudit,
   minutesRemaining,
   hasSavedDraft,
   loadDraft,
@@ -22,6 +24,7 @@ import {
   formatMinutes,
 } from '@/utils';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
+import { mergeAddress } from '@/lib/geocode';
 import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
 import AgendaEditor from '@/components/AgendaEditor';
@@ -60,6 +63,8 @@ interface DoctorCardProps {
   autoEdit?: boolean;
   /** avisado ao salvar ou cancelar a edição */
   onEditEnd?: () => void;
+  /** relógio da tela (ms): faz o "há X min" dos cards em atendimento crescer sozinho */
+  now?: number;
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = ESPECIALIDADES.map((e) => ({
@@ -74,7 +79,7 @@ const inputCls =
   'w-full min-w-0 box-border h-10 px-3 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
 
 /** Mesmo formato para NOVO, especialidade, dias e categoria */
-const tagCls = 'text-[9px] px-1 py-px rounded-sm font-bold whitespace-nowrap';
+const tagCls = 'text-[9px] px-1 py-px rounded-sm font-bold whitespace-nowrap uppercase';
 
 /**
  * Abre Maps/WhatsApp fora do app sem trocar a página do PWA.
@@ -114,6 +119,7 @@ function DoctorCard({
   onToggleExpand,
   autoEdit = false,
   onEditEnd,
+  now,
 }: DoctorCardProps) {
   const draftKey = `edit_${doc.id}`;
   const hasDraft = hasSavedDraft(draftKey);
@@ -260,17 +266,20 @@ function DoctorCard({
     };
     const tone = lead ? leadTone[lead.status_type] : undefined;
     const visitedAt = cycleVisitedAt ?? (categoryMode ? visited?.created_at ?? null : null);
+    /* Visita de OUTRO representante: só informa quem e quando, sem tirar o médico da rota */
+    const otherVisit = !visitedAt && visited ? visited : null;
     const place = [doc.complemento || 'Consultório próprio', doc.bairro].filter(Boolean).join(' · ');
     let subline = place;
-    if (visitedAt) subline = `Visitado às ${formatTime(visitedAt)}`;
-    else if (lead) {
+    if (tier === 'top' && lead && TOP_PRIORITY_STATUSES.includes(lead.status_type)) {
+      // Em atendimento: tempo decorrido crescente
+      subline = `${STATUS_META[lead.status_type].label} · ${formatElapsed(lead.created_at, now)}`;
+    } else if (visitedAt) {
+      subline = formatVisitAudit(visited?.rep_name, visitedAt, now);
+    } else if (lead) {
       const label = STATUS_META[lead.status_type].label;
-      subline =
-        lead.status_type === 'aguardando_medico' && waitingLeft !== null && waitingLeft > 0
-          ? `${label} · ${waitingLeft} min`
-          : STATUS_META[lead.status_type].showTime
-            ? `${label} · ${formatTime(lead.created_at)}`
-            : label;
+      subline = STATUS_META[lead.status_type].showTime ? `${label} · ${formatTime(lead.created_at)}` : label;
+    } else if (otherVisit) {
+      subline = formatVisitAudit(otherVisit.rep_name, otherVisit.created_at, now);
     }
 
     return (
@@ -381,11 +390,21 @@ function DoctorCard({
             className={`rounded-md px-2.5 py-1.5 text-[11px] flex items-center justify-between border border-white/10 ${meta.bg} ${meta.text}`}
           >
             <span>
-              <strong>{isVisit ? 'Visitado' : meta.label}</strong>
-              {showTime && <span className="text-slate-300"> — às {formatTime(s.created_at)}</span>}
-              {isVisit && s.rep_name && <span className="text-slate-400"> · {s.rep_name}</span>}
-              {meta.duration !== null && remaining !== null && remaining > 0 && (
-                <span className="text-slate-500"> · {remaining}min restante</span>
+              {isVisit ? (
+                <strong>{formatVisitAudit(s.rep_name, s.created_at, now)}</strong>
+              ) : TOP_PRIORITY_STATUSES.includes(s.status_type) ? (
+                <>
+                  <strong>{meta.label}</strong>
+                  <span className="text-slate-300"> — {formatElapsed(s.created_at, now)}</span>
+                </>
+              ) : (
+                <>
+                  <strong>{meta.label}</strong>
+                  {showTime && <span className="text-slate-300"> — às {formatTime(s.created_at)}</span>}
+                  {meta.duration !== null && remaining !== null && remaining > 0 && (
+                    <span className="text-slate-500"> · {remaining}min restante</span>
+                  )}
+                </>
               )}
               {s.return_date && (
                 <span className="text-slate-400">
@@ -648,6 +667,7 @@ function DoctorCard({
                   ]
                     .filter(Boolean)
                     .join(', '),
+                  onAddress: (a) => setEditForm((prev) => mergeAddress(prev, a)),
                 })
               }
               className="bg-green-700 text-white border-none px-2 rounded text-[10px] font-semibold shrink-0 hover:bg-green-600 disabled:opacity-50"

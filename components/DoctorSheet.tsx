@@ -2,19 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import type { Doctor, ExpectedVisit } from '@/types/doctor';
-import { cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
+import { TOP_PRIORITY_STATUSES, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import type { ComboOption } from '@/components/ComboBox';
 import DoctorEditForm from '@/components/DoctorEditForm';
+import DoctorHistory from '@/components/DoctorHistory';
 import { STATUS_META } from '@/types/status';
 import {
   buildWhatsAppUrl,
   formatAgendaBadge,
+  formatElapsed,
   formatMinutes,
   formatTime,
   getAgenda,
   isNewDoctor,
-  minutesRemaining,
 } from '@/utils';
 
 /* ── Ficha do médico: sobe de baixo para cima ── */
@@ -25,6 +26,8 @@ interface DoctorSheetProps {
   expected?: ExpectedVisit | null;
   /** visitado no ciclo (rota) ou no dia (PSM/SAMU/Hospital) */
   visitedAt: string | null;
+  /** auditoria da visita ("Visitado por Maria hoje às 10:30"), de qualquer representante */
+  visitLabel?: string | null;
   /** semana ativa: o visitado entra nela automaticamente */
   activeWeekLabel?: string | null;
   onToggleVisited: () => void;
@@ -71,6 +74,7 @@ export default function DoctorSheet({
   statuses,
   expected,
   visitedAt,
+  visitLabel,
   activeWeekLabel,
   onToggleVisited,
   onSetStatus,
@@ -141,9 +145,13 @@ export default function DoctorSheet({
             </h2>
             {mode === 'edit' ? (
               <span className="text-sm font-semibold uppercase tracking-[0.08em] text-blue-400">Editando dados</span>
-            ) : (doc.especialidade || doc.crm) && (
+            ) : (doc.especialidade || doc.crm || doc.rqe) && (
               <span className="text-sm uppercase text-slate-400">
-                {[doc.especialidade, doc.crm && `CRM ${doc.crm.toUpperCase()}${doc.uf ? `/${doc.uf.toUpperCase()}` : ''}`]
+                {[
+                  doc.especialidade,
+                  doc.crm && `CRM ${doc.crm.toUpperCase()}${doc.uf ? `/${doc.uf.toUpperCase()}` : ''}`,
+                  doc.rqe && `RQE ${doc.rqe}`,
+                ]
                   .filter(Boolean)
                   .join(' · ')}
               </span>
@@ -215,12 +223,12 @@ export default function DoctorSheet({
         {(agenda.length > 0 || weeks.length > 0) && (
           <div className="flex gap-1.5 flex-wrap">
             {agenda.map((e) => (
-              <span key={e.day} className="h-7 px-2.5 rounded-full border border-slate-700 text-xs text-slate-200 inline-flex items-center">
+              <span key={e.day} className="h-7 px-2.5 rounded-full border border-slate-700 text-xs text-slate-200 inline-flex items-center uppercase">
                 {formatAgendaBadge(e)}
               </span>
             ))}
             {weeks.map((w) => (
-              <span key={w} className="h-7 px-2.5 rounded-full border border-blue-600 text-xs text-blue-400 inline-flex items-center">
+              <span key={w} className="h-7 px-2.5 rounded-full border border-blue-600 text-xs text-blue-400 inline-flex items-center uppercase">
                 {cycleWeekLabel(w)}
               </span>
             ))}
@@ -246,8 +254,8 @@ export default function DoctorSheet({
             </div>
             <div className="flex flex-col gap-0.5 items-end">
               <span className={label}>Visita</span>
-              <span className={`text-[15px] ${visitedAt ? 'text-emerald-400' : 'text-slate-100'}`}>
-                {visitedAt ? `${shortDate(visitedAt)} às ${formatTime(visitedAt)}` : 'Pendente'}
+              <span className={`text-right text-[15px] ${visitedAt ? 'text-emerald-400' : 'text-slate-100'}`}>
+                {visitLabel ?? (visitedAt ? `${shortDate(visitedAt)} às ${formatTime(visitedAt)}` : 'Pendente')}
               </span>
             </div>
           </div>
@@ -268,7 +276,6 @@ export default function DoctorSheet({
           <div className="grid grid-cols-2 gap-2">
             {QUICK.map((q) => {
               const active = has(q.type);
-              const remaining = active ? minutesRemaining(active.expires_at) : null;
               return (
                 <button
                   key={q.type}
@@ -284,8 +291,12 @@ export default function DoctorSheet({
                   </span>
                   {active && (
                     <span className="text-[11px] opacity-80">
-                      {STATUS_META[q.type].showTime ? `às ${formatTime(active.created_at)}` : 'hoje'}
-                      {remaining !== null && remaining > 0 ? ` · ${remaining} min` : ''} · toque p/ remover
+                      {TOP_PRIORITY_STATUSES.includes(q.type)
+                        ? formatElapsed(active.created_at)
+                        : STATUS_META[q.type].showTime
+                          ? `às ${formatTime(active.created_at)}`
+                          : 'hoje'}{' '}
+                      · toque p/ remover
                     </span>
                   )}
                 </button>
@@ -391,6 +402,7 @@ export default function DoctorSheet({
         {!visitedAt && activeWeekLabel && (
           <span className="-mt-2 text-center text-xs text-slate-500">O visitado entra na {activeWeekLabel}</span>
         )}
+        <DoctorHistory doc={doc} />
           </>
         )}
       </div>

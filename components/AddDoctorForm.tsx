@@ -4,9 +4,11 @@ import { useState, useCallback } from 'react';
 import type { AddDoctorResult, AgendaEntry, Doctor } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import { CATEGORIAS, ESPECIALIDADES } from '@/constants';
-import { sortAgenda, specialtyCode } from '@/utils';
+import { normalizeCrm, sortAgenda, specialtyCode } from '@/utils';
+import { lookupCrm } from '@/lib/crmLookup';
 import { useFormPersistence } from '@/hooks/useFormPersistence';
-import { useGeolocation, GPS_ACTIVATE_LABEL } from '@/hooks/useGeolocation';
+import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
+import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
 import type { ComboOption } from '@/components/ComboBox';
@@ -26,6 +28,8 @@ interface AddDoctorFormProps {
   onCancel: () => void;
   /** cidades da base (grafia oficial) */
   cityOptions: ComboOption[];
+  /** CRM + UF já cadastrado? Usado antes da busca, para não buscar quem já está na base */
+  findDuplicate?: (crm: string, uf: string) => Doctor | undefined;
 }
 
 type FormState = {
@@ -33,6 +37,7 @@ type FormState = {
   crm: string;
   uf: string;
   especialidade: string;
+  rqe: string;
   agenda: AgendaEntry[];
   complemento: string;
   endereco: string;
@@ -52,6 +57,7 @@ const DEFAULTS: FormState = {
   crm: '',
   uf: 'PI',
   especialidade: '',
+  rqe: '',
   agenda: [],
   complemento: '',
   endereco: '',
@@ -71,12 +77,14 @@ const inputCls =
 
 /* ── Component ── */
 
-export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, onCancel, cityOptions }: AddDoctorFormProps) {
+export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, onCancel, cityOptions, findDuplicate }: AddDoctorFormProps) {
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<Doctor | null>(null);
   const [linkMsg, setLinkMsg] = useState<string | null>(null);
+  const [looking, setLooking] = useState(false);
+  const [lookupMsg, setLookupMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
   const gps = useGeolocation();
 
   const { clearSaved, restored } = useFormPersistence('add_doctor', form, setForm, DEFAULTS);
@@ -87,6 +95,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
       if (key === 'crm' || key === 'uf') {
         setDuplicate(null);
         setLinkMsg(null);
+        setLookupMsg(null);
       }
     },
     [],
@@ -119,9 +128,10 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
       observacoes: form.observacoes.trim(),
       categoria: form.categoria as Doctor['categoria'],
     };
-    // Só envia se marcado (funciona mesmo antes da migração v5)
+    // Só envia se marcado/preenchido (funciona mesmo antes das migrações v5 e v6)
     const weeks = normalizeCycleWeeks(form.cycle_weeks);
     if (weeks.length) payload.cycle_weeks = weeks;
+    if (form.rqe.trim()) payload.rqe = form.rqe.trim();
 
     try {
       const result = await onAdd(payload);
@@ -136,6 +146,40 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
       setError('Erro de conexão. Tente novamente.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** "Buscar Dados do CRM": confere a base local e depois consulta o CRM (nome, especialidade, RQE) */
+  const handleLookup = async () => {
+    setError(null);
+    setLookupMsg(null);
+    if (!normalizeCrm(form.crm)) {
+      setLookupMsg({ type: 'error', text: 'Digite o CRM para buscar.' });
+      return;
+    }
+    const dup = findDuplicate?.(form.crm, form.uf);
+    if (dup) {
+      setDuplicate(dup); // mostra o aviso de "já cadastrado" com o botão de vincular à carteira
+      return;
+    }
+    setLooking(true);
+    try {
+      const res = await lookupCrm(form.crm, form.uf);
+      if (!res.ok) {
+        setLookupMsg({ type: 'error', text: res.message });
+        return;
+      }
+      const { nome, especialidade, rqe } = res.data;
+      setForm((prev) => ({
+        ...prev,
+        descricao: nome ? nome.toUpperCase() : prev.descricao,
+        especialidade: especialidade || prev.especialidade,
+        rqe: rqe || prev.rqe,
+      }));
+      const filled = [nome && 'nome', especialidade && 'especialidade', rqe && 'RQE'].filter(Boolean).join(', ');
+      setLookupMsg({ type: 'ok', text: `Preenchido: ${filled}. Confira antes de salvar.` });
+    } finally {
+      setLooking(false);
     }
   };
 
@@ -168,6 +212,42 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         )}
       </div>
 
+      {/* CRM + UF no topo: com eles a busca preenche o resto */}
+      <div className="grid grid-cols-[2fr_1fr] gap-1.5">
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="CRM"
+          aria-label="CRM"
+          value={form.crm}
+          onChange={(e) => setField('crm', e.target.value)}
+          className={inputCls}
+          autoFocus
+        />
+        <input
+          type="text"
+          placeholder="UF"
+          aria-label="UF"
+          maxLength={2}
+          value={form.uf}
+          onChange={(e) => setField('uf', e.target.value.toUpperCase())}
+          className={`${inputCls} uppercase`}
+        />
+      </div>
+      <button
+        type="button"
+        disabled={looking || !normalizeCrm(form.crm)}
+        onClick={handleLookup}
+        className="h-11 rounded-xl border border-blue-600 bg-transparent text-sm font-semibold text-blue-400 hover:bg-blue-600/10 disabled:opacity-40"
+      >
+        {looking ? 'Buscando…' : 'Buscar Dados do CRM'}
+      </button>
+      {lookupMsg && (
+        <div role="status" className={`text-[11px] ${lookupMsg.type === 'ok' ? 'text-emerald-400' : 'text-amber-400'}`}>
+          {lookupMsg.text}
+        </div>
+      )}
+
       {/* Nome */}
       <input
         type="text"
@@ -175,28 +255,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         value={form.descricao}
         onChange={(e) => setField('descricao', e.target.value.toUpperCase())}
         className={inputCls}
-        autoFocus
       />
-
-      {/* CRM + UF */}
-      <div className="grid grid-cols-[2fr_1fr] gap-1.5">
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder="CRM"
-          value={form.crm}
-          onChange={(e) => setField('crm', e.target.value)}
-          className={inputCls}
-        />
-        <input
-          type="text"
-          placeholder="UF"
-          maxLength={2}
-          value={form.uf}
-          onChange={(e) => setField('uf', e.target.value.toUpperCase())}
-          className={`${inputCls} uppercase`}
-        />
-      </div>
 
       {/* Especialidade + sigla */}
       <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
@@ -210,6 +269,17 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
           {code ?? '—'}
         </span>
       </div>
+
+      {/* RQE */}
+      <input
+        type="text"
+        inputMode="numeric"
+        placeholder="RQE (opcional)"
+        aria-label="RQE"
+        value={form.rqe}
+        onChange={(e) => setField('rqe', e.target.value)}
+        className={inputCls}
+      />
 
       {/* Categoria do Local */}
       <div>
@@ -297,7 +367,15 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
         <button
           type="button"
           disabled={gps.loading}
-          onClick={() => gps.capture((url) => setField('map_link', url))}
+          onClick={() =>
+            gps.capture((url) => setField('map_link', url), {
+              fallbackAddress: [[form.endereco, form.numero].filter(Boolean).join(', '), form.bairro, form.cidade]
+                .filter(Boolean)
+                .join(', '),
+              // Toque no GPS também busca endereço, bairro e cidade do ponto atual
+              onAddress: (a) => setForm((prev) => mergeAddress(prev, a)),
+            })
+          }
           className="bg-green-700 text-white border-none px-3 rounded text-[11px] font-semibold shrink-0 hover:bg-green-600 disabled:opacity-50"
         >
           {gps.loading ? '...' : 'GPS'}
@@ -316,6 +394,15 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
           className="self-start rounded border border-sky-500 bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
         >
           {GPS_ACTIVATE_LABEL}
+        </button>
+      )}
+      {gps.fallbackUrl && (
+        <button
+          type="button"
+          onClick={gps.applyAddressFallback}
+          className="self-start rounded border border-slate-600 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:text-white"
+        >
+          🗺️ {GPS_ADDRESS_FALLBACK_LABEL}
         </button>
       )}
 
