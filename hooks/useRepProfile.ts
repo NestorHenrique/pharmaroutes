@@ -1,7 +1,40 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { RepProfile } from '@/types/doctor';
-import { enqueue, isNetworkError, isOffline } from '@/lib/offlineQueue';
+import { enqueue, isNetworkError, isOffline, pendingOps } from '@/lib/offlineQueue';
+
+/* Cópia da ordem da rota no aparelho: abre igual mesmo sem sinal e nunca parte de uma lista vazia */
+const ORDER_CACHE_PREFIX = 'pr-route-order:';
+
+function loadOrderCache(userId: string): Record<string, string[]> | null {
+  try {
+    const raw = localStorage.getItem(ORDER_CACHE_PREFIX + userId);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const out: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (Array.isArray(v)) out[k] = v.map(String);
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function saveOrderCache(userId: string, map: Record<string, string[]>): void {
+  try {
+    localStorage.setItem(ORDER_CACHE_PREFIX + userId, JSON.stringify(map));
+  } catch { /* sem espaço ou modo privado: segue sem cópia */ }
+}
+
+/** Ordens feitas sem internet que ainda não subiram continuam valendo */
+function overlayPendingOrders(map: Record<string, string[]>, owner: string): Record<string, string[]> {
+  let out = map;
+  for (const op of pendingOps(owner)) {
+    if (op.kind === 'route_order') out = { ...out, [op.day]: op.doctor_ids };
+  }
+  return out;
+}
 
 /** Linha de rep_route_order — UNIQUE(user_id, day_of_week) */
 interface RouteOrderRow {
@@ -38,6 +71,9 @@ export function useRepProfile(userId: string | null) {
       return;
     }
     let cancelled = false;
+    // Abre já com a ordem salva no aparelho; a busca abaixo atualiza em seguida
+    const cachedOrder = loadOrderCache(userId);
+    setRouteOrder(cachedOrder ? overlayPendingOrders(cachedOrder, userId) : {});
 
     (async () => {
       const [
@@ -55,11 +91,20 @@ export function useRepProfile(userId: string | null) {
       if (linkErr) console.warn('Carteira indisponível:', linkErr.message);
       if (orderErr) logSupabaseError('Ordem manual indisponível:', orderErr);
 
-      const orderMap: Record<string, string[]> = {};
-      for (const o of (orders as RouteOrderRow[] | null) ?? []) {
-        orderMap[String(o.day_of_week)] = (o.ordered_doctor_ids ?? []).map(String);
+      if (orderErr) {
+        // Sem rede (ou erro do servidor): usa a cópia do aparelho, nunca uma lista vazia.
+        // Partir de {} fazia o próximo arrastar/visitar gravar só parte da rota por cima da salva.
+        const cached = loadOrderCache(userId);
+        if (cached) setRouteOrder(overlayPendingOrders(cached, userId));
+      } else {
+        const orderMap: Record<string, string[]> = {};
+        for (const o of (orders as RouteOrderRow[] | null) ?? []) {
+          orderMap[String(o.day_of_week)] = (o.ordered_doctor_ids ?? []).map(String);
+        }
+        const merged = overlayPendingOrders(orderMap, userId);
+        setRouteOrder(merged);
+        saveOrderCache(userId, merged);
       }
-      setRouteOrder(orderMap);
 
       const p = prof as RepProfile | null;
       setProfile({
@@ -153,7 +198,11 @@ export function useRepProfile(userId: string | null) {
       const owner = uid;
 
       const previous = routeOrder[day];
-      setRouteOrder((cur) => ({ ...cur, [day]: doctorIds })); // otimista
+      setRouteOrder((cur) => {
+        const next = { ...cur, [day]: doctorIds }; // otimista
+        saveOrderCache(owner, next);
+        return next;
+      });
 
       // Sem internet: a ordem fica no aparelho e sobe quando a conexão voltar
       const queue = () => enqueue(owner, { kind: 'route_order', day, doctor_ids: doctorIds });
@@ -182,7 +231,11 @@ export function useRepProfile(userId: string | null) {
         }
         // 3) Log completo
         logSupabaseError('Erro ao salvar ordem da rota:', error);
-        setRouteOrder((cur) => ({ ...cur, [day]: previous ?? [] }));
+        setRouteOrder((cur) => {
+          const next = { ...cur, [day]: previous ?? [] };
+          saveOrderCache(owner, next);
+          return next;
+        });
         return false;
       }
       return true;

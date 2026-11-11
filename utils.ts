@@ -332,10 +332,44 @@ export function buildWhatsAppUrl(telefone: string | null | undefined): string | 
   if (!telefone) return null;
   let num = telefone.replace(/\D/g, '');
   if (!num) return null;
+  // Número antigo salvo sem DDD (8 ou 9 dígitos): a base é do Piauí, completa com 86
+  if (num.length === 8 || num.length === 9) num = DEFAULT_DDD + num;
   if (!num.startsWith('55')) num = '55' + num;
   // Corrige zero depois do DDD (55 XX 0…)
   if (num.length === 13 && num[4] === '0') num = num.slice(0, 4) + num.slice(5);
   return `https://wa.me/${num}`;
+}
+
+/** Exemplo mostrado no cadastro: DDD + número, 11 dígitos */
+export const WHATSAPP_EXAMPLE = '86999999999';
+export const WHATSAPP_DIGITS = 11;
+/** DDD usado para completar números antigos salvos sem DDD */
+export const DEFAULT_DDD = '86';
+
+/**
+ * Número salvo -> 11 dígitos para a caixa de edição.
+ * Tira máscara, o 55 do Brasil e o zero antes do DDD ("(086) 9 9999-9999" -> "86999999999").
+ */
+export function whatsappDigits(value: string | null | undefined): string {
+  let d = (value ?? '').replace(/\D/g, '');
+  if (d.length === 13 && d.startsWith('55')) d = d.slice(2);
+  if (d.length === 12 && d.startsWith('0')) d = d.slice(1);
+  // Celular antigo sem DDD (9 dígitos começando com 9): completa com o DDD da base
+  if (d.length === 9 && d.startsWith('9')) d = DEFAULT_DDD + d;
+  return d;
+}
+
+/** null = ok (vazio ou 11 dígitos); senão a mensagem para mostrar abaixo da caixa */
+export function whatsappError(value: string | null | undefined): string | null {
+  const d = (value ?? '').replace(/\D/g, '');
+  if (d.length === 0 || d.length === WHATSAPP_DIGITS) return null;
+  if (d.length < WHATSAPP_DIGITS) {
+    const falta = WHATSAPP_DIGITS - d.length;
+    return d.length <= 9
+      ? `Falta o DDD ou parte do número (${falta} dígito${falta > 1 ? 's' : ''}). Ex.: ${WHATSAPP_EXAMPLE}`
+      : `Falta ${falta} dígito. Ex.: ${WHATSAPP_EXAMPLE}`;
+  }
+  return `Sobrou ${d.length - WHATSAPP_DIGITS} dígito${d.length - WHATSAPP_DIGITS > 1 ? 's' : ''}. Use DDD + número, ex.: ${WHATSAPP_EXAMPLE}`;
 }
 
 /** Os dois WhatsApps do médico. Sem WhatsApp da clínica, o telefone cadastrado serve de reserva. */

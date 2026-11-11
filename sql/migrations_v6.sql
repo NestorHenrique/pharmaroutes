@@ -38,6 +38,13 @@ CREATE POLICY doctor_audit_logs_read ON doctor_audit_logs
   FOR SELECT TO authenticated USING (true);
 -- Sem policy de INSERT/UPDATE/DELETE: ninguém pelo app mexe no log, só o gatilho abaixo (SECURITY DEFINER)
 GRANT SELECT ON doctor_audit_logs TO authenticated;
+-- O Supabase concede ALL por padrão em tabelas novas; aqui só leitura (RLS já bloquearia, isto é cinto e suspensório)
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON doctor_audit_logs FROM authenticated;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON doctor_audit_logs FROM anon';
+  END IF;
+END $$;
 
 -- Quem fez: o nome vem do servidor (perfil do representante ou o começo do e-mail), não do aparelho.
 CREATE OR REPLACE FUNCTION audit_actor_name(p_uid UUID)

@@ -8,8 +8,10 @@ import type { ComboOption } from '@/components/ComboBox';
 import DoctorEditForm from '@/components/DoctorEditForm';
 import DoctorHistory from '@/components/DoctorHistory';
 import { RepAvatar } from '@/components/RepAvatar';
-import type { PresenceItem, Visitor } from '@/lib/visits';
-import PresenceTags from '@/components/PresenceTags';
+import type { PresenceItem, PublicProfile, Visitor } from '@/lib/visits';
+
+const NO_PROFILES: Readonly<Record<string, PublicProfile>> = {};
+import StatusHistory from '@/components/StatusHistory';
 import { STATUS_META } from '@/types/status';
 import {
   doctorWhatsApps,
@@ -36,6 +38,8 @@ interface DoctorSheetProps {
   visitors?: readonly Visitor[];
   /** quem está no consultório / visitou, com a hora */
   presence?: readonly PresenceItem[];
+  /** nome/foto dos representantes (histórico de status) */
+  profiles?: Readonly<Record<string, PublicProfile>>;
   /** semana ativa: o visitado entra nela automaticamente */
   activeWeekLabel?: string | null;
   onToggleVisited: () => void;
@@ -109,9 +113,8 @@ export default function DoctorSheet({
   statuses,
   expected,
   visitedAt,
-  visitLabel,
-  visitors,
   presence,
+  profiles,
   activeWeekLabel,
   onToggleVisited,
   onSetStatus,
@@ -324,9 +327,9 @@ export default function DoctorSheet({
               </span>
             </div>
             <div className="flex flex-col gap-0.5 items-end">
-              <span className={label}>Visita</span>
+              <span className={label}>Sua visita</span>
               <span className={`text-right text-[15px] ${visitedAt ? 'text-emerald-400' : 'text-slate-100'}`}>
-                {visitLabel ?? (visitedAt ? `${shortDate(visitedAt)} às ${formatTime(visitedAt)}` : 'Pendente')}
+                {visitedAt ? 'Feita' : 'Pendente'}
               </span>
             </div>
           </div>
@@ -341,32 +344,24 @@ export default function DoctorSheet({
           )}
         </div>
 
-        {/* Colegas no consultório / que visitaram, com a hora (mesma etiqueta do card) */}
+        {/* Representantes: uma linha por pessoa (foto, nome e o que fez, com data e hora) */}
         {presence && presence.length > 0 && (
           <div className="flex flex-col gap-2">
-            <span className={label}>Representantes</span>
-            <PresenceTags items={presence} max={presence.length} />
-          </div>
-        )}
-
-        {/* Quem visitou (cada representante tem a sua visita) */}
-        {visitors && visitors.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <span className={label}>Quem visitou · {visitors.length}</span>
+            <span className={label}>Representantes · {presence.length}</span>
             <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-              {visitors.map((v) => (
+              {presence.map((p) => (
                 <li
-                  key={v.userId}
+                  key={p.key}
                   className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2"
                 >
-                  <RepAvatar name={v.name} src={v.avatarUrl} me={v.isMe} size={32} />
+                  <RepAvatar name={p.name} src={p.avatarUrl} me={p.isMe} size={32} />
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-semibold text-slate-100">
-                      {v.name}
-                      {v.isMe && <span className="ml-1.5 text-[11px] font-bold text-[#c9a86a]">VOCÊ</span>}
+                      {p.name}
+                      {p.isMe && <span className="ml-1.5 text-[11px] font-bold text-[#c9a86a]">VOCÊ</span>}
                     </span>
-                    <span className="text-xs text-emerald-400">
-                      {shortDate(v.visitedAt)} às {formatTime(v.visitedAt)}
+                    <span className={`text-xs ${p.kind === 'office' ? 'text-sky-400' : 'text-emerald-400'}`}>
+                      {p.kind === 'office' ? 'No consultório desde' : 'Visitou'} {shortDate(p.at)} às {formatTime(p.at)}
                     </span>
                   </span>
                 </li>
@@ -374,6 +369,9 @@ export default function DoctorSheet({
             </ul>
           </div>
         )}
+
+        {/* Histórico de status: não se perde se o representante esquecer de marcar Visitado */}
+        <StatusHistory doctorId={doc.id} statuses={statuses} profiles={profiles ?? NO_PROFILES} />
 
         {/* Status de um toque */}
         <div className="flex flex-col gap-2">
