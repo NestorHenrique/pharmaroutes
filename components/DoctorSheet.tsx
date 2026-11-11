@@ -358,7 +358,7 @@ export default function DoctorSheet({
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-semibold text-slate-100">
                       {p.name}
-                      {p.isMe && <span className="ml-1.5 text-[11px] font-bold text-[#c9a86a]">VOCÊ</span>}
+                      {p.isMe && <span className="ml-1.5 text-[11px] font-bold text-blue-400">VOCÊ</span>}
                     </span>
                     <span className={`text-xs ${p.kind === 'office' ? 'text-sky-400' : 'text-emerald-400'}`}>
                       {p.kind === 'office' ? 'No consultório desde' : 'Visitou'} {shortDate(p.at)} às {formatTime(p.at)}

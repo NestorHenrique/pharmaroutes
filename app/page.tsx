@@ -281,6 +281,7 @@ function CollapsibleTitle({
   open,
   onToggle,
   hint,
+  variant,
 }: {
   tone?: string;
   title: string;
@@ -288,7 +289,43 @@ function CollapsibleTitle({
   open: boolean;
   onToggle?: () => void;
   hint?: string;
+  /** "visited": linha recolhida verde (check + contagem), como no desenho */
+  variant?: 'visited';
 }) {
+  if (variant === 'visited' && onToggle) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="mt-2 flex min-h-[52px] w-full items-center gap-2.5 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 text-left"
+      >
+        <span className="grid size-[26px] shrink-0 place-items-center rounded-lg bg-emerald-500 text-slate-950">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12l5 5L20 7" />
+          </svg>
+        </span>
+        <span className="flex-1 text-sm font-semibold text-emerald-400">{title}</span>
+        <span className="grid h-[26px] min-w-[26px] place-items-center rounded-full bg-emerald-500/20 px-2 text-[13px] font-bold text-emerald-400">
+          {count}
+        </span>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`shrink-0 text-emerald-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+    );
+  }
   const label = (
     <>
       {title} ({count})
@@ -431,7 +468,7 @@ export default function HomePage() {
     const next: Theme = theme === 'onix' ? 'marfim' : 'onix';
     setTheme(next);
     document.documentElement.setAttribute('data-theme', next);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'marfim' ? '#F6F4EF' : '#0B0B0D');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'marfim' ? '#F7F6FB' : '#0B0B12');
     try {
       localStorage.setItem(THEME_KEY, next);
     } catch { /* ignore */ }
@@ -1499,6 +1536,7 @@ export default function HomePage() {
         cityOptions={cityComboOptions}
         expected={sortMode === 'historico' ? feed.expected.get(doc.id) ?? null : null}
         onDragHandleTouchStart={manual ? startTouchDrag : undefined}
+        routeNumber={pos !== undefined ? pos + 1 : undefined}
         cycleVisitedAt={isCategoryMode ? null : cycleVisits.get(doc.id) ?? null}
         visitors={isCategoryMode ? undefined : visitorsFor(doc.id)}
         presence={presenceFor(doc.id)}
@@ -2094,7 +2132,8 @@ export default function HomePage() {
 
             {visitedList.length > 0 && (
               <CollapsibleTitle
-                title="Visitados"
+                title="Visitados hoje"
+                variant="visited"
                 count={visitedList.length}
                 open={bottomShown}
                 onToggle={toggleBottomOpen}
@@ -2159,9 +2198,8 @@ export default function HomePage() {
                 onClick={openTargetStatus}
                 className="h-[52px] rounded-2xl border border-slate-700 bg-slate-800 text-slate-100 text-sm font-semibold flex flex-col items-center justify-center gap-0.5"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="8" />
-                  <path d="M12 8v4l2.5 2" />
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />
                 </svg>
                 Status
               </button>

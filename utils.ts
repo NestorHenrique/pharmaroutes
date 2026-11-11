@@ -148,6 +148,29 @@ export function shiftCovers(shift: Shift, filter: Shift): boolean {
 /* ── Especialidade ── */
 
 /** Sigla padronizada (CAR, ANG, CLG...). Fallback: 3 primeiras letras. */
+/**
+ * Linha de local do card: "ESP · clínica · cidade".
+ * Se ficar longa (> 30 caracteres), especialidade e clínica ficam em cima e
+ * bairro + cidade descem para a segunda linha.
+ */
+export const PLACE_ONE_LINE_MAX = 30;
+
+export function formatPlaceLines(doc: {
+  especialidade?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+  cidade?: string | null;
+}): { line1: string; line2: string | null } {
+  const spec = specialtyCode(doc.especialidade);
+  const clinic = (doc.complemento || '').trim() || 'Consultório próprio';
+  const city = (doc.cidade || '').trim();
+  const bairro = (doc.bairro || '').trim();
+  const one = [spec, clinic, city].filter(Boolean).join(' · ');
+  if (one.length <= PLACE_ONE_LINE_MAX) return { line1: one, line2: null };
+  const line2 = [bairro, city].filter(Boolean).join(' · ');
+  return { line1: [spec, clinic].filter(Boolean).join(' · '), line2: line2 || null };
+}
+
 export function specialtyCode(esp: string | null | undefined): string | null {
   const raw = (esp || '').trim();
   if (!raw) return null;

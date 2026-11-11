@@ -154,8 +154,8 @@ export default function ProfileSettings({
   };
 
   const themes: { id: 'onix' | 'marfim'; name: string; hint: string; bg: string; card: string; accent: string }[] = [
-    { id: 'onix', name: 'Ônix', hint: 'Escuro · champanhe', bg: '#0B0B0D', card: '#141417', accent: '#C9A96E' },
-    { id: 'marfim', name: 'Marfim', hint: 'Claro · esmeralda', bg: '#F6F4EF', card: '#FFFFFF', accent: '#1F5C4A' },
+    { id: 'onix', name: 'Ônix', hint: 'Escuro · violeta', bg: '#0B0B12', card: '#14141D', accent: '#A78BFA' },
+    { id: 'marfim', name: 'Marfim', hint: 'Claro · violeta', bg: '#F7F6FB', card: '#FFFFFF', accent: '#5B3FD0' },
   ];
 
   return (

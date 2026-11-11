@@ -10,7 +10,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
-  themeColor: '#0B0B0D',
+  themeColor: '#0B0B12',
   // Escuro por padrão (Ônix); o tema claro (Marfim) é escolhido no app
   colorScheme: 'dark light',
 };
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   description: 'Sistema de Roteiro de Visitas',
 };
 
-const APP_BG = '#0B0B0D';
+const APP_BG = '#0B0B12';
 
 /** Tema salvo no aparelho, aplicado ANTES da primeira pintura (sem piscar o outro tema) */
 const THEME_SCRIPT = `(function () {
@@ -29,7 +29,7 @@ const THEME_SCRIPT = `(function () {
     if (t !== 'marfim') t = 'onix';
     document.documentElement.setAttribute('data-theme', t);
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', t === 'marfim' ? '#F6F4EF' : '#0B0B0D');
+    if (m) m.setAttribute('content', t === 'marfim' ? '#F7F6FB' : '#0B0B12');
   } catch (e) {
     document.documentElement.setAttribute('data-theme', 'onix');
   }
@@ -57,7 +57,7 @@ const RECOVERY_SCRIPT = `(function () {
     var el = d.createElement('div');
     el.id = 'pwa-recover';
     el.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;background:${APP_BG};color:#e2e8f0;font:14px -apple-system,system-ui,sans-serif');
-    el.innerHTML = '<div>O app não carregou.</div><div style="color:#94a3b8;font-size:12px">Verifique a internet e toque para recarregar.</div><button type="button" style="padding:10px 18px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;font-size:14px">Recarregar</button>';
+    el.innerHTML = '<div>O app não carregou.</div><div style="color:#94a3b8;font-size:12px">Verifique a internet e toque para recarregar.</div><button type="button" style="padding:10px 18px;border:0;border-radius:8px;background:#A78BFA;color:#0B0B12;font-weight:600;font-size:14px">Recarregar</button>';
     el.querySelector('button').onclick = function () { location.reload(); };
     d.body.appendChild(el);
   }

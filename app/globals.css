@@ -1,8 +1,9 @@
 @import "tailwindcss";
 
 /* ═══ Temas (gerado) ═══
- * Ônix & Champanhe = padrão (escuro) · Marfim & Esmeralda = claro.
+ * Ônix & Violeta = padrão (escuro) · Marfim & Violeta = claro (rua, sob o sol).
  * <html data-theme="onix|marfim"> é definido antes da pintura em app/layout.tsx. */
+/* Escuro: neutros levemente azulados + violeta de destaque (accent #A78BFA) */
 :root,
 :root[data-theme="onix"] {
   --color-slate-50: #FAF9F6;
@@ -12,56 +13,57 @@
   --color-slate-400: #A8A49B;
   --color-slate-500: #8E8A82;
   --color-slate-600: #4A4A51;
-  --color-slate-700: #2E2E34;
-  --color-slate-800: #232327;
-  --color-slate-900: #141417;
-  --color-slate-950: #0B0B0D;
-  --color-blue-50: #FBF7EE;
-  --color-blue-100: #F3E9D3;
-  --color-blue-200: #EAD9B4;
-  --color-blue-300: #E2C48E;
-  --color-blue-400: #D6B983;
-  --color-blue-500: #D2B47C;
-  --color-blue-600: #C9A96E;
-  --color-blue-700: #B08F55;
-  --color-blue-800: #5C4A2C;
-  --color-blue-900: #3A3122;
-  --color-blue-950: #1F1A12;
+  --color-slate-700: #2A2A3A;
+  --color-slate-800: #1E1E2B;
+  --color-slate-900: #14141D;
+  --color-slate-950: #0B0B12;
+  --color-blue-50: #F5F3FF;
+  --color-blue-100: #EDE9FE;
+  --color-blue-200: #DDD6FE;
+  --color-blue-300: #C4B5FD;
+  --color-blue-400: #B8A5FC;
+  --color-blue-500: #AE94FB;
+  --color-blue-600: #A78BFA;
+  --color-blue-700: #8B6CEF;
+  --color-blue-800: #4C3F8F;
+  --color-blue-900: #2A2150;
+  --color-blue-950: #1B1638;
   --color-white: #F7F5F0;
-  --background: #0B0B0D;
+  --background: #0B0B12;
   --foreground: #F4F2EE;
-  --accent: #C9A96E;
-  --on-accent: #0B0B0D;
+  --accent: #A78BFA;
+  --on-accent: #0B0B12;
   color-scheme: dark;
 }
+/* Claro: fundo branco-lilás, cards brancos, texto quase preto, violeta forte (accent #5B3FD0) */
 :root[data-theme="marfim"] {
-  --color-slate-50: #0E0E10;
+  --color-slate-50: #0E0E14;
   --color-slate-100: #17171A;
-  --color-slate-200: #2A2826;
-  --color-slate-300: #3A3833;
-  --color-slate-400: #55524B;
-  --color-slate-500: #6B675F;
-  --color-slate-600: #B5AFA4;
-  --color-slate-700: #D6D1C7;
-  --color-slate-800: #E4E0D8;
+  --color-slate-200: #2A2838;
+  --color-slate-300: #3F3C52;
+  --color-slate-400: #55526B;
+  --color-slate-500: #6B6880;
+  --color-slate-600: #A9A3C0;
+  --color-slate-700: #C6C1DA;
+  --color-slate-800: #D9D5E8;
   --color-slate-900: #FFFFFF;
-  --color-slate-950: #F6F4EF;
-  --color-blue-50: #0F2E25;
-  --color-blue-100: #123A2F;
-  --color-blue-200: #174638;
-  --color-blue-300: #1F5C4A;
-  --color-blue-400: #1F5C4A;
-  --color-blue-500: #2A6E5A;
-  --color-blue-600: #1F5C4A;
-  --color-blue-700: #174638;
-  --color-blue-800: #CFE3DA;
-  --color-blue-900: #E3EFE9;
-  --color-blue-950: #F0F6F3;
+  --color-slate-950: #F7F6FB;
+  --color-blue-50: #1E1163;
+  --color-blue-100: #261778;
+  --color-blue-200: #3A24A0;
+  --color-blue-300: #4A31C0;
+  --color-blue-400: #5B3FD0;
+  --color-blue-500: #6B4FE0;
+  --color-blue-600: #5B3FD0;
+  --color-blue-700: #4A31B0;
+  --color-blue-800: #DAD2F8;
+  --color-blue-900: #E9E4FB;
+  --color-blue-950: #F3F0FE;
   --color-white: #17171A;
-  --color-black: #6B675F;
-  --background: #F6F4EF;
+  --color-black: #6B6880;
+  --background: #F7F6FB;
   --foreground: #17171A;
-  --accent: #1F5C4A;
+  --accent: #5B3FD0;
   --on-accent: #FFFFFF;
   color-scheme: light;
   --color-red-950: oklch(97.1% 0.013 17.38);
