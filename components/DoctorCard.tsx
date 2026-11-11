@@ -23,6 +23,7 @@ import {
   clearDraft,
   formatMinutes,
   formatCrm,
+  formatPlaceLines,
   SPECIALTY_LIST,
 } from '@/utils';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
@@ -286,7 +287,8 @@ function DoctorCard({
     const tone = lead ? leadTone[lead.status_type] : undefined;
     const visitedAt = cycleVisitedAt ?? (categoryMode ? visited?.created_at ?? null : null);
     const otherVisitors = !visitedAt && visitors?.length ? visitors : null;
-    const place = [doc.complemento || 'Consultório próprio', doc.bairro].filter(Boolean).join(' · ');
+    const placeLines = formatPlaceLines(doc);
+    const place = placeLines.line1;
     let subline = place;
     if (tier === 'top' && lead && TOP_PRIORITY_STATUSES.includes(lead.status_type)) {
       // Em atendimento: tempo decorrido crescente
@@ -348,6 +350,9 @@ function DoctorCard({
           <span className={`text-xs uppercase truncate ${visitedAt ? 'text-emerald-400' : tone?.text ?? 'text-slate-400'}`}>
             {subline}
           </span>
+          {subline === place && placeLines.line2 && (
+            <span className="text-xs uppercase truncate text-slate-500">{placeLines.line2}</span>
+          )}
           {presence && presence.length > 0 && <PresenceTags items={presence} className="mt-1" />}
         </button>
 

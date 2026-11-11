@@ -409,7 +409,7 @@ export default function HomePage() {
     const next: Theme = theme === 'onix' ? 'marfim' : 'onix';
     setTheme(next);
     document.documentElement.setAttribute('data-theme', next);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'marfim' ? '#F6F4EF' : '#0B0B0D');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'marfim' ? '#F7F6FB' : '#0B0B12');
     try {
       localStorage.setItem(THEME_KEY, next);
     } catch { /* ignore */ }

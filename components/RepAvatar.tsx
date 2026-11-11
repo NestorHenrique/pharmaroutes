@@ -17,7 +17,7 @@ export function RepAvatar({ name, src, size = 26, me = false, className = '' }: 
       title={name}
       style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.4)) }}
       className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 font-semibold text-slate-100 ${
-        me ? 'ring-[1.5px] ring-[#c9a86a]' : ''
+        me ? 'ring-[1.5px] ring-blue-600' : ''
       } ${className}`}
     >
       {src ? (
