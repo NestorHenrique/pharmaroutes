@@ -9,8 +9,8 @@ import BottomSheet from '@/components/BottomSheet';
 
 const STEPS = [
   'Toque na bandeira do card (ou abra a ficha do médico).',
-  'Escolha o status que combina com o que está acontecendo.',
-  'Toque em Salvar. Os colegas veem na hora.',
+  'Toque no status. Ele já fica marcado e os colegas veem na hora.',
+  'Para tirar, toque no mesmo status de novo.',
 ];
 
 const COLORS: { dot: string; title: string; text: string }[] = [
@@ -19,7 +19,7 @@ const COLORS: { dot: string; title: string; text: string }[] = [
   { dot: 'bg-red-400', title: 'Vermelho · Último paciente', text: 'O médico está no último paciente. Vale 30 min e avisa a cidade.' },
   { dot: 'bg-emerald-400', title: 'Verde · Já visitei', text: 'Visita feita neste ciclo. O médico sai da rota.' },
   { dot: 'bg-slate-400', title: 'Cinza · Finalizou / Não veio hoje', text: 'O médico não atende mais hoje. Volta à rota amanhã.' },
-  { dot: 'bg-amber-500', title: 'Âmbar · Licença / Viagem', text: 'Ausente até o dia antes da volta. Depois entra sozinho na rota.' },
+  { dot: 'bg-amber-500', title: 'Âmbar · Licença, Afastado, Férias, Viagem', text: 'Ausente até o dia antes da volta. Depois entra sozinho na rota.' },
 ];
 
 export default function StatusGuide({ onClose }: { onClose: () => void }) {

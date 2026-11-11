@@ -21,8 +21,8 @@ const GROUPS: { type: DoctorStatusType; label: string; dot: string }[] = [
   { type: 'aguardando_medico', label: 'Aguardando', dot: 'bg-amber-400' },
   { type: 'finalizou_atendimento', label: 'Finalizou', dot: 'bg-slate-400' },
   { type: 'nao_veio_hoje', label: 'Não veio hoje', dot: 'bg-slate-500' },
-  { type: 'ferias', label: 'Licença', dot: 'bg-amber-500' },
-  { type: 'viajando', label: 'Viagem', dot: 'bg-amber-500' },
+  { type: 'ferias', label: 'Licença / Afastado', dot: 'bg-amber-500' },
+  { type: 'viajando', label: 'Férias / Viagem', dot: 'bg-amber-500' },
 ];
 const GROUP_TYPES = new Set(GROUPS.map((g) => g.type));
 

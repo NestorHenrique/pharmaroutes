@@ -8,7 +8,7 @@ import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { PROLONGED_STATUSES, STATUS_META } from '@/types/status';
 import { formatTime } from '@/utils';
 
-/* ── Folha "Marcar status": sobe de baixo, botões grandes, rodapé Cancelar / Salvar ── */
+/* ── Folha "Marcar status": acesso rápido. Bandeira + 1 toque no status = pronto (2 toques) ── */
 
 type Key = DoctorStatusType | 'visited';
 
@@ -62,47 +62,33 @@ export default function StatusSheet({
 }: StatusSheetProps) {
   const active = new Map(statuses.map((s) => [s.status_type, s]));
 
-  /** o que está marcado na tela (só vale ao tocar em Salvar) */
-  const [draft, setDraft] = useState<Set<Key>>(() => {
-    const s = new Set<Key>(ATTENDANCE.filter((t) => active.has(t)));
-    if (visited) s.add('visited');
-    return s;
-  });
-  /** ausências marcadas na tela: tipo -> data da volta */
-  const [absence, setAbsence] = useState<Map<DoctorStatusType, string>>(
-    () =>
-      new Map(
-        PROLONGED_STATUSES.filter((t) => active.get(t)?.return_date).map((t) => [t, active.get(t)!.return_date as string]),
-      ),
-  );
   const [step, setStep] = useState<'main' | 'until'>('main');
   const [untilType, setUntilType] = useState<DoctorStatusType | null>(null);
   const [untilDate, setUntilDate] = useState('');
   const [guide, setGuide] = useState(false);
 
-  const toggle = (key: Key) =>
-    setDraft((cur) => {
-      const next = new Set(cur);
-      if (next.has(key)) {
-        next.delete(key);
-      } else if (key === 'visited') {
-        // visitado e "no consultório/aguardando..." se contradizem: visitar limpa os de atendimento
-        for (const t of ATTENDANCE) next.delete(t);
-        next.add('visited');
+  /** Um toque: marca (ou tira, se já estava marcado) e fecha a folha */
+  const choose = (key: Key) => {
+    if (key === 'visited') {
+      if (visited) {
+        onToggleVisited?.(false);
       } else {
-        next.delete('visited');
-        next.add(key);
+        // "Já visitei" encerra o atendimento: limpa os status de atendimento que estavam ativos
+        for (const t of ATTENDANCE) if (active.has(t)) onClear(doctorId, t);
+        onToggleVisited?.(true);
       }
-      return next;
-    });
+    } else if (active.has(key)) {
+      onClear(doctorId, key);
+    } else {
+      onSet(doctorId, key);
+    }
+    onClose();
+  };
 
-  const pickAbsence = (type: DoctorStatusType) => {
-    if (absence.has(type)) {
-      setAbsence((cur) => {
-        const next = new Map(cur);
-        next.delete(type);
-        return next;
-      });
+  const chooseAbsence = (type: DoctorStatusType) => {
+    if (active.has(type)) {
+      onClear(doctorId, type);
+      onClose();
       return;
     }
     setUntilType(type);
@@ -112,35 +98,7 @@ export default function StatusSheet({
 
   const confirmUntil = () => {
     if (!untilType || !untilDate) return;
-    setAbsence((cur) => new Map(cur).set(untilType, untilDate));
-    setStep('main');
-  };
-
-  // Houve mudança em relação ao que já estava marcado?
-  const changed = (() => {
-    for (const t of ATTENDANCE) if (draft.has(t) !== active.has(t)) return true;
-    if (onToggleVisited && draft.has('visited') !== visited) return true;
-    for (const t of PROLONGED_STATUSES) {
-      if ((absence.get(t) ?? null) !== (active.get(t)?.return_date ?? null)) return true;
-    }
-    return false;
-  })();
-
-  const save = () => {
-    for (const t of ATTENDANCE) {
-      const was = active.has(t);
-      const now = draft.has(t);
-      if (now && !was) onSet(doctorId, t);
-      else if (!now && was) onClear(doctorId, t);
-    }
-    for (const t of PROLONGED_STATUSES) {
-      const date = absence.get(t);
-      const was = active.get(t);
-      if (date && was?.return_date !== date) onSet(doctorId, t, { returnDate: date });
-      else if (!date && was) onClear(doctorId, t);
-    }
-    // por último: "Já visitei" também limpa os status de atendimento que sobraram
-    if (onToggleVisited && draft.has('visited') !== visited) onToggleVisited(draft.has('visited'));
+    onSet(doctorId, untilType, { returnDate: untilDate });
     onClose();
   };
 
@@ -180,42 +138,19 @@ export default function StatusSheet({
 
   return (
     <>
-      <BottomSheet
-        title="Marcar status"
-        onClose={onClose}
-        dismissOnBackdrop={false}
-        footer={
-          <>
-            <button
-              type="button"
-              onClick={onClose}
-              className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-5 text-sm font-medium text-slate-300 hover:text-white"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              disabled={!changed}
-              onClick={save}
-              className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40"
-            >
-              Salvar
-            </button>
-          </>
-        }
-      >
+      <BottomSheet title="Marcar status" onClose={onClose}>
         <p className="m-0 truncate text-sm font-semibold uppercase text-slate-200">{doctorName}</p>
 
         <div className="grid grid-cols-1 gap-2" role="group" aria-label="Status">
           {OPTIONS.filter((o) => o.key !== 'visited' || onToggleVisited).map((o) => {
-            const on = draft.has(o.key);
+            const on = o.key === 'visited' ? visited : active.has(o.key);
             const current = o.key === 'visited' ? null : active.get(o.key);
             return (
               <button
                 key={o.key}
                 type="button"
                 aria-pressed={on}
-                onClick={() => toggle(o.key)}
+                onClick={() => choose(o.key)}
                 className={`flex min-h-14 items-center gap-3 rounded-2xl border px-4 py-2 text-left ${
                   on ? `${o.on} ${o.text}` : 'border-slate-700 bg-slate-800 text-slate-100'
                 }`}
@@ -223,21 +158,18 @@ export default function StatusSheet({
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-[15px] font-semibold">{o.label}</span>
                   <span className="text-xs opacity-80">
-                    {current && on ? `Marcado às ${formatTime(current.created_at)}${current.rep_name ? ` por ${current.rep_name.split(/\s+/)[0]}` : ''}` : o.hint}
+                    {on
+                      ? `${current ? `${current.rep_name ? `${current.rep_name.split(/\s+/)[0]} ` : ''}${formatTime(current.created_at)} · ` : ''}toque p/ remover`
+                      : o.hint}
                   </span>
                 </span>
-                <span
-                  className={`flex size-6 shrink-0 items-center justify-center rounded-full border ${
-                    on ? 'border-current bg-current' : 'border-slate-600'
-                  }`}
-                  aria-hidden="true"
-                >
-                  {on && (
+                {on && (
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-current" aria-hidden="true">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-950">
                       <path d="M5 12l5 5L20 7" />
                     </svg>
-                  )}
-                </span>
+                  </span>
+                )}
               </button>
             );
           })}
@@ -247,24 +179,26 @@ export default function StatusSheet({
           <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Ausência prolongada</span>
           <div className="grid grid-cols-1 gap-2" role="group" aria-label="Ausência prolongada">
             {PROLONGED_STATUSES.map((t) => {
-              const date = absence.get(t);
+              const cur = active.get(t);
               return (
                 <button
                   key={t}
                   type="button"
-                  aria-pressed={Boolean(date)}
-                  onClick={() => pickAbsence(t)}
+                  aria-pressed={Boolean(cur)}
+                  onClick={() => chooseAbsence(t)}
                   className={`flex min-h-14 items-center gap-3 rounded-2xl border px-4 py-2 text-left ${
-                    date ? 'border-amber-400 bg-amber-500/15 text-amber-400' : 'border-slate-700 bg-slate-800 text-slate-100'
+                    cur ? 'border-amber-400 bg-amber-500/15 text-amber-400' : 'border-slate-700 bg-slate-800 text-slate-100'
                   }`}
                 >
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="text-[15px] font-semibold">{STATUS_META[t].label}</span>
                     <span className="text-xs opacity-80">
-                      {date ? `Volta ${shortDate(date)} · toque para remover` : 'Escolher até quando'}
+                      {cur
+                        ? `${cur.return_date ? `Volta ${shortDate(cur.return_date)} · ` : ''}toque p/ remover`
+                        : 'Escolher até quando'}
                     </span>
                   </span>
-                  {!date && (
+                  {!cur && (
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-500" aria-hidden="true">
                       <path d="M9 6l6 6-6 6" />
                     </svg>

@@ -108,7 +108,7 @@ export const STATUS_META: Record<DoctorStatusType, StatusMeta> = {
     showTime: true,
   },
   ferias: {
-    label: 'Licença',
+    label: 'Licença / Afastado',
     emoji: '🏖️',
     border: 'border-amber-500',
     bg: 'bg-amber-500/10',
@@ -120,7 +120,7 @@ export const STATUS_META: Record<DoctorStatusType, StatusMeta> = {
     showTime: false,
   },
   viajando: {
-    label: 'Viagem',
+    label: 'Férias / Viagem',
     emoji: '✈️',
     border: 'border-amber-500',
     bg: 'bg-amber-500/10',

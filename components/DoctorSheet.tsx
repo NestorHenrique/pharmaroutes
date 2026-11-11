@@ -65,8 +65,8 @@ const QUICK: { type: DoctorStatusType; label: string; on: string; text: string }
 ];
 
 const ABSENCE: { type: DoctorStatusType; label: string }[] = [
-  { type: 'ferias', label: 'Licença' },
-  { type: 'viajando', label: 'Viagem' },
+  { type: 'ferias', label: 'Licença / Afastado' },
+  { type: 'viajando', label: 'Férias / Viagem' },
 ];
 
 const label = 'text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400';
@@ -405,7 +405,7 @@ export default function DoctorSheet({
           </div>
         </div>
 
-        {/* Licença / Viagem */}
+        {/* Licença / Afastado e Férias / Viagem */}
         <div className="flex flex-col gap-2">
           <span className={label}>Ausência</span>
           <div className="grid grid-cols-2 gap-2">
