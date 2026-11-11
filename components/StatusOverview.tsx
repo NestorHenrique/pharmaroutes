@@ -121,12 +121,11 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
         active: false,
       });
     }
-    // Status que ainda valem: Licença/Viagem de semanas atrás também aparecem
+    // Status ainda ativos (chegam em tempo real): só entram se marcados dentro do período escolhido
     for (const [docId, list] of Object.entries(statusMap)) {
       for (const s of list) {
         if (!GROUP_TYPES.has(s.status_type)) continue;
-        const prolonged = s.status_type === 'ferias' || s.status_type === 'viajando';
-        if (!prolonged && new Date(s.created_at).getTime() < since) continue;
+        if (new Date(s.created_at).getTime() < since) continue;
         consider(docId, {
           type: s.status_type,
           at: s.created_at,
