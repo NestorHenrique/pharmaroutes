@@ -5,6 +5,7 @@ import type { AddDoctorResult, AgendaEntry, Doctor } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import { CATEGORIAS } from '@/constants';
 import { SPECIALTY_LIST, formatCrm, normalizeCrm, sortAgenda, specialtyCode } from '@/utils';
+import WhatsAppFields, { whatsappFormError } from '@/components/WhatsAppFields';
 import { lookupCrm } from '@/lib/crmLookup';
 import { useFormPersistence } from '@/hooks/useFormPersistence';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
@@ -82,6 +83,7 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
   const [form, setForm] = useState<FormState>(DEFAULTS);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [waTouched, setWaTouched] = useState(false);
   const [duplicate, setDuplicate] = useState<Doctor | null>(null);
   const [linkMsg, setLinkMsg] = useState<string | null>(null);
   const [looking, setLooking] = useState(false);
@@ -105,6 +107,12 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
   const handleSubmit = async () => {
     if (!form.descricao.trim()) {
       setError('Nome do médico é obrigatório.');
+      return;
+    }
+    const waError = whatsappFormError(form.whatsapp_medico, form.whatsapp_clinica);
+    if (waError) {
+      setWaTouched(true);
+      setError(waError);
       return;
     }
     setSaving(true);
@@ -132,8 +140,10 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
     // Só envia se marcado/preenchido (funciona mesmo antes das migrações v5 e v6)
     const weeks = normalizeCycleWeeks(form.cycle_weeks);
     if (weeks.length) payload.cycle_weeks = weeks;
-    if (form.whatsapp_medico.trim()) payload.whatsapp_medico = form.whatsapp_medico.trim();
-    if (form.whatsapp_clinica.trim()) payload.whatsapp_clinica = form.whatsapp_clinica.trim();
+    const wm = form.whatsapp_medico.replace(/\D/g, '');
+    const wc = form.whatsapp_clinica.replace(/\D/g, '');
+    if (wm) payload.whatsapp_medico = wm;
+    if (wc) payload.whatsapp_clinica = wc;
 
     try {
       const result = await onAdd(payload);
@@ -352,10 +362,13 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
       </div>
 
       {/* WhatsApps (médico e clínica, separados) */}
-      <div className="grid grid-cols-2 gap-1.5">
-        <input type="tel" inputMode="tel" placeholder="WhatsApp médico" value={form.whatsapp_medico} onChange={(e) => setField('whatsapp_medico', e.target.value)} className={inputCls} />
-        <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica} onChange={(e) => setField('whatsapp_clinica', e.target.value)} className={inputCls} />
-      </div>
+      <WhatsAppFields
+        medico={form.whatsapp_medico}
+        clinica={form.whatsapp_clinica}
+        onChange={(k, v) => setField(k, v)}
+        showErrors={waTouched}
+        inputCls={inputCls}
+      />
 
       {/* Email */}
       <div className="grid grid-cols-1 gap-1.5">

@@ -24,7 +24,9 @@ import {
   formatMinutes,
   formatCrm,
   SPECIALTY_LIST,
+  whatsappDigits,
 } from '@/utils';
+import WhatsAppFields, { whatsappFormError } from '@/components/WhatsAppFields';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
 import { mergeAddress } from '@/lib/geocode';
 import StatusSelector from '@/components/StatusSelector';
@@ -191,8 +193,8 @@ function DoctorCard({
       cidade: doc.cidade || '',
       observacoes: doc.observacoes || '',
       telefone: doc.telefone || '',
-      whatsapp_medico: doc.whatsapp_medico || '',
-      whatsapp_clinica: doc.whatsapp_clinica || '',
+      whatsapp_medico: whatsappDigits(doc.whatsapp_medico),
+      whatsapp_clinica: whatsappDigits(doc.whatsapp_clinica),
       email: doc.email || '',
       map_link: doc.map_link || '',
       categoria: doc.categoria || 'consultorio',
@@ -216,6 +218,14 @@ function DoctorCard({
   }, [autoEdit]);
 
   const handleSave = async () => {
+    const waError = whatsappFormError(editForm.whatsapp_medico, editForm.whatsapp_clinica, {
+      medico: whatsappDigits(doc.whatsapp_medico),
+      clinica: whatsappDigits(doc.whatsapp_clinica),
+    });
+    if (waError) {
+      setFormError(waError);
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -234,10 +244,10 @@ function DoctorCard({
         categoria: editForm.categoria,
       };
       // WhatsApps: só envia se mudou (não quebra a edição antes da migração v7)
-      const wm = (editForm.whatsapp_medico || '').trim();
-      if (wm !== (doc.whatsapp_medico || '')) payload.whatsapp_medico = wm || null;
-      const wc = (editForm.whatsapp_clinica || '').trim();
-      if (wc !== (doc.whatsapp_clinica || '')) payload.whatsapp_clinica = wc || null;
+      const wm = (editForm.whatsapp_medico || '').replace(/\D/g, '');
+      if (wm !== whatsappDigits(doc.whatsapp_medico)) payload.whatsapp_medico = wm || null;
+      const wc = (editForm.whatsapp_clinica || '').replace(/\D/g, '');
+      if (wc !== whatsappDigits(doc.whatsapp_clinica)) payload.whatsapp_clinica = wc || null;
       // Semanas do ciclo: só envia se mudou (não quebra a edição antes da migração v5)
       const weeks = normalizeCycleWeeks(editForm.cycle_weeks);
       if (weeks.join(',') !== normalizeCycleWeeks(doc.cycle_weeks).join(',')) payload.cycle_weeks = weeks;
@@ -287,20 +297,20 @@ function DoctorCard({
     const visitedAt = cycleVisitedAt ?? (categoryMode ? visited?.created_at ?? null : null);
     const otherVisitors = !visitedAt && visitors?.length ? visitors : null;
     const place = [doc.complemento || 'Consultório próprio', doc.bairro].filter(Boolean).join(' · ');
+    const hasPresence = Boolean(presence && presence.length > 0);
     let subline = place;
     if (tier === 'top' && lead && TOP_PRIORITY_STATUSES.includes(lead.status_type)) {
       // Em atendimento: tempo decorrido crescente
       subline = `${STATUS_META[lead.status_type].label} · ${formatElapsed(lead.created_at, now)}`;
     } else if (visitedAt) {
-      subline =
-        visitorsSummary(visitors ?? [], (name, iso) => formatVisitAudit(name, iso, now)) ??
-        formatVisitAudit(null, visitedAt, now);
+      // Quem visitou e quando já está na etiqueta (foto + nome + hora); aqui só o local
+      subline = hasPresence ? place : formatVisitAudit(null, visitedAt, now);
     } else if (lead) {
       const label = STATUS_META[lead.status_type].label;
       subline = STATUS_META[lead.status_type].showTime ? `${label} · ${formatTime(lead.created_at)}` : label;
     } else if (searchHint && !otherVisitors) {
       subline = `Achou em ${searchHint}`;
-    } else if (otherVisitors) {
+    } else if (otherVisitors && !hasPresence) {
       // Visita de OUTRO representante: só informa quem e quando, sem tirar o médico da rota
       subline = visitorsSummary(otherVisitors, (name, iso) => formatVisitAudit(name, iso, now)) ?? place;
     }
@@ -359,7 +369,8 @@ function DoctorCard({
             {formatMinutes(expected.startMinutes)}
           </span>
         )}
-        {visitors && visitors.length > 0 && <VisitorStack visitors={visitors} />}
+        {/* Fotos só quando não há etiqueta (a etiqueta já traz foto, nome e hora) */}
+        {!hasPresence && visitors && visitors.length > 0 && <VisitorStack visitors={visitors} />}
         {cycleVisitedAt && onToggleCycleVisit ? (
           <button
             type="button"
@@ -654,11 +665,14 @@ function DoctorCard({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5">
-            <input type="tel" placeholder="WhatsApp médico" value={editForm.whatsapp_medico ?? ''} onChange={(e) => setField('whatsapp_medico', e.target.value)} className={inputCls} />
-            <input type="tel" placeholder="WhatsApp clínica" value={editForm.whatsapp_clinica ?? ''} onChange={(e) => setField('whatsapp_clinica', e.target.value)} className={inputCls} />
-            <input type="text" placeholder="Clínica / Local (PSM, SAMU, Hospital...)" value={editForm.complemento ?? ''} onChange={(e) => setField('complemento', e.target.value)} className={inputCls} />
-          </div>
+          <WhatsAppFields
+            medico={editForm.whatsapp_medico ?? ''}
+            clinica={editForm.whatsapp_clinica ?? ''}
+            onChange={(k, v) => setField(k, v)}
+            showErrors={Boolean(formError)}
+            inputCls={inputCls}
+          />
+          <input type="text" placeholder="Clínica / Local (PSM, SAMU, Hospital...)" value={editForm.complemento ?? ''} onChange={(e) => setField('complemento', e.target.value)} className={inputCls} />
 
           <div className="grid grid-cols-[2fr_1fr] gap-1.5">
             <input type="text" placeholder="Endereço" value={editForm.endereco ?? ''} onChange={(e) => setField('endereco', e.target.value)} className={inputCls} />

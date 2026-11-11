@@ -1,5 +1,6 @@
 import type { PresenceItem } from '@/lib/visits';
 import { presenceText } from '@/lib/visits';
+import { RepAvatar } from '@/components/RepAvatar';
 
 interface PresenceTagsProps {
   items: readonly PresenceItem[];
@@ -8,7 +9,11 @@ interface PresenceTagsProps {
   className?: string;
 }
 
-/** Etiquetas "Arthur no consultório 16:50" (azul) e "Nestor visitou 16:55" (verde); o excedente vira "+3" */
+/**
+ * Etiquetas com a foto do representante: "Arthur no consultório 16:50" (azul) e
+ * "Nestor visitou 16:55" (verde). É a única informação de quem esteve no médico no card:
+ * foto, nome e hora juntos. O excedente vira "+3".
+ */
 export default function PresenceTags({ items, max = 2, className = '' }: PresenceTagsProps) {
   if (items.length === 0) return null;
   const shown = items.slice(0, max);
@@ -18,12 +23,13 @@ export default function PresenceTags({ items, max = 2, className = '' }: Presenc
       {shown.map((it) => (
         <span
           key={it.key}
-          className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[11px] font-semibold whitespace-nowrap ${
+          className={`inline-flex h-6 items-center gap-1.5 rounded-full border pl-0.5 pr-2.5 text-[11px] font-semibold whitespace-nowrap ${
             it.kind === 'office'
               ? 'border-sky-500/60 bg-sky-500/15 text-sky-300'
               : 'border-emerald-600/50 bg-emerald-500/10 text-emerald-300'
           }`}
         >
+          <RepAvatar name={it.name} src={it.avatarUrl} me={it.isMe} size={20} />
           {presenceText(it)}
         </span>
       ))}

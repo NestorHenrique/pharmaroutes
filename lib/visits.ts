@@ -117,15 +117,22 @@ export interface PresenceItem {
   /** ISO do momento (chegou / visitou) */
   at: string;
   isMe?: boolean;
+  /** foto do representante (null = iniciais) */
+  avatarUrl?: string | null;
 }
 
-function hhmm(iso: string): string {
-  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+/** "16:55" hoje; "10/11 16:55" em outro dia (visita do ciclo pode ser de dias atrás) */
+export function shortWhen(iso: string, nowMs: number = Date.now()): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === new Date(nowMs).toDateString()) return time;
+  const date = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  return `${date} ${time}`;
 }
 
-/** "Arthur no consultório 16:50" / "Nestor visitou 16:55" */
-export function presenceText(item: PresenceItem): string {
-  return `${item.name} ${item.kind === 'office' ? 'no consultório' : 'visitou'} ${hhmm(item.at)}`;
+/** "Arthur no consultório 16:50" / "Nestor visitou 10/11 16:55" */
+export function presenceText(item: PresenceItem, nowMs?: number): string {
+  return `${item.name} ${item.kind === 'office' ? 'no consultório' : 'visitou'} ${shortWhen(item.at, nowMs)}`;
 }
 
 /**
@@ -135,15 +142,20 @@ export function presenceText(item: PresenceItem): string {
 export function presenceItems(
   statuses: readonly DoctorStatus[] | undefined,
   visitors: readonly Visitor[] | undefined,
+  profiles?: Readonly<Record<string, PublicProfile>>,
+  myId?: string | null,
 ): PresenceItem[] {
   const out: PresenceItem[] = [];
   for (const s of statuses ?? []) {
     if (s.status_type === 'representante_no_consultorio') {
+      const p = profiles?.[s.created_by];
       out.push({
         key: `o:${s.id}`,
         kind: 'office',
-        name: firstName(s.rep_name?.trim() || 'Representante'),
+        name: firstName(p?.display_name?.trim() || s.rep_name?.trim() || 'Representante'),
         at: s.created_at,
+        isMe: Boolean(myId) && s.created_by === myId,
+        avatarUrl: p?.avatar_url ?? null,
       });
     }
   }
@@ -153,6 +165,7 @@ export function presenceItems(
     name: firstName(v.name),
     at: v.visitedAt,
     isMe: v.isMe,
+    avatarUrl: v.avatarUrl,
   }));
   // PSM/SAMU/Hospital: a visita do dia fica em doctor_statuses
   if (visits.length === 0) {
@@ -161,8 +174,10 @@ export function presenceItems(
         visits.push({
           key: `d:${s.id}`,
           kind: 'visit',
-          name: firstName(s.rep_name?.trim() || 'Representante'),
+          name: firstName(profiles?.[s.created_by]?.display_name?.trim() || s.rep_name?.trim() || 'Representante'),
           at: s.created_at,
+          isMe: Boolean(myId) && s.created_by === myId,
+          avatarUrl: profiles?.[s.created_by]?.avatar_url ?? null,
         });
       }
     }

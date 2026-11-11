@@ -56,6 +56,8 @@ import DoctorSheet from '@/components/DoctorSheet';
 import { RepAvatar } from '@/components/RepAvatar';
 import AddDoctorForm from '@/components/AddDoctorForm';
 import BottomSheet from '@/components/BottomSheet';
+import { mergeVisibleOrder } from '@/lib/routeOrder';
+import StatusOverview from '@/components/StatusOverview';
 import ProfileSettings from '@/components/ProfileSettings';
 import CityFilter from '@/components/CityFilter';
 import type { ComboOption } from '@/components/ComboBox';
@@ -1232,9 +1234,8 @@ export default function HomePage() {
 
   const applyMiddleOrder = useCallback(
     (visible: string[]) => {
-      // Mantém a posição salva de médicos que estão fora do filtro atual
-      const hidden = (manualOrder ?? []).filter((id) => !visible.includes(id));
-      saveRouteOrder(manualKey, [...visible, ...hidden]);
+      // Os médicos fora da lista visível (filtro, visitados, em atendimento) ficam no lugar salvo
+      void saveRouteOrder(manualKey, mergeVisibleOrder(manualOrder, visible));
     },
     [manualOrder, manualKey, saveRouteOrder],
   );
@@ -1361,6 +1362,8 @@ export default function HomePage() {
 
   /** ficha aberta (sobe de baixo) e card em edição */
   const [sheetId, setSheetId] = useState<string | null>(null);
+  /** Tela geral de Status (todos os médicos marcados, agrupados pelo status) */
+  const [showStatusOverview, setShowStatusOverview] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const openSheet = useCallback((id: string) => setSheetId(id), []);
@@ -1426,7 +1429,7 @@ export default function HomePage() {
   const plantaoShown = plantaoOpen || searchQuery.trim() !== '';
 
   const presenceFor = (id: string): PresenceItem[] =>
-    presenceItems(liveStatusMap[id], isCategoryMode ? undefined : visitorsFor(id));
+    presenceItems(liveStatusMap[id], isCategoryMode ? undefined : visitorsFor(id), repProfiles, sessionUserId);
   const toggleVisited = (id: string) => {
     const visited = Boolean(visitedAtOf(id));
     if (isCategoryMode) {
@@ -1640,6 +1643,18 @@ export default function HomePage() {
               </button>
             )}
           </label>
+          <button
+            type="button"
+            onClick={() => setShowStatusOverview(true)}
+            aria-label="Status geral: médicos marcados pelos representantes"
+            title="Status geral"
+            className="h-11 px-3 shrink-0 rounded-xl border border-slate-800 bg-slate-900 text-slate-200 flex items-center gap-1.5 text-sm font-medium"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M4 6h2M4 12h2M4 18h2M9 6h11M9 12h11M9 18h11" />
+            </svg>
+            Status
+          </button>
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
@@ -2182,6 +2197,21 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* Status geral: médicos marcados por qualquer representante, agrupados pelo status */}
+      {showStatusOverview && (
+        <StatusOverview
+          doctors={doctors}
+          statusMap={liveStatusMap}
+          profiles={repProfiles}
+          myId={sessionUserId}
+          onOpenDoctor={(id) => {
+            setShowStatusOverview(false);
+            setSheetId(id);
+          }}
+          onClose={() => setShowStatusOverview(false)}
+        />
+      )}
+
       {/* Ficha do médico (sobe de baixo) */}
       {sheetDoc && (
         <DoctorSheet
@@ -2192,6 +2222,7 @@ export default function HomePage() {
           visitLabel={visitLabelOf(sheetDoc.id)}
           visitors={isCategoryMode ? undefined : visitorsFor(sheetDoc.id)}
           presence={presenceFor(sheetDoc.id)}
+          profiles={repProfiles}
           activeWeekLabel={!isCategoryMode && activeWeek ? cycleWeekLabel(activeWeek) : null}
           onToggleVisited={() => toggleVisited(sheetDoc.id)}
           onSetStatus={setDoctorStatus}

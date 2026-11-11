@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import type { AgendaEntry, Doctor } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import { CATEGORIAS } from '@/constants';
-import { SPECIALTY_LIST, clearDraft, getAgenda, loadDraft, normalizeCrm, saveDraft, specialtyCode } from '@/utils';
+import { SPECIALTY_LIST, clearDraft, getAgenda, loadDraft, normalizeCrm, saveDraft, specialtyCode, whatsappDigits } from '@/utils';
+import WhatsAppFields, { whatsappFormError } from '@/components/WhatsAppFields';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
 import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
@@ -44,8 +45,8 @@ function initialForm(doc: Doctor): EditForm {
     cidade: doc.cidade || '',
     observacoes: doc.observacoes || '',
     telefone: doc.telefone || '',
-    whatsapp_medico: doc.whatsapp_medico || '',
-    whatsapp_clinica: doc.whatsapp_clinica || '',
+    whatsapp_medico: whatsappDigits(doc.whatsapp_medico),
+    whatsapp_clinica: whatsappDigits(doc.whatsapp_clinica),
     email: doc.email || '',
     map_link: doc.map_link || '',
     categoria: doc.categoria || 'consultorio',
@@ -63,6 +64,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [waTouched, setWaTouched] = useState(false);
   const gps = useGeolocation();
 
   // Rascunho automático (não perde o que foi digitado se o app fechar)
@@ -85,6 +87,16 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
     if (!nome) {
       setSaving(false);
       setError('O nome do médico não pode ficar vazio.');
+      return;
+    }
+    const waError = whatsappFormError(form.whatsapp_medico, form.whatsapp_clinica, {
+      medico: whatsappDigits(doc.whatsapp_medico),
+      clinica: whatsappDigits(doc.whatsapp_clinica),
+    });
+    if (waError) {
+      setSaving(false);
+      setWaTouched(true);
+      setError(waError);
       return;
     }
     try {
@@ -111,10 +123,10 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
       const weeks = normalizeCycleWeeks(form.cycle_weeks);
       if (weeks.join(',') !== normalizeCycleWeeks(doc.cycle_weeks).join(',')) payload.cycle_weeks = weeks;
       // WhatsApps só vão se mudaram (não quebra a edição antes da migração v7)
-      const wm = (form.whatsapp_medico || '').trim();
-      if (wm !== (doc.whatsapp_medico || '')) payload.whatsapp_medico = wm || null;
-      const wc = (form.whatsapp_clinica || '').trim();
-      if (wc !== (doc.whatsapp_clinica || '')) payload.whatsapp_clinica = wc || null;
+      const wm = (form.whatsapp_medico || '').replace(/\D/g, '');
+      if (wm !== whatsappDigits(doc.whatsapp_medico)) payload.whatsapp_medico = wm || null;
+      const wc = (form.whatsapp_clinica || '').replace(/\D/g, '');
+      if (wc !== whatsappDigits(doc.whatsapp_clinica)) payload.whatsapp_clinica = wc || null;
       const ok = await onUpdateDoctor(doc.id, payload, doc.descricao || '');
       if (ok) {
         clearDraft(draftKey);
@@ -303,10 +315,13 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
       {/* Contato e observação */}
       <section className={cardCls}>
         <FormTitle>Contato e observação</FormTitle>
-        <div className="grid grid-cols-2 gap-1.5">
-          <input type="tel" inputMode="tel" placeholder="WhatsApp médico" value={form.whatsapp_medico ?? ''} onChange={(e) => set('whatsapp_medico', e.target.value)} className={inputCls} />
-          <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica ?? ''} onChange={(e) => set('whatsapp_clinica', e.target.value)} className={inputCls} />
-        </div>
+        <WhatsAppFields
+          medico={form.whatsapp_medico ?? ''}
+          clinica={form.whatsapp_clinica ?? ''}
+          onChange={(k, v) => set(k, v)}
+          showErrors={waTouched}
+          inputCls={inputCls}
+        />
         <textarea
           placeholder="Observações do propagandista"
           value={form.observacoes ?? ''}
