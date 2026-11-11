@@ -97,14 +97,14 @@ export default function StatusSelector({ doctorId, statuses, onSet, onClear }: S
       {/* Botão toggle */}
       <button
         type="button"
+        aria-label="Marcar status"
+        aria-expanded={step !== 'closed'}
         onClick={() => setStep(step === 'closed' ? 'menu' : 'closed')}
-        className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${
-          hasActiveStatus
-            ? 'border-blue-500/40 bg-blue-500/10 text-blue-400'
-            : 'border-slate-700 bg-slate-800 text-slate-500 hover:text-slate-300'
+        className={`size-9 shrink-0 rounded-lg border border-blue-800 bg-blue-950 text-blue-600 flex items-center justify-center ${
+          hasActiveStatus ? 'ring-1 ring-blue-600' : ''
         }`}
       >
-        Status {step !== 'closed' ? '▲' : '▼'}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5" /></svg>
       </button>
 
       {/* Dropdown */}
