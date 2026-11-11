@@ -121,11 +121,13 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
         active: false,
       });
     }
-    // Status ainda ativos (chegam em tempo real): só entram se marcados dentro do período escolhido
+    // Status ainda ativos (chegam em tempo real). Os do dia a dia só entram se marcados dentro do
+    // período escolhido; Licença e Viagem ficam até o dia antes da volta (o app já tira depois disso).
     for (const [docId, list] of Object.entries(statusMap)) {
       for (const s of list) {
         if (!GROUP_TYPES.has(s.status_type)) continue;
-        if (new Date(s.created_at).getTime() < since) continue;
+        const prolonged = s.status_type === 'ferias' || s.status_type === 'viajando';
+        if (!prolonged && new Date(s.created_at).getTime() < since) continue;
         consider(docId, {
           type: s.status_type,
           at: s.created_at,

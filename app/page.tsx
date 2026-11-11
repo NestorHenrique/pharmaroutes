@@ -135,7 +135,27 @@ const NO_VISITORS: Visitor[] = [];
 /** Nome do dia para frases ("na terça") */
 const DAY_LONG: Record<string, string> = { seg: 'segunda', ter: 'terça', qua: 'quarta', qui: 'quinta', sex: 'sexta' };
 
-function isLive(s: Pick<DoctorStatus, 'expires_at'>, nowMs: number): boolean {
+/**
+ * Licença/Viagem ficam marcadas até o DIA ANTES da volta (no dia da volta o médico já está de volta).
+ * Devolve o fim desse período (23:59:59 do dia anterior à volta) ou null se não há data de retorno.
+ */
+function absenceEndMs(returnDate: string | null | undefined): number | null {
+  if (!returnDate) return null;
+  const d = new Date(`${returnDate}T23:59:59.999`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() - 1);
+  return d.getTime();
+}
+
+function isLive(
+  s: Pick<DoctorStatus, 'expires_at'> & Partial<Pick<DoctorStatus, 'status_type' | 'return_date'>>,
+  nowMs: number,
+): boolean {
+  // Também vale para Licença/Viagem já salvas com vencimento no dia da volta
+  if (s.status_type === 'ferias' || s.status_type === 'viajando') {
+    const end = absenceEndMs(s.return_date);
+    if (end !== null) return end > nowMs;
+  }
   return !s.expires_at || new Date(s.expires_at).getTime() > nowMs;
 }
 
@@ -727,7 +747,11 @@ export default function HomePage() {
       if (opts?.persistent) expiresAt = null; // visita do ciclo: fica até "Renovar Ciclo"
       else if (meta.duration) expiresAt = addMinutes(meta.duration);
       else if (meta.untilMidnight) expiresAt = endOfToday();
-      else if (opts?.returnDate) expiresAt = new Date(opts.returnDate + 'T23:59:59').toISOString();
+      else if (opts?.returnDate) {
+        // Licença/Viagem: marcada até o dia antes da volta (se a volta é hoje ou antes, vale só hoje)
+        const end = absenceEndMs(opts.returnDate);
+        expiresAt = end !== null && end > Date.now() ? new Date(end).toISOString() : endOfToday();
+      }
 
       const createdAt = new Date().toISOString();
       const record = {
