@@ -566,7 +566,21 @@ function DoctorCard({
               ☰
             </button>
           )}
-          <StatusSelector doctorId={doc.id} statuses={statuses} onSet={onSetStatus} onClear={onClearStatus} />
+          <StatusSelector
+            doctorId={doc.id}
+            doctorName={doc.descricao}
+            statuses={statuses}
+            onSet={onSetStatus}
+            onClear={onClearStatus}
+            visited={categoryMode ? Boolean(visited) : Boolean(cycleVisitedAt)}
+            onToggleVisited={
+              categoryMode
+                ? (v) => (v ? onSetStatus(doc.id, 'visitado_hoje') : onClearStatus(doc.id, 'visitado_hoje'))
+                : onToggleCycleVisit
+                  ? (v) => onToggleCycleVisit(doc.id, v)
+                  : undefined
+            }
+          />
 
           {!isEditing && (
             <div className="relative flex items-center gap-1">

@@ -5,6 +5,8 @@ import type { Doctor, ExpectedVisit } from '@/types/doctor';
 import { TOP_PRIORITY_STATUSES, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import type { ComboOption } from '@/components/ComboBox';
+import BottomSheet from '@/components/BottomSheet';
+import ReturnDatePicker from '@/components/ReturnDatePicker';
 import DoctorEditForm from '@/components/DoctorEditForm';
 import DoctorHistory from '@/components/DoctorHistory';
 import { RepAvatar } from '@/components/RepAvatar';
@@ -68,11 +70,6 @@ const ABSENCE: { type: DoctorStatusType; label: string }[] = [
 ];
 
 const label = 'text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400';
-
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 function shortDate(iso: string): string {
   return new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('pt-BR', {
@@ -438,26 +435,41 @@ export default function DoctorSheet({
             })}
           </div>
           {absence && (
-            <div className="flex gap-2 items-end">
-              <label className="flex-1 flex flex-col gap-1">
-                <span className="text-xs text-slate-400">Volta em</span>
-                <input
-                  type="date"
-                  min={todayIso()}
-                  value={returnDate}
-                  onChange={(e) => setReturnDate(e.target.value)}
-                  className="h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-base text-slate-100"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={!returnDate}
-                onClick={confirmAbsence}
-                className="h-11 px-4 rounded-xl border-0 bg-blue-600 text-white text-sm font-semibold disabled:opacity-40"
-              >
-                Salvar
-              </button>
-            </div>
+            <BottomSheet
+              title="Até quando?"
+              dismissOnBackdrop={false}
+              onClose={() => {
+                setAbsence(null);
+                setReturnDate('');
+              }}
+              footer={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAbsence(null);
+                      setReturnDate('');
+                    }}
+                    className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-5 text-sm font-medium text-slate-300 hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!returnDate}
+                    onClick={confirmAbsence}
+                    className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40"
+                  >
+                    Confirmar
+                  </button>
+                </>
+              }
+            >
+              <p className="m-0 text-sm text-slate-300">
+                {doc.descricao} · <strong className="text-amber-400">{STATUS_META[absence].label}</strong>
+              </p>
+              <ReturnDatePicker value={returnDate} onChange={setReturnDate} />
+            </BottomSheet>
           )}
         </div>
 
