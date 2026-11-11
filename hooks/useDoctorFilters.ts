@@ -164,6 +164,8 @@ interface Params {
   sortMode: SortMode;
   /** ordem manual DESTE representante para o dia (rep_route_order) */
   manualOrder: readonly string[] | undefined;
+  /** ordem geral deste representante: usada para quem não está na lista do dia (a ordem vale em todas as abas) */
+  fallbackOrder?: readonly string[];
   categoryMode: boolean;
   /** visitas do ciclo deste representante: doctor_id → visited_at */
   cycleVisits?: ReadonlyMap<string, string>;
@@ -191,6 +193,7 @@ export function useDoctorFilters({
   now,
   sortMode,
   manualOrder,
+  fallbackOrder,
   categoryMode,
   cycleVisits,
 }: Params): DoctorFeed {
@@ -206,7 +209,10 @@ export function useDoctorFilters({
   }, [doctors, routeDay, windows]);
 
   return useMemo(() => {
-    const manualIndex = new Map((manualOrder ?? []).map((id, i) => [id, i]));
+    // Lista do dia/semana primeiro; quem não está nela segue a ordem geral salva (nada "volta ao A-Z")
+    const manualIndex = new Map<string, number>();
+    for (const id of manualOrder ?? []) if (!manualIndex.has(id)) manualIndex.set(id, manualIndex.size);
+    for (const id of fallbackOrder ?? []) if (!manualIndex.has(id)) manualIndex.set(id, manualIndex.size);
     const top: { d: Doctor; ts: number }[] = [];
     const middle: Doctor[] = [];
     const visited: { d: Doctor; ts: number }[] = [];
@@ -259,5 +265,5 @@ export function useDoctorFilters({
       middleIds: middle.map((d) => d.id),
       expected,
     };
-  }, [doctors, statusMap, categoryMode, sortMode, expected, manualOrder, cycleVisits]);
+  }, [doctors, statusMap, categoryMode, sortMode, expected, manualOrder, fallbackOrder, cycleVisits]);
 }

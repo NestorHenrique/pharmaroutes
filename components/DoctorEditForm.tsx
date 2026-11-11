@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react';
 import type { AgendaEntry, Doctor } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import { CATEGORIAS } from '@/constants';
-import { SPECIALTY_LIST, clearDraft, getAgenda, loadDraft, normalizeCrm, saveDraft, specialtyCode } from '@/utils';
+import { SPECIALTY_LIST, clearDraft, getAgenda, loadDraft, normalizeCrm, saveDraft, specialtyCode, whatsAppError } from '@/utils';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
 import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
 import FormTitle from '@/components/FormTitle';
+import WhatsAppFields from '@/components/WhatsAppFields';
 import type { ComboOption } from '@/components/ComboBox';
 
 /* ── Edição do médico dentro da ficha (mesmo visual da ficha de status) ── */
@@ -85,6 +86,17 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
     if (!nome) {
       setSaving(false);
       setError('O nome do médico não pode ficar vazio.');
+      return;
+    }
+    // Só barra o número que foi alterado (números antigos continuam editáveis, mas mostram o aviso)
+    const wmNew = (form.whatsapp_medico || '').trim();
+    const wcNew = (form.whatsapp_clinica || '').trim();
+    const whatsError =
+      (wmNew !== (doc.whatsapp_medico || '') ? whatsAppError(wmNew) : null) ??
+      (wcNew !== (doc.whatsapp_clinica || '') ? whatsAppError(wcNew) : null);
+    if (whatsError) {
+      setSaving(false);
+      setError(whatsError);
       return;
     }
     try {
@@ -303,10 +315,12 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
       {/* Contato e observação */}
       <section className={cardCls}>
         <FormTitle>Contato e observação</FormTitle>
-        <div className="grid grid-cols-2 gap-1.5">
-          <input type="tel" inputMode="tel" placeholder="WhatsApp médico" value={form.whatsapp_medico ?? ''} onChange={(e) => set('whatsapp_medico', e.target.value)} className={inputCls} />
-          <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica ?? ''} onChange={(e) => set('whatsapp_clinica', e.target.value)} className={inputCls} />
-        </div>
+        <WhatsAppFields
+          medico={form.whatsapp_medico ?? ''}
+          clinica={form.whatsapp_clinica ?? ''}
+          onChange={(field, value) => set(field, value)}
+          inputCls={inputCls}
+        />
         <textarea
           placeholder="Observações do propagandista"
           value={form.observacoes ?? ''}

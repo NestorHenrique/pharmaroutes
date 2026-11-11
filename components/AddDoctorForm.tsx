@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import type { AddDoctorResult, AgendaEntry, Doctor } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import { CATEGORIAS } from '@/constants';
-import { SPECIALTY_LIST, formatCrm, normalizeCrm, sortAgenda, specialtyCode } from '@/utils';
+import { SPECIALTY_LIST, formatCrm, normalizeCrm, sortAgenda, specialtyCode, whatsAppError } from '@/utils';
 import { lookupCrm } from '@/lib/crmLookup';
 import { useFormPersistence } from '@/hooks/useFormPersistence';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
@@ -12,6 +12,7 @@ import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
 import FormTitle from '@/components/FormTitle';
+import WhatsAppFields from '@/components/WhatsAppFields';
 import type { ComboOption } from '@/components/ComboBox';
 
 const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
@@ -105,6 +106,11 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
   const handleSubmit = async () => {
     if (!form.descricao.trim()) {
       setError('Nome do médico é obrigatório.');
+      return;
+    }
+    const whatsError = whatsAppError(form.whatsapp_medico) ?? whatsAppError(form.whatsapp_clinica);
+    if (whatsError) {
+      setError(whatsError);
       return;
     }
     setSaving(true);
@@ -352,10 +358,12 @@ export default function AddDoctorForm({ onAdd, onLinkPortfolio, isInPortfolio, o
       </div>
 
       {/* WhatsApps (médico e clínica, separados) */}
-      <div className="grid grid-cols-2 gap-1.5">
-        <input type="tel" inputMode="tel" placeholder="WhatsApp médico" value={form.whatsapp_medico} onChange={(e) => setField('whatsapp_medico', e.target.value)} className={inputCls} />
-        <input type="tel" inputMode="tel" placeholder="WhatsApp clínica" value={form.whatsapp_clinica} onChange={(e) => setField('whatsapp_clinica', e.target.value)} className={inputCls} />
-      </div>
+      <WhatsAppFields
+        medico={form.whatsapp_medico}
+        clinica={form.whatsapp_clinica}
+        onChange={(field, value) => setField(field, value)}
+        inputCls={inputCls}
+      />
 
       {/* Email */}
       <div className="grid grid-cols-1 gap-1.5">

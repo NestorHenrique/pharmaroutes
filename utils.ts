@@ -257,10 +257,10 @@ export function canonicalCity(name: string | null | undefined, options: CityOpti
 
 const DAY_INDEX: Record<string, number> = { dom: 0, seg: 1, ter: 2, qua: 3, qui: 4, sex: 5, sab: 6 };
 
-/** Quantas ocorrências do mesmo dia da semana entram na média */
-export const ROUTE_SAMPLES_SAME_DAY = 4;
-/** Janela de histórico considerada */
-export const ROUTE_HISTORY_DAYS = 28;
+/** Quantas ocorrências do mesmo dia da semana entram na média (praticamente todas do período) */
+export const ROUTE_SAMPLES_SAME_DAY = 52;
+/** Janela de histórico considerada: os registros nunca são apagados; a média usa até 1 ano do mesmo dia da semana */
+export const ROUTE_HISTORY_DAYS = 365;
 /** Sem histórico no mesmo dia da semana: usa a última semana inteira */
 export const ROUTE_FALLBACK_DAYS = 7;
 
@@ -328,14 +328,35 @@ export function formatMinutes(minutes: number): string {
 
 /* ── WhatsApp ── */
 
+/** WhatsApp válido = DDD + número com 9 dígitos: exatamente 11 dígitos (ex.: 86999999999) */
+export const WHATSAPP_DIGITS = 11;
+export const WHATSAPP_EXAMPLE = '86999999999';
+
+/** Só dígitos, no máximo 11. Se vier com +55 (13 dígitos), tira o 55. */
+export function cleanWhatsApp(raw: string | null | undefined): string {
+  let digits = (raw ?? '').replace(/\D/g, '');
+  if (digits.length > WHATSAPP_DIGITS && digits.startsWith('55')) digits = digits.slice(2);
+  return digits.slice(0, WHATSAPP_DIGITS);
+}
+
+/** true só com 11 dígitos e DDD válido (não começa com 0). Vazio não é válido aqui. */
+export function isValidWhatsApp(raw: string | null | undefined): boolean {
+  const digits = (raw ?? '').replace(/\D/g, '');
+  const num = digits.length > WHATSAPP_DIGITS && digits.startsWith('55') ? digits.slice(2) : digits;
+  return num.length === WHATSAPP_DIGITS && num[0] !== '0';
+}
+
+/** Mensagem de erro do campo (null = ok ou vazio) */
+export function whatsAppError(raw: string | null | undefined): string | null {
+  const digits = (raw ?? '').replace(/\D/g, '');
+  if (!digits) return null;
+  return isValidWhatsApp(digits) ? null : `Informe DDD + número com ${WHATSAPP_DIGITS} dígitos (ex.: ${WHATSAPP_EXAMPLE}).`;
+}
+
+/** Link do WhatsApp só para número válido (11 dígitos com DDD); senão null */
 export function buildWhatsAppUrl(telefone: string | null | undefined): string | null {
-  if (!telefone) return null;
-  let num = telefone.replace(/\D/g, '');
-  if (!num) return null;
-  if (!num.startsWith('55')) num = '55' + num;
-  // Corrige zero depois do DDD (55 XX 0…)
-  if (num.length === 13 && num[4] === '0') num = num.slice(0, 4) + num.slice(5);
-  return `https://wa.me/${num}`;
+  if (!isValidWhatsApp(telefone)) return null;
+  return `https://wa.me/55${cleanWhatsApp(telefone)}`;
 }
 
 /** Os dois WhatsApps do médico. Sem WhatsApp da clínica, o telefone cadastrado serve de reserva. */

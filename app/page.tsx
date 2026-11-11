@@ -561,18 +561,28 @@ export default function HomePage() {
   const fetchEvents = useCallback(async () => {
     if (!session) return;
     const since = new Date(Date.now() - ROUTE_HISTORY_DAYS * 86_400_000).toISOString();
-    const { data, error } = await supabase
-      .from('doctor_status_events')
-      .select('doctor_id, status_type, event_at')
-      .in('status_type', ROUTE_EVENT_STATUSES)
-      .gte('event_at', since)
-      .order('event_at', { ascending: false })
-      .limit(5000);
-    if (error) {
-      console.warn('Histórico indisponível:', error.message);
-      return;
+    // O Supabase devolve no máximo ~1000 linhas por consulta: busca em páginas até acabar
+    const PAGE = 1000;
+    const MAX_ROWS = 50_000;
+    const all: DoctorStatusEvent[] = [];
+    for (let from = 0; from < MAX_ROWS; from += PAGE) {
+      const { data, error } = await supabase
+        .from('doctor_status_events')
+        .select('doctor_id, status_type, event_at')
+        .in('status_type', ROUTE_EVENT_STATUSES)
+        .gte('event_at', since)
+        .order('event_at', { ascending: false })
+        .range(from, from + PAGE - 1);
+      if (error) {
+        console.warn('Histórico indisponível:', error.message);
+        if (all.length === 0) return;
+        break;
+      }
+      const rows = (data ?? []) as DoctorStatusEvent[];
+      all.push(...rows);
+      if (rows.length < PAGE) break;
     }
-    setEvents(data as DoctorStatusEvent[]);
+    setEvents(all);
   }, [session]);
 
   useEffect(() => {
@@ -1189,6 +1199,7 @@ export default function HomePage() {
     now,
     sortMode,
     manualOrder,
+    fallbackOrder: manualKey === 'geral' ? undefined : routeOrder['geral'],
     categoryMode: isCategoryMode,
     cycleVisits: isCategoryMode ? undefined : cycleVisits,
   });
