@@ -23,6 +23,7 @@ import {
   clearDraft,
   formatMinutes,
   formatCrm,
+  formatPlaceLines,
   SPECIALTY_LIST,
   whatsappDigits,
 } from '@/utils';
@@ -58,6 +59,8 @@ interface DoctorCardProps {
   tier?: RouteTier;
   /** alça de arraste por toque (iOS/Android/PWA) */
   onDragHandleTouchStart?: (docId: string, clientY: number) => void;
+  /** posição na rota (1, 2, 3…): aparece na alça de arrastar */
+  routeNumber?: number;
   /** ciclo de 5 semanas: quando este representante marcou visitado (null = pendente) */
   cycleVisitedAt?: string | null;
   /** onde a busca bateu quando não foi no nome ("Bairro: Centro") */
@@ -123,6 +126,7 @@ function DoctorCard({
   expected,
   tier = 'middle',
   onDragHandleTouchStart,
+  routeNumber,
   cycleVisitedAt = null,
   visitors,
   presence,
@@ -288,15 +292,16 @@ function DoctorCard({
       statuses.find((s) => s.status_type === 'ultimo_paciente') ??
       statuses.find((s) => s.status_type === 'aguardando_medico') ??
       statuses.find((s) => UNAVAILABLE_STATUSES.includes(s.status_type));
-    const leadTone: Partial<Record<DoctorStatusType, { dot: string; text: string; border: string }>> = {
-      representante_no_consultorio: { dot: 'bg-sky-400', text: 'text-sky-400', border: 'border-sky-500/60' },
-      ultimo_paciente: { dot: 'bg-red-400', text: 'text-red-400', border: 'border-red-500/60' },
-      aguardando_medico: { dot: 'bg-amber-400', text: 'text-amber-400', border: 'border-amber-400/60' },
+    const leadTone: Partial<Record<DoctorStatusType, { dot: string; text: string; border: string; pill: string }>> = {
+      representante_no_consultorio: { dot: 'bg-sky-400', text: 'text-sky-400', border: 'border-sky-500/60', pill: 'bg-sky-500 text-slate-950' },
+      ultimo_paciente: { dot: 'bg-red-400', text: 'text-red-400', border: 'border-red-500/60', pill: 'bg-red-500 text-slate-950' },
+      aguardando_medico: { dot: 'bg-amber-400', text: 'text-amber-400', border: 'border-amber-400/60', pill: 'bg-amber-400 text-slate-950' },
     };
     const tone = lead ? leadTone[lead.status_type] : undefined;
     const visitedAt = cycleVisitedAt ?? (categoryMode ? visited?.created_at ?? null : null);
     const otherVisitors = !visitedAt && visitors?.length ? visitors : null;
-    const place = [doc.complemento || 'Consultório próprio', doc.bairro].filter(Boolean).join(' · ');
+    const placeLines = formatPlaceLines(doc);
+    const place = placeLines.line1;
     const hasPresence = Boolean(presence && presence.length > 0);
     let subline = place;
     if (tier === 'top' && lead && TOP_PRIORITY_STATUSES.includes(lead.status_type)) {
@@ -315,6 +320,12 @@ function DoctorCard({
       subline = visitorsSummary(otherVisitors, (name, iso) => formatVisitAudit(name, iso, now)) ?? place;
     }
 
+    // Status ativo vira uma etiqueta colorida no topo do card; a linha de baixo fica só com a hora
+    const leadPill = tone && lead && !visitedAt ? STATUS_META[lead.status_type].label : null;
+    if (leadPill) {
+      subline = subline === leadPill ? '' : subline.replace(`${leadPill} · `, '');
+    }
+
     return (
       <div
         id={`doc-${doc.id}`}
@@ -328,19 +339,16 @@ function DoctorCard({
             aria-label="Arrastar para reordenar"
             onTouchStart={(e) => onDragHandleTouchStart(doc.id, e.touches[0]?.clientY ?? 0)}
             style={{ touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
-            className="relative z-10 select-none -ml-1 size-9 shrink-0 rounded-lg text-slate-500 active:bg-slate-800 flex items-center justify-center"
+            className="relative z-10 select-none -ml-1 h-11 w-[30px] shrink-0 rounded-lg bg-slate-800 text-slate-400 active:bg-slate-700 flex flex-col items-center justify-center gap-[3px]"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <path d="M5 8h14M5 12h14M5 16h14" />
-            </svg>
+            {routeNumber !== undefined && <span className="text-xs font-bold leading-none">{routeNumber}</span>}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.8" /><circle cx="15" cy="6" r="1.8" /><circle cx="9" cy="12" r="1.8" /><circle cx="15" cy="12" r="1.8" /><circle cx="9" cy="18" r="1.8" /><circle cx="15" cy="18" r="1.8" /></svg>
           </button>
         )}
         {visitedAt ? (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-emerald-400" role="img" aria-label="Visitado">
             <path d="M5 12l5 5L20 7" />
           </svg>
-        ) : tone ? (
-          <span className={`size-2 shrink-0 rounded-full ${tone.dot}`} aria-hidden="true" />
         ) : null}
 
         <button
@@ -349,24 +357,44 @@ function DoctorCard({
           aria-expanded={false}
           className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 flex flex-col gap-0.5 before:absolute before:inset-0 before:rounded-2xl before:content-['']"
         >
+          {leadPill && tone && (
+            <span className={`self-start rounded-md px-2 py-0.5 text-[11px] font-bold ${tone.pill}`}>{leadPill}</span>
+          )}
           <span
             className={`text-[15px] font-semibold uppercase truncate ${visitedAt ? 'text-slate-500 line-through' : 'text-white'}`}
           >
             {doc.descricao}
             {isNew && <span className="ml-1.5 align-middle text-[9px] font-bold text-green-400 no-underline">NOVO</span>}
           </span>
-          <span className={`text-xs uppercase truncate ${visitedAt ? 'text-emerald-400' : tone?.text ?? 'text-slate-400'}`}>
-            {subline}
-          </span>
+          {subline && (
+            <span className={`text-xs uppercase truncate ${visitedAt ? 'text-emerald-400' : tone?.text ?? 'text-slate-400'}`}>
+              {subline}
+            </span>
+          )}
+          {subline === place && placeLines.line2 && (
+            <span className="text-xs uppercase truncate text-slate-500">{placeLines.line2}</span>
+          )}
           {presence && presence.length > 0 && <PresenceTags items={presence} className="mt-1" />}
         </button>
 
         {expected && !visitedAt && (
           <span
-            className="shrink-0 text-[13px] tabular-nums text-slate-200"
+            className="shrink-0 flex flex-col items-end gap-0.5"
             title={`Horário médio: ${formatMinutes(expected.startMinutes)}${expected.endMinutes !== null ? ` → ${formatMinutes(expected.endMinutes)}` : ''}`}
           >
-            {formatMinutes(expected.startMinutes)}
+            <span className="flex items-center gap-1 text-base font-semibold tabular-nums text-slate-100">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+              {formatMinutes(expected.startMinutes)}
+            </span>
+            <span className="flex items-center gap-1 text-[11px] text-slate-500">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" aria-hidden="true">
+                <path d="M5 20V12M12 20V5M19 20v-5" />
+              </svg>
+              média
+            </span>
           </span>
         )}
         {/* Fotos só quando não há etiqueta (a etiqueta já traz foto, nome e hora) */}
@@ -538,7 +566,21 @@ function DoctorCard({
               ☰
             </button>
           )}
-          <StatusSelector doctorId={doc.id} statuses={statuses} onSet={onSetStatus} onClear={onClearStatus} />
+          <StatusSelector
+            doctorId={doc.id}
+            doctorName={doc.descricao}
+            statuses={statuses}
+            onSet={onSetStatus}
+            onClear={onClearStatus}
+            visited={categoryMode ? Boolean(visited) : Boolean(cycleVisitedAt)}
+            onToggleVisited={
+              categoryMode
+                ? (v) => (v ? onSetStatus(doc.id, 'visitado_hoje') : onClearStatus(doc.id, 'visitado_hoje'))
+                : onToggleCycleVisit
+                  ? (v) => onToggleCycleVisit(doc.id, v)
+                  : undefined
+            }
+          />
 
           {!isEditing && (
             <div className="relative flex items-center gap-1">
@@ -592,7 +634,7 @@ function DoctorCard({
                     }}
                     className="text-left px-3 py-2.5 rounded-lg bg-transparent text-sm text-red-400 hover:bg-slate-800"
                   >
-                    Excluir
+                    Excluir do meu painel
                   </button>
                 </div>
               )}

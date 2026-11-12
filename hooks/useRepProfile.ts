@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { RepProfile } from '@/types/doctor';
+import { REP_PROFILE_V12_KEYS } from '@/types/doctor';
 import { enqueue, isNetworkError, isOffline, pendingOps } from '@/lib/offlineQueue';
 
 /* Cópia da ordem da rota no aparelho: abre igual mesmo sem sinal e nunca parte de uma lista vazia */
@@ -113,6 +114,12 @@ export function useRepProfile(userId: string | null) {
         specialties: p?.specialties ?? [],
         show_all: p?.show_all ?? true,
         avatar_url: p?.avatar_url ?? null,
+        // v12: ausentes até a migração rodar
+        name_confirmed_at: p?.name_confirmed_at ?? null,
+        tour_seen_at: p?.tour_seen_at ?? null,
+        notify_enabled: p?.notify_enabled ?? true,
+        active_week: p?.active_week ?? null,
+        active_week_monday: p?.active_week_monday ?? null,
       });
       setPortfolio(new Set(((links as { doctor_id: string }[] | null) ?? []).map((l) => l.doctor_id)));
     })();
@@ -136,9 +143,14 @@ export function useRepProfile(userId: string | null) {
       const prev = profile;
       setProfile(next); // otimista
 
-      const { error } = await supabase
-        .from('rep_profiles')
-        .upsert({ ...next, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+      const row: Record<string, unknown> = { ...next, updated_at: new Date().toISOString() };
+      let { error } = await supabase.from('rep_profiles').upsert(row, { onConflict: 'user_id' });
+
+      // Migração v12 ainda não rodou: grava sem as colunas novas (elas ficam só na tela/aparelho)
+      if (error && (error.code === 'PGRST204' || /column/i.test(error.message ?? ''))) {
+        for (const k of REP_PROFILE_V12_KEYS) delete row[k];
+        ({ error } = await supabase.from('rep_profiles').upsert(row, { onConflict: 'user_id' }));
+      }
 
       if (error) {
         console.error('Erro ao salvar perfil:', error.message);

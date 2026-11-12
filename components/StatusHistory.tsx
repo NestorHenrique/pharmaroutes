@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import type { DoctorStatus } from '@/types/status';
 import { STATUS_META } from '@/types/status';
-import type { PublicProfile } from '@/lib/visits';
+import { shortName, type PublicProfile } from '@/lib/visits';
 import { dayTime, eventRepName, fetchDoctorStatusEvents, type StatusEventRow } from '@/lib/statusHistory';
 
 interface StatusHistoryProps {
@@ -48,7 +48,7 @@ export default function StatusHistory({ doctorId, statuses, profiles, initial = 
               <span className={`min-w-0 flex-1 truncate font-semibold ${meta?.text ?? 'text-slate-200'}`}>
                 {meta?.label ?? e.status_type}
               </span>
-              <span className="shrink-0 text-slate-300">{eventRepName(e, profiles).split(/\s+/)[0]}</span>
+              <span className="shrink-0 text-slate-300">{shortName(eventRepName(e, profiles))}</span>
               <span className="shrink-0 tabular-nums text-slate-500">{dayTime(e.event_at)}</span>
             </li>
           );

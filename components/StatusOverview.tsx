@@ -7,7 +7,7 @@ import { STATUS_META } from '@/types/status';
 import BottomSheet from '@/components/BottomSheet';
 import { RepAvatar } from '@/components/RepAvatar';
 import type { PublicProfile } from '@/lib/visits';
-import { firstName } from '@/lib/visits';
+import { shortName } from '@/lib/visits';
 import { dayTime, eventRepName, fetchStatusEventsSince, type StatusEventRow } from '@/lib/statusHistory';
 import { FILTROS_PLANTAO, FILTROS_TURNO } from '@/constants';
 import { cityKey, getAgenda, matchesLocation, shiftCovers } from '@/utils';
@@ -21,8 +21,8 @@ const GROUPS: { type: DoctorStatusType; label: string; dot: string }[] = [
   { type: 'aguardando_medico', label: 'Aguardando', dot: 'bg-amber-400' },
   { type: 'finalizou_atendimento', label: 'Finalizou', dot: 'bg-slate-400' },
   { type: 'nao_veio_hoje', label: 'Não veio hoje', dot: 'bg-slate-500' },
-  { type: 'ferias', label: 'Licença', dot: 'bg-amber-500' },
-  { type: 'viajando', label: 'Viagem', dot: 'bg-amber-500' },
+  { type: 'ferias', label: 'Licença / Afastado', dot: 'bg-amber-500' },
+  { type: 'viajando', label: 'Férias / Viagem', dot: 'bg-amber-500' },
 ];
 const GROUP_TYPES = new Set(GROUPS.map((g) => g.type));
 
@@ -286,7 +286,7 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
                         <span className="flex items-center gap-1.5 text-xs text-slate-400">
                           <RepAvatar name={m.repName} src={m.userId ? profiles[m.userId]?.avatar_url : null} me={m.userId === myId} size={18} />
                           <span className="truncate">
-                            {firstName(m.repName)} {dayTime(m.at)}
+                            {shortName(m.repName)} {dayTime(m.at)}
                             {m.returnDate && ` · volta ${new Date(`${m.returnDate}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`}
                           </span>
                         </span>

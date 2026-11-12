@@ -14,10 +14,15 @@ interface CityFilterProps {
   dayCounts?: Record<string, number>;
   /** nome do dia para os títulos ("terça") */
   dayLabel?: string;
+  /**
+   * Modo "escolher cidades" (ex.: avisos da semana): vazio = nenhuma, sem contagem de médicos.
+   * Sem isto o componente é o filtro da lista (vazio = todas as cidades).
+   */
+  pickMode?: boolean;
 }
 
 /** Filtro de cidades: botão que abre uma folha por baixo, com busca, "marcar as do dia" e Aplicar */
-export default function CityFilter({ options, selected, onChange, dayCounts, dayLabel }: CityFilterProps) {
+export default function CityFilter({ options, selected, onChange, dayCounts, dayLabel, pickMode = false }: CityFilterProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>(selected);
   const [query, setQuery] = useState('');
@@ -69,9 +74,10 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
     setOpen(false);
   };
 
+  const emptyLabel = pickMode ? 'Escolher cidades' : 'Todas as cidades';
   const summary =
     selected.length === 0
-      ? 'Todas as cidades'
+      ? emptyLabel
       : selected.length === 1
         ? labelFor(selected[0])
         : `${selected.length} cidades`;
@@ -140,8 +146,8 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
               <div className="flex flex-col">
                 <h2 className="m-0 text-xl font-bold tracking-tight text-white">Cidades</h2>
                 <span className="text-sm text-slate-400">
-                  {draft.length === 0 ? 'Todas as cidades' : `${draft.length} selecionada${draft.length !== 1 ? 's' : ''}`}
-                  {hasDay && dayLabel ? ` · ${resultCount} médicos na ${dayLabel}` : ` · ${resultCount} médicos`}
+                  {draft.length === 0 ? (pickMode ? 'Nenhuma escolhida' : 'Todas as cidades') : `${draft.length} selecionada${draft.length !== 1 ? 's' : ''}`}
+                  {pickMode ? '' : hasDay && dayLabel ? ` · ${resultCount} médicos na ${dayLabel}` : ` · ${resultCount} médicos`}
                 </span>
               </div>
               <button
@@ -244,7 +250,7 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
                 onClick={apply}
                 className="h-12 rounded-2xl border-0 bg-slate-100 text-base font-bold text-slate-950"
               >
-                Aplicar · {resultCount} médicos
+                {pickMode ? 'Aplicar' : `Aplicar · ${resultCount} médicos`}
               </button>
             </div>
           </div>

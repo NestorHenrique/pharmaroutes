@@ -5,6 +5,8 @@ import type { Doctor, ExpectedVisit } from '@/types/doctor';
 import { TOP_PRIORITY_STATUSES, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import type { ComboOption } from '@/components/ComboBox';
+import BottomSheet from '@/components/BottomSheet';
+import ReturnDatePicker from '@/components/ReturnDatePicker';
 import DoctorEditForm from '@/components/DoctorEditForm';
 import DoctorHistory from '@/components/DoctorHistory';
 import { RepAvatar } from '@/components/RepAvatar';
@@ -12,6 +14,7 @@ import type { PresenceItem, PublicProfile, Visitor } from '@/lib/visits';
 
 const NO_PROFILES: Readonly<Record<string, PublicProfile>> = {};
 import StatusHistory from '@/components/StatusHistory';
+import StatusSheet from '@/components/StatusSheet';
 import { STATUS_META } from '@/types/status';
 import {
   doctorWhatsApps,
@@ -63,16 +66,11 @@ const QUICK: { type: DoctorStatusType; label: string; on: string; text: string }
 ];
 
 const ABSENCE: { type: DoctorStatusType; label: string }[] = [
-  { type: 'ferias', label: 'Licença' },
-  { type: 'viajando', label: 'Viagem' },
+  { type: 'ferias', label: 'Licença / Afastado' },
+  { type: 'viajando', label: 'Férias / Viagem' },
 ];
 
 const label = 'text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400';
-
-function todayIso(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 function shortDate(iso: string): string {
   return new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('pt-BR', {
@@ -127,6 +125,8 @@ export default function DoctorSheet({
 }: DoctorSheetProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [whatsOpen, setWhatsOpen] = useState(false);
   const [mode, setMode] = useState<'status' | 'edit'>('status');
   const [absence, setAbsence] = useState<DoctorStatusType | null>(null);
   const [returnDate, setReturnDate] = useState('');
@@ -251,6 +251,25 @@ export default function DoctorSheet({
                       <span className="text-xs text-slate-400">Telefones, endereço, agenda</span>
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setStatusOpen(true);
+                    }}
+                    className="flex items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800 active:bg-slate-800"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />
+                      </svg>
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-sm font-semibold text-slate-100">Marcar status</span>
+                      <span className="text-xs text-slate-400">No consultório, visitado, ausência</span>
+                    </span>
+                  </button>
                   <div className="mx-2 my-1 h-px bg-slate-800" />
                   <button
                     type="button"
@@ -270,8 +289,8 @@ export default function DoctorSheet({
                       </svg>
                     </span>
                     <span className="flex min-w-0 flex-col">
-                      <span className="text-sm font-semibold text-red-400">Excluir médico</span>
-                      <span className="text-xs text-slate-400">Fica guardado no histórico</span>
+                      <span className="text-sm font-semibold text-red-400">Excluir do meu painel</span>
+                      <span className="text-xs text-slate-400">Continua na base e nos colegas</span>
                     </span>
                   </button>
                 </div>
@@ -358,7 +377,7 @@ export default function DoctorSheet({
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="truncate text-sm font-semibold text-slate-100">
                       {p.name}
-                      {p.isMe && <span className="ml-1.5 text-[11px] font-bold text-[#c9a86a]">VOCÊ</span>}
+                      {p.isMe && <span className="ml-1.5 text-[11px] font-bold text-blue-400">VOCÊ</span>}
                     </span>
                     <span className={`text-xs ${p.kind === 'office' ? 'text-sky-400' : 'text-emerald-400'}`}>
                       {p.kind === 'office' ? 'No consultório desde' : 'Visitou'} {shortDate(p.at)} às {formatTime(p.at)}
@@ -408,7 +427,7 @@ export default function DoctorSheet({
           </div>
         </div>
 
-        {/* Licença / Viagem */}
+        {/* Licença / Afastado e Férias / Viagem */}
         <div className="flex flex-col gap-2">
           <span className={label}>Ausência</span>
           <div className="grid grid-cols-2 gap-2">
@@ -438,34 +457,84 @@ export default function DoctorSheet({
             })}
           </div>
           {absence && (
-            <div className="flex gap-2 items-end">
-              <label className="flex-1 flex flex-col gap-1">
-                <span className="text-xs text-slate-400">Volta em</span>
-                <input
-                  type="date"
-                  min={todayIso()}
-                  value={returnDate}
-                  onChange={(e) => setReturnDate(e.target.value)}
-                  className="h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-base text-slate-100"
-                />
-              </label>
-              <button
-                type="button"
-                disabled={!returnDate}
-                onClick={confirmAbsence}
-                className="h-11 px-4 rounded-xl border-0 bg-blue-600 text-white text-sm font-semibold disabled:opacity-40"
-              >
-                Salvar
-              </button>
-            </div>
+            <BottomSheet
+              title="Até quando?"
+              dismissOnBackdrop={false}
+              onClose={() => {
+                setAbsence(null);
+                setReturnDate('');
+              }}
+              footer={
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAbsence(null);
+                      setReturnDate('');
+                    }}
+                    className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-5 text-sm font-medium text-slate-300 hover:text-white"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!returnDate}
+                    onClick={confirmAbsence}
+                    className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40"
+                  >
+                    Confirmar
+                  </button>
+                </>
+              }
+            >
+              <p className="m-0 text-sm text-slate-300">
+                {doc.descricao} · <strong className="text-amber-400">{STATUS_META[absence].label}</strong>
+              </p>
+              <ReturnDatePicker value={returnDate} onChange={setReturnDate} />
+            </BottomSheet>
           )}
         </div>
 
         {/* Ações */}
-        <div className="grid grid-cols-2 gap-2 pt-1">
-          <WhatsButton href={whats.medico} label="WhatsApp médico" />
-          <WhatsButton href={whats.clinica} label="WhatsApp clínica" />
+        <div className="pt-1">
+          <button
+            type="button"
+            disabled={!whats.medico && !whats.clinica}
+            onClick={() => setWhatsOpen(true)}
+            className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-emerald-600/50 bg-emerald-500/10 text-sm font-semibold text-emerald-300 disabled:opacity-40"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.7-5.4A8.4 8.4 0 1 1 21 11.5Z" />
+            </svg>
+            WhatsApp
+          </button>
         </div>
+        {whatsOpen && (
+          <BottomSheet title="Falar no WhatsApp" onClose={() => setWhatsOpen(false)}>
+            <p className="m-0 truncate text-sm font-semibold uppercase text-slate-200">{doc.descricao}</p>
+            <div className="grid grid-cols-1 gap-2">
+              <WhatsButton href={whats.medico} label="WhatsApp do médico" />
+              <WhatsButton href={whats.clinica} label="WhatsApp da clínica / atendente" />
+            </div>
+            {(!whats.medico || !whats.clinica) && (
+              <p className="m-0 text-xs text-slate-500">O número que falta pode ser cadastrado em Editar dados.</p>
+            )}
+          </BottomSheet>
+        )}
+        {statusOpen && (
+          <StatusSheet
+            doctorId={doc.id}
+            doctorName={doc.descricao}
+            statuses={statuses}
+            visited={Boolean(visitedAt)}
+            onSet={onSetStatus}
+            onClear={onClearStatus}
+            onToggleVisited={(v) => {
+              if (v !== Boolean(visitedAt)) onToggleVisited();
+            }}
+            onClose={() => setStatusOpen(false)}
+          />
+        )}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"

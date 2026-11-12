@@ -23,6 +23,7 @@ import {
   canonicalCity,
   cityKey,
   formatMinutes,
+  formatTime,
   formatVisitAudit,
   getAgenda,
   getTodayDayCode,
@@ -34,7 +35,7 @@ import {
   specialtyCode,
   ROUTE_HISTORY_DAYS,
 } from '@/utils';
-import { ensureServiceWorker, notifyCity } from '@/lib/push';
+import { ensureServiceWorker, getPushSupport, notifyCity, subscribeToCity, unsubscribePush } from '@/lib/push';
 import { enqueue, isNetworkError, isOffline, pendingOps } from '@/lib/offlineQueue';
 import type { QueuedOp } from '@/lib/offlineQueue';
 
@@ -45,6 +46,24 @@ import { useRepProfile } from '@/hooks/useRepProfile';
 import { useDoctorFilters } from '@/hooks/useDoctorFilters';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useVisits } from '@/hooks/useVisits';
+import { useVisitPrompts } from '@/hooks/useVisitPrompts';
+import VisitPromptModal from '@/components/VisitPromptModal';
+import NameConfirmSheet, { suggestName } from '@/components/NameConfirmSheet';
+import WeekSetupFlow from '@/components/WeekSetupFlow';
+import ConfirmSheet from '@/components/ConfirmSheet';
+import Tour from '@/components/Tour';
+import StatusGuide from '@/components/StatusGuide';
+import { useWeekCities } from '@/hooks/useWeekCities';
+import { useNotifications } from '@/hooks/useNotifications';
+import { useHiddenDoctors } from '@/hooks/useHiddenDoctors';
+import Toast, { type ToastData } from '@/components/Toast';
+import ConnectionBanner from '@/components/ConnectionBanner';
+import EmptyState from '@/components/EmptyState';
+import NotificationsSheet, { type NoticeItem } from '@/components/NotificationsSheet';
+import { getFlag, setFlag } from '@/lib/repFlags';
+import { shouldSignOutOnReopen } from '@/lib/auth';
+import NewPasswordScreen from '@/components/NewPasswordScreen';
+import { alreadyVisited, roundLabel, type VisitPrompt } from '@/lib/visitPrompts';
 import { presenceItems, visitorsOf, visitorsSummary } from '@/lib/visits';
 import { matchDoctor, SEARCH_SCOPES } from '@/lib/search';
 import type { SearchScope } from '@/lib/search';
@@ -58,7 +77,9 @@ import AddDoctorForm from '@/components/AddDoctorForm';
 import BottomSheet from '@/components/BottomSheet';
 import { mergeVisibleOrder } from '@/lib/routeOrder';
 import StatusOverview from '@/components/StatusOverview';
-import ProfileSettings from '@/components/ProfileSettings';
+import ProfileSheet from '@/components/ProfileSheet';
+import EditProfileSheet from '@/components/EditProfileSheet';
+import { applyTheme, readThemePref, resolveTheme, type Theme, type ThemePref } from '@/lib/theme';
 import CityFilter from '@/components/CityFilter';
 import type { ComboOption } from '@/components/ComboBox';
 
@@ -74,15 +95,12 @@ const DUPLICATE_MSG = 'Médico já cadastrado na base de dados';
 const SORT_MODE_KEY = 'pharma_sort_mode';
 const CYCLE_WEEK_KEY = 'pharma_cycle_week';
 const ACTIVE_WEEK_KEY = 'pharma_active_week';
-const THEME_KEY = 'pharma_theme';
 const BOTTOM_OPEN_KEY = 'pharma_bottom_open';
 const UNAVAILABLE_OPEN_KEY = 'pharma_unavailable_open';
 const ROUTE_CLOSED_KEY = 'pharma_route_closed';
 
 /** No estado contraído cada sub-lista de "Em atendimento" mostra só os mais recentes */
 const COLLAPSED_VISIBLE = 2;
-
-type Theme = 'onix' | 'marfim';
 
 /** Segunda-feira da semana de `d` (YYYY-MM-DD, horário local): a semana vira à 00:00 de segunda */
 function mondayOf(d: Date = new Date()): string {
@@ -281,6 +299,7 @@ function CollapsibleTitle({
   open,
   onToggle,
   hint,
+  variant,
 }: {
   tone?: string;
   title: string;
@@ -288,7 +307,43 @@ function CollapsibleTitle({
   open: boolean;
   onToggle?: () => void;
   hint?: string;
+  /** "visited": linha recolhida verde (check + contagem), como no desenho */
+  variant?: 'visited';
 }) {
+  if (variant === 'visited' && onToggle) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="mt-2 flex min-h-[52px] w-full items-center gap-2.5 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 text-left"
+      >
+        <span className="grid size-[26px] shrink-0 place-items-center rounded-lg bg-emerald-500 text-slate-950">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M5 12l5 5L20 7" />
+          </svg>
+        </span>
+        <span className="flex-1 text-sm font-semibold text-emerald-400">{title}</span>
+        <span className="grid h-[26px] min-w-[26px] place-items-center rounded-full bg-emerald-500/20 px-2 text-[13px] font-bold text-emerald-400">
+          {count}
+        </span>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`shrink-0 text-emerald-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+    );
+  }
   const label = (
     <>
       {title} ({count})
@@ -364,6 +419,8 @@ export default function HomePage() {
   /* Auth */
   const [session, setSession] = useState<{ access_token?: string; user: { id: string; email?: string } } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  /** abriu o link do e-mail "Esqueci a senha": falta definir a senha nova */
+  const [recovery, setRecovery] = useState(false);
 
   /* Data */
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -388,6 +445,18 @@ export default function HomePage() {
   const [activeWeek, setActiveWeek] = useState<CycleWeek | null>(null);
   /** pergunta da semana (abre no início de cada semana) e a semana da semana passada */
   const [weekPrompt, setWeekPrompt] = useState(false);
+  /** o fluxo da semana abriu sozinho (primeiro acesso da semana): só aí valem os avisos de ciclo */
+  const [weekAuto, setWeekAuto] = useState(false);
+  /** confirmação "Começar um novo ciclo?" (com o que fazer depois de confirmar) */
+  const [renewAsk, setRenewAsk] = useState<{ then?: () => void } | null>(null);
+  const [renewBusy, setRenewBusy] = useState(false);
+  /** tutorial da tela inicial e guia de cores */
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourDismissed, setTourDismissed] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  /** Filtros > Avisos da semana: salvar as cidades escolhidas na semana (ligado) ou só olhar (desligado) */
+  const [weekSave, setWeekSave] = useState(true);
+  const [weekTemp, setWeekTemp] = useState<string[] | null>(null);
   const [lastWeek, setLastWeek] = useState<CycleWeek | null>(null);
 
   /* UI */
@@ -400,6 +469,7 @@ export default function HomePage() {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
   /* PWA install */
   const install = useInstallPrompt();
@@ -408,6 +478,30 @@ export default function HomePage() {
   const userId = session?.user.id ?? null;
   const { profile, portfolio, saveProfile, linkDoctor, routeOrder, saveRouteOrder } = useRepProfile(userId);
   const actorName = profile?.display_name?.trim() || session?.user.email?.split('@')[0] || 'App';
+  /** cidades de cada semana (avisos); não escondem médicos */
+  const weekCities = useWeekCities(userId);
+  /** médicos que EU tirei do meu painel (continuam na base e nos colegas) */
+  const hiddenDocs = useHiddenDoctors(userId);
+  /** aviso curto com "Desfazer" */
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const showToast = useCallback((text: string, undo?: () => void) => setToast({ id: Date.now(), text, undo }), []);
+  /** sino: avisos dos colegas (últimos 2 dias) */
+  const notif = useNotifications(userId);
+  const [showNotices, setShowNotices] = useState(false);
+
+  /* Primeiro acesso: "Confirme como os colegas te chamam". Fechar sem confirmar = pergunta de novo na próxima abertura. */
+  const [nameLater, setNameLater] = useState(false);
+  const [nameSaving, setNameSaving] = useState(false);
+  const nameConfirmed = Boolean(profile?.name_confirmed_at) || (userId ? getFlag(userId, 'name-confirmed') === '1' : false);
+  const needName = Boolean(userId && profile && !nameConfirmed && !nameLater);
+  const confirmName = async (fullName: string) => {
+    if (!userId) return;
+    setNameSaving(true);
+    setFlag(userId, 'name-confirmed', '1'); // reserva: sem a coluna v12 a pergunta não pode repetir
+    const ok = await saveProfile({ display_name: fullName, name_confirmed_at: new Date().toISOString() });
+    if (!ok) setFlag(userId, 'name-confirmed', null);
+    setNameSaving(false);
+  };
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -415,27 +509,43 @@ export default function HomePage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+      // "Manter conectado" desmarcado: ao fechar e abrir o app de novo, pede o login (menos no link de recuperação)
+      const fromLink = /type=recovery|access_token/.test(window.location.hash);
+      if (data.session && shouldSignOutOnReopen() && !fromLink) {
+        void supabase.auth.signOut();
+        setSession(null);
+      } else {
+        setSession(data.session);
+      }
       setAuthLoading(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_ev, s) => setSession(s));
+    const { data: listener } = supabase.auth.onAuthStateChange((ev, s) => {
+      if (ev === 'PASSWORD_RECOVERY') setRecovery(true);
+      setSession(s);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  /* Tema: Ônix (escuro, padrão) ou Marfim (claro). O layout já aplicou o salvo antes da pintura. */
+  /* Aparência: Escuro (Ônix), Claro (Marfim) ou Automático. O layout já aplicou o salvo antes da pintura. */
+  const [themePref, setThemePref] = useState<ThemePref>('onix');
   const [theme, setTheme] = useState<Theme>('onix');
   useEffect(() => {
-    if (document.documentElement.getAttribute('data-theme') === 'marfim') setTheme('marfim');
+    const pref = readThemePref();
+    setThemePref(pref);
+    setTheme(resolveTheme(pref));
   }, []);
-  const toggleTheme = () => {
-    const next: Theme = theme === 'onix' ? 'marfim' : 'onix';
-    setTheme(next);
-    document.documentElement.setAttribute('data-theme', next);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'marfim' ? '#F6F4EF' : '#0B0B0D');
-    try {
-      localStorage.setItem(THEME_KEY, next);
-    } catch { /* ignore */ }
+  const changeTheme = (pref: ThemePref) => {
+    setThemePref(pref);
+    setTheme(applyTheme(pref));
   };
+  // Automático: acompanha o aparelho enquanto o app está aberto
+  useEffect(() => {
+    if (themePref !== 'auto') return;
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const onChange = () => setTheme(applyTheme('auto'));
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [themePref]);
 
   /* App pronto: avisa o script de recuperação do layout (tela branca no iOS) */
   useEffect(() => {
@@ -459,6 +569,7 @@ export default function HomePage() {
       if (savedWeek && savedWeek.monday === mondayOf()) setActiveWeek(savedWeek.week);
       else {
         if (savedWeek) setLastWeek(savedWeek.week);
+        setWeekAuto(true);
         setWeekPrompt(true);
       }
     } catch { /* ignore */ }
@@ -466,12 +577,33 @@ export default function HomePage() {
 
   const changeActiveWeek = (week: CycleWeek | null) => {
     setActiveWeek(week);
-    setWeekPrompt(false);
     try {
       if (week) localStorage.setItem(ACTIVE_WEEK_KEY, JSON.stringify({ week, monday: mondayOf() }));
       else localStorage.removeItem(ACTIVE_WEEK_KEY);
     } catch { /* ignore */ }
+    // Cópia no servidor: é por ela que a função de avisos escolhe as cidades da semana
+    void saveProfile({ active_week: week, active_week_monday: week ? mondayOf() : null });
   };
+
+  /** Escolheu a semana: guarda e passa a mostrar só os médicos marcados nela */
+  const pickWeek = (week: CycleWeek) => {
+    changeActiveWeek(week);
+    changeWeek(week);
+  };
+
+  // Outro aparelho já respondeu "qual semana" nesta segunda-feira: segue a mesma
+  useEffect(() => {
+    if (!profile || activeWeek) return;
+    const w = normalizeCycleWeeks([Number(profile.active_week)])[0];
+    if (w && profile.active_week_monday === mondayOf()) {
+      setActiveWeek(w);
+      setWeekPrompt(false);
+      setWeekAuto(false);
+      try {
+        localStorage.setItem(ACTIVE_WEEK_KEY, JSON.stringify({ week: w, monday: mondayOf() }));
+      } catch { /* ignore */ }
+    }
+  }, [profile, activeWeek]);
 
   // App aberto na virada da semana: na segunda-feira a semana escolhida expira
   useEffect(() => {
@@ -480,6 +612,7 @@ export default function HomePage() {
     if (saved && saved.monday !== mondayOf()) {
       setLastWeek(saved.week);
       setActiveWeek(null);
+      setWeekAuto(true);
       setWeekPrompt(true);
     }
   }, [now, activeWeek]);
@@ -716,11 +849,13 @@ export default function HomePage() {
   /* ═══════════════════ Modo offline: fila + sincronização ═══════════════════ */
 
   /* Visitas do ciclo: cada representante tem as suas */
-  const { visitMap, profiles: repProfiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits } = useVisits(
+  const { ready: visitsReady, visitMap, profiles: repProfiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits } = useVisits(
     userId,
     accessToken,
     actorName,
   );
+  /* "Já visitou?": status meu que venceu e ainda não respondi */
+  const { pending: rawPrompts, resolve: resolvePrompt } = useVisitPrompts(userId);
 
   const offline = useOfflineQueue(
     userId,
@@ -851,12 +986,13 @@ export default function HomePage() {
 
   /* ═══════════════════ Cidades ═══════════════════ */
 
-  const cityOptions = useMemo(() => buildCityOptions(doctors.map((d) => d.cidade)), [doctors]);
+  /** os médicos do MEU painel: a base menos os que eu excluí daqui */
+  const panelDoctors = useMemo(() => doctors.filter((d) => !hiddenDocs.hidden.has(d.id)), [doctors, hiddenDocs.hidden]);
+  const cityOptions = useMemo(() => buildCityOptions(panelDoctors.map((d) => d.cidade)), [panelDoctors]);
   const cityComboOptions: ComboOption[] = useMemo(
     () => cityOptions.map((o) => ({ value: o.label, label: prettyCity(o.label), hint: String(o.count) })),
     [cityOptions],
   );
-  const cityLabels = useMemo(() => cityOptions.map((o) => o.label), [cityOptions]);
 
   /** Mantém dias_semana igual à agenda e grava a cidade na grafia oficial */
   const prepare = useCallback(
@@ -1030,18 +1166,32 @@ export default function HomePage() {
     [findDuplicate, prepare, session, actorName, fetchDoctors, setDoctorWeeks],
   );
 
-  const deleteDoctor = useCallback(
-    async (doc: Doctor) => {
-      if (!confirm(`Excluir ${doc.descricao}?`)) return;
-      setDoctors((prev) => prev.filter((d) => d.id !== doc.id));
-      const { error } = await supabase.from('doctors').delete().eq('id', doc.id);
-      if (error) {
-        console.error('Erro ao excluir médico:', error.message);
-        fetchDoctors();
-      }
+  /** Minhas semanas do ciclo para um médico */
+  const currentWeeksOf = useCallback((id: string): number[] => weeksByDoctor.get(id) ?? [], [weeksByDoctor]);
+
+  /** Novo médico com CRM que já existe: volta ao meu painel (se eu tinha excluído) e guarda só as MINHAS semanas */
+  const addToMyPanel = useCallback(
+    async (doc: Doctor, weeks: number[]): Promise<boolean> => {
+      const wasHidden = hiddenDocs.hidden.has(doc.id);
+      if (wasHidden) await hiddenDocs.unhide(doc.id);
+      const ok = await setDoctorWeeks(doc.id, weeks);
+      showToast(wasHidden ? `${doc.descricao} voltou para o seu painel.` : 'Semanas salvas.');
+      return ok;
     },
-    [fetchDoctors],
+    [hiddenDocs, setDoctorWeeks, showToast],
   );
+
+  /** "Excluir do meu painel": abre a pergunta; o médico continua na base e nos colegas */
+  const [deleteAsk, setDeleteAsk] = useState<Doctor | null>(null);
+  const deleteDoctor = useCallback((doc: Doctor) => setDeleteAsk(doc), []);
+  const confirmDelete = () => {
+    const doc = deleteAsk;
+    if (!doc) return;
+    setDeleteAsk(null);
+    setSheetId((cur) => (cur === doc.id ? null : cur));
+    void hiddenDocs.hide(doc.id);
+    showToast(`${doc.descricao} saiu do seu painel.`, () => void hiddenDocs.unhide(doc.id));
+  };
 
   const isInPortfolio = useCallback((doctorId: string) => portfolio.has(doctorId), [portfolio]);
 
@@ -1070,7 +1220,7 @@ export default function HomePage() {
     return out;
   }, [statusMap, now]);
 
-  const newCount = useMemo(() => doctors.filter((d) => isNewDoctor(d)).length, [doctors]);
+  const newCount = useMemo(() => panelDoctors.filter((d) => isNewDoctor(d)).length, [panelDoctors]);
 
   const mySpecialties = profile?.specialties ?? [];
   const portfolioConfigured = mySpecialties.length > 0 || portfolio.size > 0;
@@ -1083,12 +1233,12 @@ export default function HomePage() {
 
   /** Marca/desfaz "Visitado". Com semana ativa, o médico entra nela e fica na sequência da visita. */
   const toggleCycleVisit = useCallback(
-    (doctorId: string, visited: boolean) => {
+    (doctorId: string, visited: boolean, visitedAt?: string) => {
       if (!visited) {
         void undoVisited(doctorId);
         return;
       }
-      void markVisited(doctorId);
+      void markVisited(doctorId, visitedAt);
       clearAttendanceStatuses(doctorId);
 
       if (activeWeek) {
@@ -1108,20 +1258,28 @@ export default function HomePage() {
   );
 
   /** Novo ciclo: zera só os "Visitado" deste representante (semanas, ordem da rota e horários médios ficam) */
-  const renewCycle = useCallback(async () => {
+  const renewCycle = useCallback(() => {
     if (!sessionUserId) return;
-    const ok = confirm(
-      'Renovar o ciclo de visitas? Só as SUAS visitas voltam para pendente; as dos outros representantes não mudam. Semanas e ordem da rota continuam iguais.',
-    );
-    if (!ok) return;
+    setRenewAsk({}); // abre "Começar um novo ciclo?"; renewMine roda ao confirmar
+  }, [sessionUserId]);
+
+  const confirmRenew = async () => {
+    setRenewBusy(true);
     const done = await renewMine();
-    if (!done) alert('Não foi possível renovar o ciclo. Tente novamente.');
-  }, [sessionUserId, renewMine]);
+    setRenewBusy(false);
+    if (!done) {
+      alert('Não foi possível renovar o ciclo. Tente novamente.');
+      return;
+    }
+    const then = renewAsk?.then;
+    setRenewAsk(null);
+    then?.();
+  };
 
   /** Médicos com as semanas DESTE representante */
   const doctorsWithWeeks = useMemo(
-    () => doctors.map((d) => ({ ...d, cycle_weeks: weeksByDoctor.get(d.id) ?? [] })),
-    [doctors, weeksByDoctor],
+    () => panelDoctors.map((d) => ({ ...d, cycle_weeks: weeksByDoctor.get(d.id) ?? [] })),
+    [panelDoctors, weeksByDoctor],
   );
 
   const filteredDoctors = useMemo(() => {
@@ -1166,13 +1324,13 @@ export default function HomePage() {
   const cityDayCounts = useMemo(() => {
     if (!selectedTab || selectedTab === 'novos') return undefined;
     const out: Record<string, number> = {};
-    for (const d of doctors) {
+    for (const d of panelDoctors) {
       if (!getAgenda(d).some((e) => e.day === selectedTab)) continue;
       const k = cityKey(d.cidade);
       out[k] = (out[k] ?? 0) + 1;
     }
     return out;
-  }, [doctors, selectedTab]);
+  }, [panelDoctors, selectedTab]);
   const dayLongLabel = selectedTab ? DAY_LONG[selectedTab] : undefined;
 
   /** Sugestões ao digitar: acha em TODOS os médicos (não só no dia aberto) e leva direto à ficha */
@@ -1259,9 +1417,13 @@ export default function HomePage() {
   const applyMiddleOrder = useCallback(
     (visible: string[]) => {
       // Os médicos fora da lista visível (filtro, visitados, em atendimento) ficam no lugar salvo
-      void saveRouteOrder(manualKey, mergeVisibleOrder(manualOrder, visible));
+      const previous = manualOrder ?? [];
+      const next = mergeVisibleOrder(manualOrder, visible);
+      if (next.join(',') === previous.join(',')) return;
+      void saveRouteOrder(manualKey, next);
+      showToast('Ordem salva só no seu painel.', () => void saveRouteOrder(manualKey, previous));
     },
-    [manualOrder, manualKey, saveRouteOrder],
+    [manualOrder, manualKey, saveRouteOrder, showToast],
   );
 
   /* Arrastar e soltar (só no bloco do meio, modo manual) */
@@ -1473,6 +1635,161 @@ export default function HomePage() {
     if (targetDoc) setSheetId(targetDoc.id);
   };
 
+  /* ═══════════════════ "Já visitou?" (status vencido) ═══════════════════
+   * Fila de perguntas: uma de cada vez, e a janela bloqueia o app até responder.
+   * Saem da fila sem perguntar: médico que não existe mais no painel e quem já visitou depois de marcar.
+   */
+  const promptQueue = useMemo<VisitPrompt[]>(() => {
+    if (doctors.length === 0 || !visitsReady) return []; // espera médicos e visitas carregarem
+    const byId = new Set(panelDoctors.map((d) => d.id));
+    return rawPrompts.filter((p) => byId.has(p.doctor_id) && !alreadyVisited(p, myVisits));
+  }, [rawPrompts, doctors.length, panelDoctors, myVisits, visitsReady]);
+
+  useEffect(() => {
+    if (doctors.length === 0 || !visitsReady) return;
+    const byId = new Set(panelDoctors.map((d) => d.id));
+    for (const p of rawPrompts) {
+      if (!byId.has(p.doctor_id) || alreadyVisited(p, myVisits)) void resolvePrompt(p);
+    }
+  }, [rawPrompts, doctors.length, panelDoctors, myVisits, visitsReady, resolvePrompt]);
+
+  /* "Tudo enviado": aparece por alguns segundos quando a fila offline esvazia */
+  const [syncedFlash, setSyncedFlash] = useState(false);
+  const prevPending = useRef(0);
+  useEffect(() => {
+    if (prevPending.current > 0 && offline.pending === 0 && offline.online) {
+      prevPending.current = 0;
+      setSyncedFlash(true);
+      const t = setTimeout(() => setSyncedFlash(false), 3500);
+      return () => clearTimeout(t);
+    }
+    prevPending.current = offline.pending;
+  }, [offline.pending, offline.online]);
+
+  /** Limpa todos os filtros da lista (mesmo botão "Limpar" dos Filtros) */
+  const clearFilters = () => {
+    setSelectedCities([]);
+    changeWeek(null);
+    setSelectedCategory(null);
+    setTurnoFilter(null);
+    changeSortMode('manual');
+  };
+
+  /* ═══════════════════ Sino: avisos dos colegas ═══════════════════
+   * Só das cidades da semana (sem cidades escolhidas, mostra todas). Médico que saiu do painel não aparece.
+   */
+  const noticeItems = useMemo<NoticeItem[]>(() => {
+    const byId = new Map(panelDoctors.map((d) => [d.id, d]));
+    const picked = activeWeek ? weekCities.byWeek[activeWeek] ?? [] : [];
+    const set = picked.length > 0 ? new Set(picked) : null;
+    const readMs = notif.readAt ? new Date(notif.readAt).getTime() : Number.POSITIVE_INFINITY;
+    return notif.rows.flatMap((r): NoticeItem[] => {
+      const d = byId.get(r.doctor_id);
+      if (!d) return [];
+      if (set && !set.has(cityKey(d.cidade))) return [];
+      const rep = repProfiles[r.created_by ?? '']?.display_name?.trim() || r.rep_name?.trim() || '';
+      return [
+        {
+          id: r.id,
+          doctorId: d.id,
+          type: r.status_type,
+          at: r.event_at,
+          doctorName: d.descricao,
+          place: [d.complemento || 'Consultório próprio', d.cidade].filter(Boolean).join(' · '),
+          repName: rep,
+          unread: new Date(r.event_at).getTime() > readMs,
+        },
+      ];
+    });
+  }, [notif.rows, notif.readAt, panelDoctors, activeWeek, weekCities.byWeek, repProfiles]);
+  const unreadNotices = noticeItems.filter((n) => n.unread).length;
+
+  // Ao abrir o sino, busca de novo para não mostrar a lista de um minuto atrás
+  const refetchNotices = notif.refetch;
+  useEffect(() => {
+    if (showNotices) void refetchNotices();
+  }, [showNotices, refetchNotices]);
+
+  /* ═══════════════════ Tutorial (primeiro acesso) ═══════════════════
+   * Abre depois de tudo que é pergunta (nome, semana e avisos, "Já visitou?"), uma vez por usuário.
+   */
+  const tourSeen = Boolean(profile?.tour_seen_at) || (userId ? getFlag(userId, 'tour-seen') === '1' : false);
+  useEffect(() => {
+    if (tourOpen || tourDismissed || tourSeen) return;
+    if (!userId || !profile || doctors.length === 0) return;
+    if (needName || weekPrompt || renewAsk || promptQueue.length > 0 || sheetId || showProfile) return;
+    setTourOpen(true);
+  }, [tourOpen, tourDismissed, tourSeen, userId, profile, doctors.length, needName, weekPrompt, renewAsk, promptQueue.length, sheetId, showProfile]);
+
+  const endTour = () => {
+    setTourOpen(false);
+    setTourDismissed(true);
+    if (!userId) return;
+    setFlag(userId, 'tour-seen', '1'); // reserva: sem a coluna v12 não pode repetir
+    void saveProfile({ tour_seen_at: new Date().toISOString() });
+  };
+
+  /* ═══════════════════ Avisos por semana ═══════════════════ */
+  const weekCityList = (w: number): string[] => weekCities.byWeek[w] ?? [];
+  /** sugestão: cidades dos médicos marcados naquela semana */
+  const defaultWeekCities = (w: number): string[] => {
+    const keys = new Set<string>();
+    for (const d of panelDoctors) {
+      if (d.cidade && weeksByDoctor.get(d.id)?.includes(w as CycleWeek)) keys.add(cityKey(d.cidade));
+    }
+    return [...keys];
+  };
+  const saveWeekAlerts = async (week: CycleWeek, v: { notify: boolean; cities: string[] }): Promise<string | null> => {
+    if (!userId) return 'Entre na sua conta para salvar.';
+    await weekCities.save(week, v.cities);
+    void saveProfile({ notify_enabled: v.notify });
+    if (v.notify) {
+      if (getPushSupport() === 'unsupported') {
+        return 'Este aparelho não suporta avisos. No iPhone, instale o app na Tela de Início primeiro.';
+      }
+      const first = v.cities[0];
+      const label = cityOptions.find((o) => o.value === first)?.label ?? first;
+      const r = await subscribeToCity(userId, label);
+      if (!r.ok) return r.message;
+    } else {
+      await unsubscribePush();
+    }
+    return null;
+  };
+
+  /** Interruptor "Avisos dos colegas" do perfil: usa as cidades da semana ativa */
+  const toggleNotify = async (on: boolean): Promise<string | null> => {
+    if (!activeWeek) return 'Escolha a semana de trabalho primeiro.';
+    const saved = weekCityList(activeWeek);
+    const cities = saved.length > 0 ? saved : defaultWeekCities(activeWeek);
+    if (on && cities.length === 0) return 'Escolha pelo menos uma cidade primeiro.';
+    return saveWeekAlerts(activeWeek, { notify: on, cities });
+  };
+
+  /** perguntas já respondidas nesta rodada (para "1 de 2 perguntas") */
+  const [answeredRound, setAnsweredRound] = useState(0);
+  useEffect(() => {
+    if (promptQueue.length === 0) setAnsweredRound(0);
+  }, [promptQueue.length]);
+
+  const answerVisited = (p: VisitPrompt) => {
+    const doc = doctors.find((d) => d.id === p.doctor_id);
+    setAnsweredRound((n) => n + 1);
+    if (doc && (['psm', 'samu', 'hospital'] as const).some((c) => matchesLocation(doc, c))) {
+      // PSM/SAMU/Hospital: a visita é do dia (plantão), como no botão Visitado desses locais
+      void setDoctorStatus(doc.id, 'visitado_hoje');
+      clearAttendanceStatuses(doc.id);
+    } else if (doc) {
+      // visita do ciclo, com a hora em que o representante marcou que estava lá
+      toggleCycleVisit(doc.id, true, p.created_at);
+    }
+    void resolvePrompt(p);
+  };
+  const answerNotYet = (p: VisitPrompt) => {
+    setAnsweredRound((n) => n + 1);
+    void resolvePrompt(p);
+  };
+
   const activeFilterCount =
     (selectedCities.length > 0 ? 1 : 0) +
     (selectedWeek ? 1 : 0) +
@@ -1499,6 +1816,7 @@ export default function HomePage() {
         cityOptions={cityComboOptions}
         expected={sortMode === 'historico' ? feed.expected.get(doc.id) ?? null : null}
         onDragHandleTouchStart={manual ? startTouchDrag : undefined}
+        routeNumber={pos !== undefined ? pos + 1 : undefined}
         cycleVisitedAt={isCategoryMode ? null : cycleVisits.get(doc.id) ?? null}
         visitors={isCategoryMode ? undefined : visitorsFor(doc.id)}
         presence={presenceFor(doc.id)}
@@ -1559,6 +1877,17 @@ export default function HomePage() {
     return <LoginScreen />;
   }
 
+  if (recovery) {
+    return (
+      <NewPasswordScreen
+        onDone={() => {
+          setRecovery(false);
+          window.history.replaceState(null, '', window.location.pathname);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-100">
       {/* Cabeçalho: título, busca, filtros recolhidos e dias */}
@@ -1567,7 +1896,11 @@ export default function HomePage() {
           <div className="flex flex-col gap-0.5 min-w-0">
             <button
               type="button"
-              onClick={() => setWeekPrompt(true)}
+              data-tour="week"
+              onClick={() => {
+                setWeekAuto(false);
+                setWeekPrompt(true);
+              }}
               className="self-start bg-transparent border-0 p-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 truncate hover:text-slate-200"
             >
               {dayLabel}
@@ -1580,21 +1913,13 @@ export default function HomePage() {
                 title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 8 s)'}
                 className={`size-2 rounded-full ${realtimeOn ? 'bg-emerald-500' : 'bg-slate-600'}`}
               />
-              {(!offline.online || offline.pending > 0) && (
-                <span
-                  role="status"
-                  className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold tracking-normal text-amber-400"
-                >
-                  {!offline.online ? 'Sem internet' : offline.syncing ? 'Enviando' : 'Pendente'}
-                  {offline.pending > 0 && ` · ${offline.pending} ${offline.pending === 1 ? 'alteração' : 'alterações'}`}
-                </span>
-              )}
             </h1>
           </div>
           <div className="flex gap-1.5 items-center">
             <button
               type="button"
               onClick={() => setShowAddForm((p) => !p)}
+              data-tour="add"
               aria-label="Novo médico"
               className="size-10 shrink-0 rounded-full border-0 bg-blue-600 text-white flex items-center justify-center hover:bg-blue-500"
             >
@@ -1604,23 +1929,32 @@ export default function HomePage() {
             </button>
             <button
               type="button"
-              onClick={toggleTheme}
-              aria-label={theme === 'onix' ? 'Mudar para o tema claro' : 'Mudar para o tema escuro'}
-              title={theme === 'onix' ? 'Tema claro (Marfim)' : 'Tema escuro (Ônix)'}
-              className={iconBtn}
+              onClick={() => setShowGuide(true)}
+              data-tour="help"
+              aria-label="Guia de cores e status"
+              title="Guia de cores e status"
+              className={`${iconBtn} text-base font-bold`}
             >
-              {theme === 'onix' ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-                </svg>
+              ?
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNotices(true)}
+              data-tour="bell"
+              aria-label={unreadNotices > 0 ? `Avisos dos colegas, ${unreadNotices} não lidos` : 'Avisos dos colegas'}
+              className={`${iconBtn} relative`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8" />
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+              </svg>
+              {unreadNotices > 0 && (
+                <span className="absolute -right-1 -top-1 flex min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-[18px] text-white">
+                  {unreadNotices > 9 ? '9+' : unreadNotices}
+                </span>
               )}
             </button>
-            <button type="button" onClick={() => setShowProfile(true)} aria-label="Meu perfil" className={iconBtn}>
+            <button type="button" onClick={() => setShowProfile(true)} data-tour="profile" aria-label="Meu perfil" className={iconBtn}>
               {profile?.avatar_url ? (
                 <RepAvatar name={actorName} src={profile.avatar_url} size={34} />
               ) : (
@@ -1635,7 +1969,7 @@ export default function HomePage() {
 
         {/* Busca + botão de filtros */}
         <div className="flex gap-2">
-          <label className="flex-1 min-w-0 flex items-center gap-2 h-11 px-3.5 rounded-xl border border-slate-800 bg-slate-900">
+          <label data-tour="search" className="flex-1 min-w-0 flex items-center gap-2 h-11 px-3.5 rounded-xl border border-slate-800 bg-slate-900">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-slate-400" aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
@@ -1682,6 +2016,7 @@ export default function HomePage() {
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
+            data-tour="filters"
             aria-expanded={showFilters}
             className={`h-11 px-3.5 shrink-0 rounded-xl border flex items-center gap-1.5 text-sm font-medium ${
               showFilters ? 'border-blue-600 bg-slate-900 text-white' : 'border-slate-800 bg-slate-900 text-slate-200'
@@ -1761,7 +2096,7 @@ export default function HomePage() {
         )}
 
         {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+        <div data-tour="days" className="flex gap-1.5 overflow-x-auto no-scrollbar">
           {TABS_NAVEGACAO.filter((tab) => tab.value !== 'novos').map((tab) => (
             <button
               key={tab.value}
@@ -1804,13 +2139,7 @@ export default function HomePage() {
                 {activeFilterCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedCities([]);
-                      changeWeek(null);
-                      setSelectedCategory(null);
-                      setTurnoFilter(null);
-                      changeSortMode('manual');
-                    }}
+                    onClick={clearFilters}
                     className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-4 text-sm font-medium text-slate-300 hover:text-red-400"
                   >
                     Limpar
@@ -1836,6 +2165,48 @@ export default function HomePage() {
                 dayLabel={dayLongLabel}
               />
             </div>
+
+            {activeWeek && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  Avisos da {activeWeek}ª semana
+                </span>
+                <CityFilter
+                  pickMode
+                  options={cityOptions}
+                  selected={weekTemp ?? weekCityList(activeWeek)}
+                  onChange={(keys) => {
+                    if (weekSave) {
+                      setWeekTemp(null);
+                      void weekCities.save(activeWeek, keys);
+                    } else {
+                      setWeekTemp(keys);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={weekSave}
+                  onClick={() => {
+                    if (!weekSave && weekTemp) {
+                      void weekCities.save(activeWeek, weekTemp);
+                      setWeekTemp(null);
+                    }
+                    setWeekSave((v) => !v);
+                  }}
+                  className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900 px-3.5 text-left"
+                >
+                  <span className="text-sm text-slate-100">Salvar na {activeWeek}ª semana</span>
+                  <span aria-hidden="true" className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${weekSave ? 'bg-blue-600' : 'bg-slate-600'}`}>
+                    <span className={`absolute top-0.5 size-5 rounded-full bg-white transition-all ${weekSave ? 'left-[18px]' : 'left-0.5'}`} />
+                  </span>
+                </button>
+                <span className="text-xs text-slate-500">
+                  São as cidades de onde você recebe avisos dos colegas. Elas não escondem médicos da lista.
+                </span>
+              </div>
+            )}
 
             <div className="flex flex-col gap-1.5">
               <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Semana do ciclo</span>
@@ -1872,6 +2243,8 @@ export default function HomePage() {
                     {f.label}
                   </button>
                 ))}
+                {/* Sem especialidades no perfil por enquanto: o botão só aparece para quem já tem carteira configurada */}
+                {(portfolioConfigured || portfolioActive) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -1889,6 +2262,7 @@ export default function HomePage() {
                 >
                   {portfolioActive ? 'Minha carteira' : 'Todos'}
                 </button>
+                )}
               </div>
             </div>
 
@@ -1925,6 +2299,8 @@ export default function HomePage() {
             </div>
           </BottomSheet>
         )}
+      
+        <ConnectionBanner online={offline.online} pending={offline.pending} syncing={offline.syncing} justSynced={syncedFlash} />
       </header>
 
       {/* Install Banner */}
@@ -1932,25 +2308,44 @@ export default function HomePage() {
 
       {/* Perfil */}
       {showProfile && profile && userId && (
-        <ProfileSettings
-          userId={userId}
+        <ProfileSheet
+          name={profile.display_name ?? ''}
           email={session.user.email ?? ''}
-          profile={profile}
-          cities={cityLabels}
-          onSave={saveProfile}
-          onClose={() => setShowProfile(false)}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          onLogout={handleLogout}
-          portfolioActive={portfolioActive}
-          onTogglePortfolio={() => saveProfile({ show_all: !profile.show_all })}
-          activeWeekLabel={activeWeek ? cycleWeekLabel(activeWeek) : null}
-          onChangeWeek={() => {
-            setShowProfile(false);
-            setWeekPrompt(true);
+          avatarUrl={profile.avatar_url ?? null}
+          activeWeek={activeWeek}
+          cityOptions={cityOptions}
+          weekCities={activeWeek ? weekCityList(activeWeek) : []}
+          onCitiesChange={(keys) => {
+            if (activeWeek) void weekCities.save(activeWeek, keys);
           }}
           cycleVisitedCount={cycleVisits.size}
+          notifyOn={profile.notify_enabled !== false}
+          themePref={themePref}
+          onChangeWeek={() => {
+            setShowProfile(false);
+            setWeekAuto(false);
+            setWeekPrompt(true);
+          }}
           onRenewCycle={renewCycle}
+          onToggleNotify={toggleNotify}
+          onThemeChange={changeTheme}
+          onOpenGuide={() => setShowGuide(true)}
+          onReplayTour={() => {
+            setShowProfile(false);
+            setTourOpen(true);
+          }}
+          onEditProfile={() => setShowEditProfile(true)}
+          onLogout={handleLogout}
+          onClose={() => setShowProfile(false)}
+        />
+      )}
+      {showEditProfile && profile && (
+        <EditProfileSheet
+          email={session.user.email ?? ''}
+          name={profile.display_name ?? ''}
+          avatarUrl={profile.avatar_url ?? null}
+          onSave={saveProfile}
+          onClose={() => setShowEditProfile(false)}
         />
       )}
 
@@ -1961,8 +2356,9 @@ export default function HomePage() {
           <AddDoctorForm
             embedded
             onAdd={addDoctor}
-            onLinkPortfolio={linkDoctor}
-            isInPortfolio={isInPortfolio}
+            onAddToPanel={addToMyPanel}
+            isHidden={(id) => hiddenDocs.hidden.has(id)}
+            currentWeeks={currentWeeksOf}
             onCancel={() => setShowAddForm(false)}
             cityOptions={cityComboOptions}
             findDuplicate={findDuplicate}
@@ -2040,7 +2436,38 @@ export default function HomePage() {
         {/* Cards em 3 blocos */}
         <FeedErrorBoundary resetKey={resumeTick}>
         {sortedDoctors.length === 0 && !loading ? (
-          <div className="text-center text-slate-500 text-sm py-12">Nenhum médico encontrado para o filtro selecionado.</div>
+          searchQuery.trim() ? (
+            <EmptyState
+              icon="🔎"
+              title={`Nenhum resultado para “${searchQuery.trim()}”`}
+              text="Confira a grafia ou tente outro termo (nome, CRM, bairro, telefone)."
+              action={{
+                label: 'Limpar busca',
+                onClick: () => {
+                  setSearchQuery('');
+                  setSearchScope('tudo');
+                },
+              }}
+            />
+          ) : panelDoctors.length === 0 ? (
+            <EmptyState
+              icon="🩺"
+              title="Seu painel está vazio"
+              text={
+                doctors.length > 0
+                  ? 'Você tirou todos os médicos do seu painel. Digite o CRM em Novo médico para trazer de volta.'
+                  : 'Cadastre o primeiro médico no botão +.'
+              }
+              action={{ label: 'Novo médico', onClick: () => setShowAddForm(true) }}
+            />
+          ) : (
+            <EmptyState
+              icon="📅"
+              title={selectedTab && selectedTab !== 'novos' ? `Nenhum médico na ${dayLongLabel}` : 'Nenhum médico para hoje'}
+              text={activeFilterCount > 0 ? 'Há filtros ligados. Limpe os filtros para ver mais médicos.' : 'Veja outro dia da semana.'}
+              action={activeFilterCount > 0 ? { label: 'Limpar filtros', onClick: clearFilters } : undefined}
+            />
+          )
         ) : (
           <>
             {topDoctors.length > 0 && (
@@ -2094,7 +2521,8 @@ export default function HomePage() {
 
             {visitedList.length > 0 && (
               <CollapsibleTitle
-                title="Visitados"
+                title="Visitados hoje"
+                variant="visited"
                 count={visitedList.length}
                 open={bottomShown}
                 onToggle={toggleBottomOpen}
@@ -2159,9 +2587,8 @@ export default function HomePage() {
                 onClick={openTargetStatus}
                 className="h-[52px] rounded-2xl border border-slate-700 bg-slate-800 text-slate-100 text-sm font-semibold flex flex-col items-center justify-center gap-0.5"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="8" />
-                  <path d="M12 8v4l2.5 2" />
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />
                 </svg>
                 Status
               </button>
@@ -2170,61 +2597,62 @@ export default function HomePage() {
         </nav>
       )}
 
-      {/* Pergunta da semana: abre no começo de cada semana (segunda-feira) */}
-      {weekPrompt && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 animate-[fade-in_.18s_ease-out]">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="week-prompt-title"
-            className="w-full sm:max-w-md rounded-t-[28px] sm:rounded-[28px] border-t sm:border border-slate-700 bg-slate-900 px-5 pt-6 flex flex-col gap-4 animate-[sheet-up_.24s_cubic-bezier(.2,.8,.2,1)]"
-            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 20px)' }}
-          >
-            <div className="flex flex-col gap-1">
-              <h2 id="week-prompt-title" className="m-0 text-xl font-bold tracking-tight text-white">
-                Qual semana você está visitando esta semana?
-              </h2>
-              <span className="text-sm text-slate-400">
-                Fica salvo até a próxima segunda-feira. Os médicos que você marcar como visitados entram nessa semana.
-              </span>
-            </div>
-            <div className="grid grid-cols-5 gap-2">
-              {CYCLE_WEEKS.map((w) => {
-                const suggested = !activeWeek && lastWeek !== null && w === ((lastWeek % 5) + 1);
-                const current = activeWeek === w;
-                return (
-                  <button
-                    key={w}
-                    type="button"
-                    onClick={() => changeActiveWeek(w)}
-                    aria-pressed={current}
-                    className={`h-16 rounded-2xl text-sm font-bold flex flex-col items-center justify-center gap-0.5 ${
-                      current || suggested
-                        ? 'border-0 bg-blue-600 text-white'
-                        : 'border border-slate-700 bg-slate-800 text-slate-100'
-                    }`}
-                  >
-                    <span className="text-lg leading-none">{w}ª</span>
-                    <span className="text-[10px] font-medium opacity-80">{suggested ? 'sugerida' : 'Sem'}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              onClick={() => setWeekPrompt(false)}
-              className="h-11 rounded-xl border border-slate-700 bg-transparent text-sm text-slate-300 hover:text-white"
-            >
-              {activeWeek ? 'Fechar' : 'Agora não'}
-            </button>
-          </div>
-        </div>
+      {/* Semana do ciclo → aviso de ciclo → avisos dos colegas (abre sozinho no primeiro acesso de cada segunda) */}
+      {weekPrompt && !needName && (
+        <WeekSetupFlow
+          activeWeek={activeWeek}
+          lastWeek={lastWeek}
+          auto={weekAuto}
+          cityOptions={cityOptions}
+          savedCities={weekCityList}
+          defaultCities={defaultWeekCities}
+          notifyInitial={profile?.notify_enabled !== false}
+          onPickWeek={pickWeek}
+          onRequestRenew={(then) => setRenewAsk({ then })}
+          onSaveAlerts={saveWeekAlerts}
+          onClose={() => {
+            setWeekPrompt(false);
+            setWeekAuto(false);
+          }}
+        />
+      )}
+
+      {/* Excluir do meu painel */}
+      {deleteAsk && (
+        <ConfirmSheet
+          title="Excluir do painel"
+          confirmLabel="Sim, excluir do meu painel"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteAsk(null)}
+        >
+          <p className="m-0 text-base font-semibold uppercase text-slate-50">Excluir {deleteAsk.descricao} do seu painel?</p>
+          <p className="m-0">
+            O médico continua na base e no painel dos colegas. Para voltar, cadastre o mesmo CRM em Novo médico e toque em
+            &quot;Adicionar ao meu painel&quot;.
+          </p>
+        </ConfirmSheet>
+      )}
+
+      {/* Confirmação de renovar o ciclo */}
+      {renewAsk && (
+        <ConfirmSheet
+          title="Começar um novo ciclo?"
+          confirmLabel="Sim, começar"
+          busy={renewBusy}
+          onConfirm={() => void confirmRenew()}
+          onCancel={() => setRenewAsk(null)}
+        >
+          <p className="m-0">
+            As <strong className="text-slate-100">suas</strong> visitas voltam para pendente. As dos colegas não mudam, e o histórico fica guardado.
+          </p>
+          <p className="m-0 text-slate-400">A ordem da rota e as semanas dos médicos continuam iguais.</p>
+        </ConfirmSheet>
       )}
 
       {/* Status geral: médicos marcados por qualquer representante, agrupados pelo status */}
       {showStatusOverview && (
         <StatusOverview
-          doctors={doctors}
+          doctors={panelDoctors}
           statusMap={liveStatusMap}
           profiles={repProfiles}
           myId={sessionUserId}
@@ -2262,6 +2690,57 @@ export default function HomePage() {
             void deleteDoctor(sheetDoc);
           }}
           onClose={closeSheet}
+        />
+      )}
+
+      {/* Aviso com "Desfazer" */}
+      {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
+
+      {/* Sino: avisos dos colegas */}
+      {showNotices && (
+        <NotificationsSheet
+          items={noticeItems}
+          now={now}
+          allCities={!(activeWeek && weekCityList(activeWeek).length > 0)}
+          onOpenDoctor={(id) => setSheetId(id)}
+          onMarkAllRead={notif.markAllRead}
+          onClose={() => setShowNotices(false)}
+        />
+      )}
+
+      {/* Guia de cores e status */}
+      {showGuide && <StatusGuide onClose={() => setShowGuide(false)} />}
+
+      {/* Dicas da tela inicial (primeiro acesso ou "Rever o tutorial") */}
+      {tourOpen && <Tour onFinish={endTour} onSkip={endTour} />}
+
+      {/* Primeiro acesso: como os colegas te chamam */}
+      {needName && session && (
+        <NameConfirmSheet
+          suggested={suggestName(
+            profile?.display_name,
+            (session.user as { user_metadata?: { full_name?: string; name?: string } }).user_metadata?.full_name ??
+              (session.user as { user_metadata?: { name?: string } }).user_metadata?.name,
+            session.user.email,
+          )}
+          avatarUrl={profile?.avatar_url}
+          saving={nameSaving}
+          onConfirm={(n) => void confirmName(n)}
+          onLater={() => setNameLater(true)}
+        />
+      )}
+
+      {/* "Já visitou?": bloqueia o uso até responder; uma pergunta de cada vez */}
+      {promptQueue[0] && (
+        <VisitPromptModal
+          key={promptQueue[0].id}
+          doctorName={doctors.find((d) => d.id === promptQueue[0].doctor_id)?.descricao ?? ''}
+          statusLabel={STATUS_META[promptQueue[0].status_type].label}
+          startedAt={formatTime(promptQueue[0].created_at)}
+          endedAt={formatTime(promptQueue[0].expires_at)}
+          counter={roundLabel(answeredRound, promptQueue.length)}
+          onYes={() => answerVisited(promptQueue[0])}
+          onNo={() => answerNotYet(promptQueue[0])}
         />
       )}
 

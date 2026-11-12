@@ -87,6 +87,14 @@ export function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] || name;
 }
 
+/** "Nestor Henrique" -> "Nestor H." (nome + inicial do último sobrenome); só o nome se não houver sobrenome */
+export function shortName(name: string | null | undefined): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}.`;
+}
+
 /** Iniciais para o avatar sem foto (até 2 letras) */
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -152,7 +160,7 @@ export function presenceItems(
       out.push({
         key: `o:${s.id}`,
         kind: 'office',
-        name: firstName(p?.display_name?.trim() || s.rep_name?.trim() || 'Representante'),
+        name: shortName(p?.display_name?.trim() || s.rep_name?.trim() || 'Representante'),
         at: s.created_at,
         isMe: Boolean(myId) && s.created_by === myId,
         avatarUrl: p?.avatar_url ?? null,
@@ -162,7 +170,7 @@ export function presenceItems(
   const visits: PresenceItem[] = (visitors ?? []).map((v) => ({
     key: `v:${v.userId}`,
     kind: 'visit',
-    name: firstName(v.name),
+    name: shortName(v.name),
     at: v.visitedAt,
     isMe: v.isMe,
     avatarUrl: v.avatarUrl,
@@ -174,7 +182,7 @@ export function presenceItems(
         visits.push({
           key: `d:${s.id}`,
           kind: 'visit',
-          name: firstName(profiles?.[s.created_by]?.display_name?.trim() || s.rep_name?.trim() || 'Representante'),
+          name: shortName(profiles?.[s.created_by]?.display_name?.trim() || s.rep_name?.trim() || 'Representante'),
           at: s.created_at,
           isMe: Boolean(myId) && s.created_by === myId,
           avatarUrl: profiles?.[s.created_by]?.avatar_url ?? null,
