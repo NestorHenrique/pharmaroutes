@@ -1164,6 +1164,21 @@ export default function HomePage() {
     [findDuplicate, prepare, session, actorName, fetchDoctors, setDoctorWeeks],
   );
 
+  /** Minhas semanas do ciclo para um médico */
+  const currentWeeksOf = useCallback((id: string): number[] => weeksByDoctor.get(id) ?? [], [weeksByDoctor]);
+
+  /** Novo médico com CRM que já existe: volta ao meu painel (se eu tinha excluído) e guarda só as MINHAS semanas */
+  const addToMyPanel = useCallback(
+    async (doc: Doctor, weeks: number[]): Promise<boolean> => {
+      const wasHidden = hiddenDocs.hidden.has(doc.id);
+      if (wasHidden) await hiddenDocs.unhide(doc.id);
+      const ok = await setDoctorWeeks(doc.id, weeks);
+      showToast(wasHidden ? `${doc.descricao} voltou para o seu painel.` : 'Semanas salvas.');
+      return ok;
+    },
+    [hiddenDocs, setDoctorWeeks, showToast],
+  );
+
   /** "Excluir do meu painel": abre a pergunta; o médico continua na base e nos colegas */
   const [deleteAsk, setDeleteAsk] = useState<Doctor | null>(null);
   const deleteDoctor = useCallback((doc: Doctor) => setDeleteAsk(doc), []);
@@ -2323,8 +2338,9 @@ export default function HomePage() {
           <AddDoctorForm
             embedded
             onAdd={addDoctor}
-            onLinkPortfolio={linkDoctor}
-            isInPortfolio={isInPortfolio}
+            onAddToPanel={addToMyPanel}
+            isHidden={(id) => hiddenDocs.hidden.has(id)}
+            currentWeeks={currentWeeksOf}
             onCancel={() => setShowAddForm(false)}
             cityOptions={cityComboOptions}
             findDuplicate={findDuplicate}

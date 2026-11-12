@@ -10,7 +10,7 @@ interface AgendaEditorProps {
   onChange: (next: AgendaEntry[]) => void;
 }
 
-/** Seleciona os dias e, para cada dia marcado, o turno (Manhã, Tarde, Integral, Noite) */
+/** Seleciona os dias e, para cada dia marcado, o turno (Manhã, Tarde, Integral) */
 export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
   const agenda = sortAgenda(value || []);
   const selected = new Map(agenda.map((e) => [e.day, e.shift]));
@@ -54,7 +54,7 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
             <div key={e.day} className="flex items-center gap-1.5">
               <span className="w-9 shrink-0 text-xs font-bold text-slate-200">{dayLabel(e.day)}</span>
               <div className="flex flex-1 gap-1">
-                {OPCOES_SHIFT.map((s) => {
+                {OPCOES_SHIFT.filter((s) => s.value !== 'NOITE' || e.shift === 'NOITE').map((s) => {
                   const active = e.shift === s.value;
                   return (
                     <button
