@@ -199,10 +199,15 @@ export async function sendTestPush(): Promise<{ ok: boolean; message: string }> 
 }
 
 /** Dispara o push para a cidade do médico (falha silenciosa: o status já foi salvo) */
-export async function notifyCity(doctorId: string, statusType: string): Promise<void> {
+export async function notifyCity(
+  doctorId: string,
+  statusType: string,
+  opts?: { locationId?: string | null; fix?: boolean },
+): Promise<void> {
   try {
     const { error } = await supabase.functions.invoke('notify-city', {
-      body: { doctor_id: doctorId, status_type: statusType },
+      // location_id: médico com 2+ locais (o aviso diz onde); fix: "Local errado?" corrigiu o local
+      body: { doctor_id: doctorId, status_type: statusType, location_id: opts?.locationId ?? null, fix: opts?.fix ?? false },
     });
     if (error) console.warn('Push não enviado:', error.message);
   } catch (err) {

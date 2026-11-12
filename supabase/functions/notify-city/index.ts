@@ -104,7 +104,7 @@ Deno.serve(async (req) => {
   } = await userClient.auth.getUser();
   if (!user) return json({ error: 'unauthorized' }, 401);
 
-  let body: { doctor_id?: string; status_type?: string; test?: boolean };
+  let body: { doctor_id?: string; status_type?: string; test?: boolean; location_id?: string | null; fix?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -128,58 +128,81 @@ Deno.serve(async (req) => {
     return json(await sendAll(admin, mine ?? [], payload, 60));
   }
 
-  const { doctor_id, status_type } = body ?? {};
+  const { doctor_id, status_type, location_id, fix } = body ?? {};
   if (!doctor_id || !status_type || !(status_type in TITLES)) {
     return json({ error: 'invalid params' }, 400);
   }
 
-  // Anti-spam: só notifica se este usuário marcou o status nos últimos 2 minutos.
+  // Anti-spam: só notifica se este usuário marcou (ou corrigiu) o status nos últimos 2 minutos.
   // Usa o horário do servidor (doctor_status_events), não o relógio do celular.
-  const since = new Date(Date.now() - 2 * 60_000).toISOString();
-  const { data: recent } = await admin
-    .from('doctor_status_events')
-    .select('id')
-    .eq('doctor_id', doctor_id)
-    .eq('status_type', status_type)
-    .eq('created_by', user.id)
-    .gte('event_at', since)
-    .limit(1);
-  if (!recent || recent.length === 0) return json({ sent: 0, reason: 'status not recent' });
+  // Na correção de local o horário do status NÃO renova, então vale um status ativo do usuário.
+  if (fix) {
+    const { data: active } = await admin
+      .from('doctor_statuses')
+      .select('id')
+      .eq('doctor_id', doctor_id)
+      .eq('status_type', status_type)
+      .eq('created_by', user.id)
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .limit(1);
+    if (!active || active.length === 0) return json({ sent: 0, reason: 'no active status' });
+  } else {
+    const since = new Date(Date.now() - 2 * 60_000).toISOString();
+    const { data: recent } = await admin
+      .from('doctor_status_events')
+      .select('id')
+      .eq('doctor_id', doctor_id)
+      .eq('status_type', status_type)
+      .eq('created_by', user.id)
+      .gte('event_at', since)
+      .limit(1);
+    if (!recent || recent.length === 0) return json({ sent: 0, reason: 'status not recent' });
+  }
 
   const { data: doctor } = await admin
     .from('doctors')
     .select('id, descricao, complemento, cidade')
     .eq('id', doctor_id)
     .maybeSingle();
-  if (!doctor?.cidade) return json({ sent: 0, reason: 'doctor without city' });
+  if (!doctor) return json({ sent: 0, reason: 'doctor not found' });
 
-  const key = cityKey(doctor.cidade);
-  const { data: allSubs } = await admin
+  // Médico com 2+ locais: o aviso diz o local e vale a cidade DELE (local extra em doctor_places)
+  let placeName = '';
+  let city = doctor.cidade ?? '';
+  if (location_id) {
+    const { data: place } = await admin
+      .from('doctor_places')
+      .select('nome, cidade')
+      .eq('id', location_id)
+      .eq('doctor_id', doctor_id)
+      .maybeSingle();
+    if (place) {
+      placeName = place.nome ?? '';
+      city = place.cidade || city;
+    }
+  } else if (doctor.complemento) {
+    // sem location_id: Local 1 (principal); só cita o local se o médico tem outros
+    const { count } = await admin.from('doctor_places').select('id', { count: 'exact', head: true }).eq('doctor_id', doctor_id);
+    if ((count ?? 0) > 0) placeName = doctor.complemento;
+  }
+  if (!city) return json({ sent: 0, reason: 'doctor without city' });
+
+  const { data: subs } = await admin
     .from('push_subscriptions')
-    .select('id, user_id, endpoint, p256dh, auth, city_key')
+    .select('id, endpoint, p256dh, auth')
+    .eq('city_key', cityKey(city))
     .neq('user_id', user.id);
 
-  // Semana ativa e cidades da semana de cada representante (ausentes antes da migração v12: erro = usa o modo antigo)
-  const monday = mondayInBrazil();
-  const [{ data: profs, error: profErr }, { data: weekRows, error: weekErr }] = await Promise.all([
-    admin.from('rep_profiles').select('user_id, active_week, active_week_monday, notify_enabled'),
-    admin.from('rep_week_cities').select('user_id, week, cities'),
-  ]);
-  const profOf = new Map((profErr ? [] : profs ?? []).map((p) => [p.user_id, p]));
-  const citiesOf = new Map((weekErr ? [] : weekRows ?? []).map((r) => [`${r.user_id}:${r.week}`, (r.cities ?? []) as string[]]));
-
-  const subs = (allSubs ?? []).filter((s) => {
-    const p = profOf.get(s.user_id);
-    if (p && p.notify_enabled === false) return false;
-    const weekCities =
-      p && p.active_week && p.active_week_monday === monday ? citiesOf.get(`${s.user_id}:${p.active_week}`) : undefined;
-    if (weekCities && weekCities.length > 0) return weekCities.includes(key);
-    return s.city_key === key; // sem cidades da semana: a cidade do aparelho, como antes
-  });
-
+  const who = (await admin.from('rep_profiles').select('display_name').eq('user_id', user.id).maybeSingle()).data?.display_name;
+  const title = fix
+    ? `Local corrigido${placeName ? ` · ${placeName}` : ''}`
+    : `${TITLES[status_type]}${placeName ? ` · ${placeName}` : ''}`;
+  const bodyText = fix
+    ? `${who ? `${who} está` : 'Está'} com ${doctor.descricao}${placeName ? ` no ${placeName}` : ''} · ${city}`
+    : `${who ? `${who} está com ` : ''}${doctor.descricao} · ${city}`;
   const payload = JSON.stringify({
-    title: `${TITLES[status_type]} — ${doctor.descricao}`,
-    body: [doctor.complemento, doctor.cidade].filter(Boolean).join(' · '),
+    title,
+    body: bodyText,
     tag: `${doctor_id}:${status_type}`,
     url: '/',
   });
