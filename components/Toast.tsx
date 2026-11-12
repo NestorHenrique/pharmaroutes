@@ -22,10 +22,10 @@ export default function Toast({ toast, onDismiss }: { toast: ToastData; onDismis
     <div
       role="status"
       aria-live="polite"
-      className="fixed inset-x-4 z-[65] mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900 py-2 pl-4 pr-2 shadow-2xl shadow-black/60 animate-[fade-in_.18s_ease-out]"
+      className="fixed inset-x-4 z-[65] mx-auto flex max-w-md items-center gap-3 min-h-[52px] rounded-[14px] border border-slate-700 bg-slate-800 py-1 pl-4 pr-1.5 shadow-2xl shadow-black/60 animate-[fade-in_.18s_ease-out]"
       style={{ bottom: 'max(env(safe-area-inset-bottom), 16px)' }}
     >
-      <span className="min-w-0 flex-1 text-sm leading-snug text-slate-100">{toast.text}</span>
+      <span className="min-w-0 flex-1 text-sm leading-snug text-slate-50">{toast.text}</span>
       {toast.undo && (
         <button
           type="button"
@@ -33,7 +33,7 @@ export default function Toast({ toast, onDismiss }: { toast: ToastData; onDismis
             toast.undo?.();
             onDismiss();
           }}
-          className="h-11 shrink-0 rounded-xl border-0 bg-transparent px-3 text-sm font-bold text-blue-400 hover:text-blue-300"
+          className="h-11 shrink-0 rounded-xl border-0 bg-transparent px-3 text-sm font-bold text-blue-300"
         >
           Desfazer
         </button>

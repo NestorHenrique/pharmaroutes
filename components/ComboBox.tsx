@@ -43,7 +43,7 @@ export default function ComboBox({
   const key = normalizeText(value);
   const match = key ? options.find((o) => normalizeText(o.value) === key || normalizeText(o.label) === key) : undefined;
   const shown = match?.label ?? value;
-  const pad = size === 'sm' ? 'h-10 px-3' : 'h-11 px-3.5';
+  const pad = size === 'sm' ? 'h-10 px-3' : 'h-[52px] px-3.5';
 
   return (
     <>

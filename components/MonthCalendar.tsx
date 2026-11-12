@@ -46,7 +46,7 @@ export default function MonthCalendar({ value, min, onChange }: MonthCalendarPro
   const move = (delta: number) => setView((v) => new Date(v.getFullYear(), v.getMonth() + delta, 1));
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950 p-2">
+    <div className="rounded-2xl border border-slate-700 bg-slate-950 p-3">
       <div className="flex items-center justify-between pb-1">
         <button
           type="button"
@@ -76,7 +76,7 @@ export default function MonthCalendar({ value, min, onChange }: MonthCalendarPro
 
       <div className="grid grid-cols-7 text-center" role="grid" aria-label={title}>
         {WEEKDAYS.map((w, i) => (
-          <span key={i} className="pb-1 text-[11px] font-semibold uppercase text-slate-500" aria-hidden="true">
+          <span key={i} className="pb-1 text-[11px] font-semibold text-slate-500" aria-hidden="true">
             {w}
           </span>
         ))}
@@ -85,6 +85,7 @@ export default function MonthCalendar({ value, min, onChange }: MonthCalendarPro
           const iso = toIso(new Date(view.getFullYear(), view.getMonth(), day));
           const disabled = iso < min;
           const selected = iso === value;
+          const today = iso === toIso(new Date());
           return (
             <button
               key={iso}
@@ -93,12 +94,12 @@ export default function MonthCalendar({ value, min, onChange }: MonthCalendarPro
               aria-pressed={selected}
               aria-label={fromIso(iso).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
               onClick={() => onChange(iso)}
-              className={`mx-auto flex size-11 items-center justify-center rounded-full border-0 text-sm tabular-nums ${
+              className={`mx-auto flex size-10 items-center justify-center rounded-[10px] border-0 text-sm tabular-nums ${
                 selected
                   ? 'bg-blue-600 font-bold text-white'
                   : disabled
-                    ? 'bg-transparent text-slate-700'
-                    : 'bg-transparent text-slate-200 hover:bg-slate-800'
+                    ? `bg-transparent text-slate-600${today ? ' border border-blue-800' : ''}`
+                    : 'bg-transparent text-slate-300 hover:bg-slate-800'
               }`}
             >
               {day}

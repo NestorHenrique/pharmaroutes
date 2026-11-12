@@ -263,10 +263,10 @@ export default function DoctorSheet({
                           setMenuOpen(false);
                           setMode('edit');
                         }}
-                        className="flex flex-col rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800"
+                        className="flex min-h-[52px] items-center gap-3 rounded-xl border-0 bg-transparent px-3 text-left hover:bg-slate-800"
                       >
-                        <span className="text-sm font-semibold text-slate-100">Editar dados</span>
-                        <span className="text-xs text-slate-400">Telefones, endereço, agenda</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-100" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg>
+                        <span className="text-[15px] font-medium text-slate-100">Editar dados</span>
                       </button>
                       <button
                         type="button"
@@ -275,12 +275,12 @@ export default function DoctorSheet({
                           setMenuOpen(false);
                           setStatusOpen(true);
                         }}
-                        className="flex flex-col rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800"
+                        className="flex min-h-[52px] items-center gap-3 rounded-xl border-0 bg-transparent px-3 text-left hover:bg-slate-800"
                       >
-                        <span className="text-sm font-semibold text-slate-100">Marcar status</span>
-                        <span className="text-xs text-slate-400">No consultório, visitado, ausência</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-100" aria-hidden="true"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5" /></svg>
+                        <span className="text-[15px] font-medium text-slate-100">Marcar status</span>
                       </button>
-                      <div className="mx-2 my-1 h-px bg-slate-800" />
+                      <div className="mx-2 my-1 h-px bg-slate-700" />
                       <button
                         type="button"
                         role="menuitem"
@@ -288,10 +288,10 @@ export default function DoctorSheet({
                           setMenuOpen(false);
                           onDelete();
                         }}
-                        className="flex flex-col rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-red-500/10"
+                        className="flex min-h-[52px] items-center gap-3 rounded-xl border-0 bg-transparent px-3 text-left hover:bg-red-500/10"
                       >
-                        <span className="text-sm font-semibold text-red-400">Excluir do meu painel</span>
-                        <span className="text-xs text-slate-400">Continua na base e nos colegas</span>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-red-300" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+                        <span className="text-[15px] font-medium text-red-300">Excluir do meu painel</span>
                       </button>
                     </div>
                   </>

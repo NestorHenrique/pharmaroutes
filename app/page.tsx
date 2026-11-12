@@ -2483,7 +2483,7 @@ export default function HomePage() {
       {/* Conteúdo */}
       <main className="px-4 pt-3 pb-10 flex flex-col gap-2.5">
         {showAddForm && (
-          <BottomSheet onClose={() => setShowAddForm(false)} dismissOnBackdrop={false}>
+          <BottomSheet title="Novo médico" onClose={() => setShowAddForm(false)} dismissOnBackdrop={false}>
           <AddDoctorForm
             embedded
             onAdd={addDoctor}
@@ -2632,14 +2632,14 @@ export default function HomePage() {
       {/* Excluir do meu painel */}
       {deleteAsk && (
         <ConfirmSheet
-          title="Excluir do painel"
+          title={`Excluir ${deleteAsk.descricao} do seu painel?`}
+          tone="danger"
           confirmLabel="Sim, excluir do meu painel"
           onConfirm={confirmDelete}
           onCancel={() => setDeleteAsk(null)}
         >
-          <p className="m-0 text-base font-semibold uppercase text-slate-50">Excluir {deleteAsk.descricao} do seu painel?</p>
           <p className="m-0">
-            O médico continua na base e no painel dos colegas. Para voltar, cadastre o mesmo CRM em Novo médico e toque em
+            Ele some só da <strong className="text-slate-100">sua rota e do seu painel</strong>. Continua na base dos outros reps, e as visitas dos colegas não mudam. Para voltar, cadastre o mesmo CRM em Novo médico e toque em
             &quot;Adicionar ao meu painel&quot;.
           </p>
         </ConfirmSheet>
@@ -2655,9 +2655,8 @@ export default function HomePage() {
           onCancel={() => setRenewAsk(null)}
         >
           <p className="m-0">
-            As <strong className="text-slate-100">suas</strong> visitas voltam para pendente. As dos colegas não mudam, e o histórico fica guardado.
+            Todos os médicos voltam para <strong className="text-slate-100">não visitado</strong> no seu painel, a partir da 1ª semana. Só o seu painel muda, e o histórico fica guardado.
           </p>
-          <p className="m-0 text-slate-400">A ordem da rota e as semanas dos médicos continuam iguais.</p>
         </ConfirmSheet>
       )}
 

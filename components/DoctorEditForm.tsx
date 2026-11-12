@@ -28,7 +28,7 @@ type EditForm = Partial<Doctor> & { agenda: AgendaEntry[] };
 const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
 
 const inputCls =
-  'w-full min-w-0 box-border h-11 px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
+  'w-full min-w-0 box-border h-[52px] px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
 const cardCls = 'rounded-2xl border border-slate-800 bg-slate-950 p-4 flex flex-col gap-3';
 
 function initialForm(doc: Doctor): EditForm {
@@ -194,7 +194,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
                   aria-pressed={on}
                   onClick={() => set('cycle_weeks', normalizeCycleWeeks(on ? weeks.filter((x) => x !== w) : [...weeks, w]))}
                   className={`h-11 rounded-xl text-sm font-semibold ${
-                    on ? 'border-0 bg-blue-600 text-white' : 'border border-slate-700 bg-slate-900 text-slate-400'
+                    on ? 'border border-blue-600 bg-blue-900 font-bold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-400'
                   }`}
                 >
                   {cycleWeekLabel(w)}
@@ -215,7 +215,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
             options={SPECIALTY_OPTIONS}
             placeholder="Especialidade"
           />
-          <span className="h-11 min-w-12 px-2 rounded-xl border border-slate-700 text-xs font-bold text-slate-200 flex items-center justify-center">
+          <span className="h-[52px] min-w-12 px-2 rounded-xl border border-slate-700 text-xs font-bold text-slate-200 flex items-center justify-center">
             {specCode ?? '—'}
           </span>
         </div>
@@ -229,7 +229,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
                 aria-pressed={on}
                 onClick={() => set('categoria', c.value as Doctor['categoria'])}
                 className={`h-10 rounded-xl text-sm ${
-                  on ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-700 bg-slate-900 text-slate-300'
+                  on ? 'border border-blue-600 bg-blue-900 font-semibold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-300'
                 }`}
               >
                 {c.label}
@@ -277,7 +277,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
                 onAddress: (a) => setForm((p) => mergeAddress(p, a)),
               })
             }
-            className="h-11 px-4 shrink-0 rounded-xl border-0 bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 disabled:opacity-50"
+            className="h-[52px] px-4 shrink-0 rounded-xl border-0 bg-blue-600 text-white text-sm font-semibold hover:bg-blue-500 disabled:opacity-50"
           >
             {gps.loading ? '...' : 'GPS'}
           </button>
@@ -337,11 +337,11 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-[1fr_2fr] gap-2.5">
         <button
           type="button"
           onClick={cancel}
-          className="h-[52px] rounded-2xl border border-slate-700 bg-slate-800 text-slate-100 text-sm font-semibold"
+          className="h-[52px] rounded-[14px] border border-slate-700 bg-slate-950 text-slate-100 text-base font-semibold"
         >
           Cancelar
         </button>
@@ -349,7 +349,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
           type="button"
           disabled={saving}
           onClick={save}
-          className="h-[52px] rounded-2xl border-0 bg-blue-600 text-white text-sm font-bold hover:bg-blue-500 disabled:opacity-60"
+          className="h-[52px] rounded-[14px] border-0 bg-blue-600 text-white text-base font-bold hover:bg-blue-500 disabled:opacity-60"
         >
           {saving ? 'Salvando...' : 'Salvar'}
         </button>

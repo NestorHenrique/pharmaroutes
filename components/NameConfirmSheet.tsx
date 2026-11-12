@@ -38,7 +38,7 @@ interface NameConfirmSheetProps {
 }
 
 const inputCls =
-  'w-full min-w-0 box-border h-12 px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
+  'w-full min-w-0 box-border h-[52px] px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
 
 /** Primeiro acesso: "Confirme como os colegas te chamam" (nome + sobrenome opcional, com prévia) */
 export default function NameConfirmSheet({ suggested, avatarUrl, saving = false, onConfirm, onLater }: NameConfirmSheetProps) {
@@ -51,7 +51,7 @@ export default function NameConfirmSheet({ suggested, avatarUrl, saving = false,
 
   return (
     <BottomSheet
-      title="Como te chamam?"
+      progress={{ step: 1, total: 3 }}
       onClose={onLater}
       dismissOnBackdrop={false}
       footer={
@@ -59,19 +59,22 @@ export default function NameConfirmSheet({ suggested, avatarUrl, saving = false,
           type="button"
           disabled={!valid || saving}
           onClick={() => onConfirm(full)}
-          className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40"
+          className="h-[52px] min-w-0 flex-1 rounded-[14px] border-0 bg-blue-600 text-base font-bold text-white hover:bg-blue-500 disabled:opacity-40"
         >
-          {saving ? 'Salvando…' : 'Confirmar'}
+          {saving ? 'Salvando…' : 'Continuar'}
         </button>
       }
     >
-      <p className="m-0 text-sm leading-snug text-slate-300">
-        Confirme como os colegas te chamam. Esse nome aparece nas etiquetas de quem está no consultório e de quem visitou.
-      </p>
+      <div className="flex flex-col gap-2">
+        <h3 className="m-0 text-[22px] font-bold leading-tight tracking-tight text-slate-50">Confirme como os colegas te chamam</h3>
+        <p className="m-0 text-[13px] leading-snug text-slate-400">
+          Já preenchemos com o cadastro da sua equipe. Se estiver certo, é só continuar. O nome aparece nas etiquetas de quem está no consultório e de quem visitou.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 gap-3">
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Nome</span>
+          <span className="text-xs font-semibold text-slate-300">Primeiro nome</span>
           <input
             type="text"
             autoComplete="given-name"
@@ -83,8 +86,8 @@ export default function NameConfirmSheet({ suggested, avatarUrl, saving = false,
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-            Sobrenome <span className="normal-case tracking-normal text-slate-500">(opcional)</span>
+          <span className="text-xs font-semibold text-slate-300">
+            Sobrenome <span className="font-normal text-slate-500">(opcional)</span>
           </span>
           <input
             type="text"
@@ -101,10 +104,14 @@ export default function NameConfirmSheet({ suggested, avatarUrl, saving = false,
       <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3" aria-live="polite">
         <RepAvatar name={full || '?'} src={avatarUrl} size={40} me />
         <span className="flex min-w-0 flex-col">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Os colegas vão ver</span>
-          <span className="truncate text-lg font-bold text-slate-50">{shortName(full) || '—'}</span>
+          <span className="text-xs text-slate-500">Seus colegas vão ver</span>
+          <span className="truncate text-base font-semibold text-slate-50">{shortName(full) || '—'}</span>
         </span>
       </div>
+
+      <span className="text-xs leading-snug text-slate-500">
+        Se houver outro rep com o mesmo primeiro nome, preencha o sobrenome para ninguém se confundir. Você pode mudar depois em Perfil.
+      </span>
     </BottomSheet>
   );
 }

@@ -25,9 +25,9 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <FormTitle>Dias e turnos</FormTitle>
+      <FormTitle>Dias e turno</FormTitle>
 
-      <div className="flex gap-1">
+      <div className="grid grid-cols-5 gap-1.5">
         {OPCOES_DIAS.map((d) => {
           const isChecked = selected.has(d.value);
           return (
@@ -36,24 +36,26 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
               key={d.value}
               aria-pressed={isChecked}
               onClick={() => toggleDay(d.value)}
-              className={`flex-1 h-11 rounded-xl text-sm font-semibold ${
+              className={`flex h-[52px] flex-col items-center justify-center gap-0.5 rounded-xl text-xs ${
                 isChecked
-                  ? 'border-0 bg-blue-600 text-white'
-                  : 'border border-slate-700 bg-slate-900 text-slate-400'
+                  ? 'border border-blue-600 bg-blue-900 font-bold text-blue-200'
+                  : 'border border-slate-700 bg-slate-950 font-semibold text-slate-400'
               }`}
             >
               {d.label}
+              {isChecked && <span className="text-[10px] font-medium">{OPCOES_SHIFT.find((s) => s.value === selected.get(d.value))?.label}</span>}
             </button>
           );
         })}
       </div>
 
       {agenda.length > 0 && (
-        <div className="flex flex-col gap-1.5 rounded-xl border border-slate-800 bg-slate-900 p-2">
+        <div className="flex flex-col gap-2 rounded-[14px] border border-slate-700 bg-slate-950 p-3">
+          <span className="text-xs text-slate-500">Toque no dia e escolha o turno em que o médico atende.</span>
           {agenda.map((e) => (
             <div key={e.day} className="flex items-center gap-1.5">
-              <span className="w-9 shrink-0 text-xs font-bold text-slate-200">{dayLabel(e.day)}</span>
-              <div className="flex flex-1 gap-1">
+              <span className="w-10 shrink-0 text-[13px] font-bold text-blue-200">{dayLabel(e.day)}</span>
+              <div className="grid flex-1 gap-0.5 rounded-xl border border-slate-700 bg-slate-900 p-0.5" style={{ gridTemplateColumns: `repeat(${OPCOES_SHIFT.filter((s) => s.value !== 'NOITE' || e.shift === 'NOITE').length}, minmax(0, 1fr))` }}>
                 {OPCOES_SHIFT.filter((s) => s.value !== 'NOITE' || e.shift === 'NOITE').map((s) => {
                   const active = e.shift === s.value;
                   return (
@@ -62,10 +64,8 @@ export default function AgendaEditor({ value, onChange }: AgendaEditorProps) {
                       key={s.value}
                       aria-pressed={active}
                       onClick={() => setShift(e.day, s.value)}
-                      className={`flex-1 h-11 rounded-xl text-sm ${
-                        active
-                          ? 'border-0 bg-slate-100 text-slate-950 font-semibold'
-                          : 'border border-slate-800 bg-slate-950 text-slate-400 hover:text-slate-200'
+                      className={`h-11 rounded-[10px] border-0 text-xs ${
+                        active ? 'bg-blue-600 font-bold text-slate-950' : 'bg-transparent font-semibold text-slate-400'
                       }`}
                     >
                       {s.label}

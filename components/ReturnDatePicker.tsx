@@ -55,7 +55,7 @@ export default function ReturnDatePicker({ value, onChange }: ReturnDatePickerPr
   const min = tomorrowIso();
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Atalhos">
+      <div className="grid grid-cols-3 gap-2" role="group" aria-label="Atalhos">
         {SHORTCUTS.map((s) => {
           const iso = s.get();
           const on = iso === value;
@@ -65,10 +65,10 @@ export default function ReturnDatePicker({ value, onChange }: ReturnDatePickerPr
               type="button"
               aria-pressed={on}
               onClick={() => onChange(iso)}
-              className={`h-11 shrink-0 rounded-full px-4 text-sm ${
+              className={`h-11 rounded-xl text-sm ${
                 on
-                  ? 'border-0 bg-slate-100 font-semibold text-slate-950'
-                  : 'border border-slate-700 bg-transparent text-slate-200 hover:text-white'
+                  ? 'border border-blue-600 bg-blue-900 font-semibold text-blue-200'
+                  : 'border border-slate-700 bg-slate-950 text-slate-300'
               }`}
             >
               {s.label}
@@ -77,14 +77,14 @@ export default function ReturnDatePicker({ value, onChange }: ReturnDatePickerPr
         })}
       </div>
 
-      <label className="flex flex-col gap-1">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Volta em</span>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-xs font-semibold text-slate-300">Data de retorno</span>
         <input
           type="date"
           min={min}
           value={value}
           onChange={(e) => onChange(e.target.value >= min ? e.target.value : '')}
-          className="h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-base text-slate-100 outline-hidden focus-visible:border-blue-600"
+          className="h-[52px] w-full rounded-xl border border-slate-700 bg-slate-950 px-3.5 text-base text-slate-100 outline-hidden focus-visible:border-blue-600"
         />
       </label>
 

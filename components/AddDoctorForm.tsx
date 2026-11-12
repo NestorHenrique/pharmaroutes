@@ -79,7 +79,7 @@ const DEFAULTS: FormState = {
 };
 
 const inputCls =
-  'w-full min-w-0 box-border h-11 px-3 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
+  'w-full min-w-0 box-border h-[52px] px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base sm:text-sm outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
 
 /* ── Component ── */
 
@@ -251,7 +251,7 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
   return (
     <div className={embedded ? 'flex flex-col gap-3' : 'bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3'}>
       <div className="flex justify-between items-center">
-        <FormTitle>Novo médico</FormTitle>
+        {embedded ? <span /> : <FormTitle>Novo médico</FormTitle>}
         {restored && (
           <span className="text-[10px] text-amber-400 bg-amber-900/30 px-1.5 py-0.5 rounded">
             Rascunho restaurado
@@ -286,7 +286,7 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
         type="button"
         disabled={looking || !normalizeCrm(form.crm)}
         onClick={handleLookup}
-        className="h-11 rounded-xl border border-blue-600 bg-transparent text-sm font-semibold text-blue-400 hover:bg-blue-600/10 disabled:opacity-40"
+        className="h-[52px] rounded-xl border border-dashed border-blue-800 bg-slate-950 text-sm font-semibold text-blue-300 hover:bg-blue-600/10 disabled:opacity-40"
       >
         {looking ? 'Buscando…' : 'Buscar Dados do CRM'}
       </button>
@@ -347,7 +347,7 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
                     type="button"
                     aria-pressed={on}
                     onClick={() => setExistingWeeks((cur) => normalizeCycleWeeks(on ? cur.filter((x) => x !== w) : [...cur, w]))}
-                    className={`h-11 rounded-xl text-sm font-semibold ${on ? 'border-0 bg-blue-600 text-white' : 'border border-slate-700 bg-slate-900 text-slate-400'}`}
+                    className={`h-11 rounded-xl text-sm font-semibold ${on ? 'border border-blue-600 bg-blue-900 font-bold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-400'}`}
                   >
                     {cycleWeekLabel(w)}
                   </button>
@@ -398,7 +398,7 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
                 aria-pressed={on}
                 onClick={() => setField('categoria', c.value)}
                 className={`h-11 rounded-xl text-sm ${
-                  on ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-700 bg-slate-900 text-slate-300'
+                  on ? 'border border-blue-600 bg-blue-900 font-semibold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-300'
                 }`}
               >
                 {c.label}
@@ -435,7 +435,7 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
                 aria-pressed={on}
                 onClick={() => setField('cycle_weeks', normalizeCycleWeeks(on ? (form.cycle_weeks ?? []).filter((x) => x !== w) : [...(form.cycle_weeks ?? []), w]))}
                 className={`h-11 rounded-xl text-sm font-semibold ${
-                  on ? 'border-0 bg-blue-600 text-white' : 'border border-slate-700 bg-slate-900 text-slate-400'
+                  on ? 'border border-blue-600 bg-blue-900 font-bold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-400'
                 }`}
               >
                 {cycleWeekLabel(w)}
@@ -543,11 +543,11 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
       {!existing && error && <div role="alert" className="text-[11px] text-red-400">{error}</div>}
 
       {/* Botões */}
-      <div className="flex gap-2 justify-end mt-1">
+      <div className="mt-1 grid grid-cols-[1fr_2fr] gap-2.5">
         <button
           type="button"
           onClick={handleCancel}
-          className="h-11 px-4 bg-transparent text-slate-300 border border-slate-700 rounded-xl text-sm hover:text-white"
+          className="h-[52px] px-4 bg-slate-950 text-slate-100 border border-slate-700 rounded-[14px] text-base font-semibold"
         >
           {existing ? 'Fechar' : 'Cancelar'}
         </button>
@@ -556,7 +556,7 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
             type="button"
             disabled={linking}
             onClick={() => void handleAddToPanel()}
-            className={`h-11 px-5 bg-blue-600 text-white border-none rounded-xl text-sm font-bold hover:bg-blue-500 ${linking ? 'opacity-70' : ''}`}
+            className={`h-[52px] px-5 bg-blue-600 text-white border-none rounded-[14px] text-base font-bold hover:bg-blue-500 ${linking ? 'opacity-70' : ''}`}
           >
             {linking ? 'Adicionando…' : isHidden(existing.id) ? 'Adicionar ao meu painel' : 'Salvar semanas'}
           </button>
@@ -565,7 +565,7 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
             type="button"
             disabled={saving}
             onClick={handleSubmit}
-            className={`h-11 px-5 bg-blue-600 text-white border-none rounded-xl text-sm font-bold hover:bg-blue-500 ${
+            className={`h-[52px] px-5 bg-blue-600 text-white border-none rounded-[14px] text-base font-bold hover:bg-blue-500 ${
               saving ? 'opacity-70' : ''
             }`}
           >

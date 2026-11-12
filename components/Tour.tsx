@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
@@ -25,42 +25,35 @@ type Step = {
   targets: string[];
   title: string;
   text: (present: string[]) => string;
+  /** lista numerada (cada item aponta para um elemento do recorte e ganha o mesmo número ali) */
+  items?: { target: string; node: ReactNode }[];
   example?: 'card' | 'colors';
 };
-
-function listPt(parts: string[]): string {
-  if (parts.length <= 1) return parts.join('');
-  return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
-}
 
 const STEPS: Step[] = [
   {
     id: 'top',
     targets: ['week', 'help', 'bell', 'profile'],
-    title: 'Aqui em cima',
-    text: (present) => {
-      const items = [
-        present.includes('week') && 'a semana do ciclo (toque para trocar)',
-        present.includes('help') && 'o ? com o guia de cores',
-        present.includes('bell') && 'o sino com os avisos dos colegas',
-        present.includes('profile') && 'o seu perfil',
-      ].filter(Boolean) as string[];
-      return `Você encontra ${listPt(items)}.`;
-    },
+    title: 'O topo da sua tela',
+    text: () => '',
+    items: [
+      { target: 'week', node: <>Toque para <b>trocar de semana</b>.</> },
+      { target: 'help', node: <>O <b>?</b> explica as cores e os status.</> },
+      { target: 'bell', node: <>O sino mostra os <b>avisos</b> dos colegas.</> },
+      { target: 'profile', node: <>Seu <b>perfil</b>, cidades e ciclo.</> },
+    ],
   },
   {
     id: 'controls',
     targets: ['days', 'search', 'filters', 'add'],
-    title: 'Encontre os médicos',
-    text: (present) => {
-      const items = [
-        present.includes('days') && 'o dia da semana',
-        present.includes('search') && 'a busca',
-        present.includes('filters') && 'os filtros',
-        present.includes('add') && 'o + para cadastrar um médico novo',
-      ].filter(Boolean) as string[];
-      return `Aqui ficam ${listPt(items)}.`;
-    },
+    title: 'Dia, busca e filtros',
+    text: () => '',
+    items: [
+      { target: 'days', node: <>Escolha o <b>dia da semana</b>.</> },
+      { target: 'search', node: <><b>Busque</b> por nome, especialidade ou CRM.</> },
+      { target: 'filters', node: <><b>Filtros</b>: cidade, turno e mais.</> },
+      { target: 'add', node: <><b>+</b> cadastra um médico novo.</> },
+    ],
   },
   {
     id: 'card',
@@ -164,8 +157,9 @@ function ColorsExample() {
 
 const PAD = 6;
 
-function measure(targets: string[]): { rect: Rect | null; present: string[] } {
+function measure(targets: string[]): { rect: Rect | null; present: string[]; each: Record<string, Rect> } {
   const present: string[] = [];
+  const each: Record<string, Rect> = {};
   let top = Infinity;
   let left = Infinity;
   let right = -Infinity;
@@ -177,6 +171,10 @@ function measure(targets: string[]): { rect: Rect | null; present: string[] } {
       const r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) return;
       found = true;
+      const prev = each[t];
+      each[t] = prev
+        ? { top: Math.min(prev.top, r.top), left: Math.min(prev.left, r.left), width: Math.max(prev.left + prev.width, r.right) - Math.min(prev.left, r.left), height: Math.max(prev.top + prev.height, r.bottom) - Math.min(prev.top, r.top) }
+        : { top: r.top, left: r.left, width: r.width, height: r.height };
       top = Math.min(top, r.top);
       left = Math.min(left, r.left);
       right = Math.max(right, r.right);
@@ -184,7 +182,7 @@ function measure(targets: string[]): { rect: Rect | null; present: string[] } {
     });
     if (found) present.push(t);
   }
-  if (present.length === 0) return { rect: null, present };
+  if (present.length === 0) return { rect: null, present, each };
   return {
     rect: {
       top: Math.max(4, top - PAD),
@@ -193,6 +191,7 @@ function measure(targets: string[]): { rect: Rect | null; present: string[] } {
       height: bottom - top + PAD * 2,
     },
     present,
+    each,
   };
 }
 
@@ -207,6 +206,7 @@ export default function Tour({ onFinish, onSkip }: TourProps) {
   const [i, setI] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
   const [present, setPresent] = useState<string[]>([]);
+  const [each, setEach] = useState<Record<string, Rect>>({});
   const nextRef = useRef<HTMLButtonElement | null>(null);
 
   const step = STEPS[i];
@@ -216,11 +216,13 @@ export default function Tour({ onFinish, onSkip }: TourProps) {
     if (step.targets.length === 0) {
       setRect(null);
       setPresent([]);
+      setEach({});
       return;
     }
     const m = measure(step.targets);
     setRect(m.rect);
     setPresent(m.present);
+    setEach(m.each);
   }, [step]);
 
   // A página fica parada no topo durante as dicas (o cabeçalho é fixo, o recorte acompanha)
@@ -254,6 +256,7 @@ export default function Tour({ onFinish, onSkip }: TourProps) {
   if (typeof document === 'undefined') return null;
 
   const spot = step.targets.length > 0 && rect;
+  const shown = (step.items ?? []).filter((it) => present.includes(it.target));
   // Caixinha embaixo do recorte; se não couber, em cima
   const below = spot ? rect.top + rect.height + 12 : 0;
   const placeBelow = spot ? below + 230 < window.innerHeight : true;
@@ -270,7 +273,7 @@ export default function Tour({ onFinish, onSkip }: TourProps) {
       {spot && (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute rounded-2xl border-2 border-blue-400 transition-all duration-200"
+          className="pointer-events-none absolute rounded-2xl border-2 border-violet-400 transition-all duration-200"
           style={{
             top: rect.top,
             left: rect.left,
@@ -281,21 +284,47 @@ export default function Tour({ onFinish, onSkip }: TourProps) {
         />
       )}
 
+      {spot &&
+        shown.map((it, n) => {
+          const r = each[it.target];
+          return (
+            <span
+              key={it.target}
+              aria-hidden="true"
+              className="pointer-events-none absolute grid size-6 place-items-center rounded-full bg-violet-400 text-xs font-bold text-[#0B0B12] shadow-[0_0_0_2px_#0B0B12]"
+              style={{ top: Math.max(2, r.top - 11), left: Math.min(window.innerWidth - 26, Math.max(2, r.left + r.width / 2 - 12)) }}
+            >
+              {n + 1}
+            </span>
+          );
+        })}
+
       <div
-        className="absolute left-1/2 flex w-[min(92vw,380px)] flex-col gap-3 rounded-3xl border border-slate-700 bg-slate-900 p-4 shadow-2xl shadow-black/60"
+        className="absolute left-1/2 flex w-[min(92vw,380px)] flex-col gap-3 rounded-[18px] bg-[#F4F2EE] p-4 text-[#17171A] shadow-2xl shadow-black/60"
         style={{ ...boxStyle, maxHeight: '86dvh', overflowY: 'auto' }}
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="h-4 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
-            <h2 className="m-0 text-[15px] font-bold uppercase tracking-[0.1em] text-blue-400">{step.title}</h2>
-          </div>
-          <span className="text-xs font-semibold text-slate-400">
+        <div className="flex items-center gap-1.5" role="img" aria-label={`${i + 1} de ${STEPS.length}`}>
+          {STEPS.map((s, n) => (
+            <span key={s.id} className={`h-1 w-[18px] rounded-full ${n <= i ? 'bg-[#5B3FD0]' : 'bg-[#CFCBE0]'}`} aria-hidden="true" />
+          ))}
+          <span className="ml-1.5 text-xs text-[#55526B]">
             {i + 1} de {STEPS.length}
           </span>
         </div>
+        <h2 className="m-0 text-lg font-bold tracking-tight">{step.title}</h2>
 
-        <p className="m-0 text-sm leading-snug text-slate-300">{step.text(present)}</p>
+        {step.items ? (
+          <div className="flex flex-col gap-2 text-sm leading-snug">
+            {shown.map((it, n) => (
+              <div key={it.target} className="flex gap-2.5">
+                <b className="w-3.5 shrink-0 text-[#5B3FD0]">{n + 1}</b>
+                <span>{it.node}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="m-0 text-sm leading-snug text-[#3F3C52]">{step.text(present)}</p>
+        )}
 
         {step.example === 'card' && <CardExample />}
         {step.example === 'colors' && <ColorsExample />}
@@ -304,7 +333,7 @@ export default function Tour({ onFinish, onSkip }: TourProps) {
           <button
             type="button"
             onClick={onSkip}
-            className="h-11 shrink-0 rounded-xl border-0 bg-transparent px-3 text-sm font-medium text-slate-400 hover:text-slate-100"
+            className="h-11 shrink-0 rounded-xl border-0 bg-transparent px-1.5 text-sm font-semibold text-[#55526B]"
           >
             Pular
           </button>
@@ -312,7 +341,7 @@ export default function Tour({ onFinish, onSkip }: TourProps) {
             ref={nextRef}
             type="button"
             onClick={() => (last ? onFinish() : setI((n) => n + 1))}
-            className="h-11 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500"
+            className="h-11 min-w-0 flex-1 rounded-xl border-0 bg-[#5B3FD0] text-[15px] font-bold text-white"
           >
             {last ? 'Começar a usar' : 'Próximo'}
           </button>

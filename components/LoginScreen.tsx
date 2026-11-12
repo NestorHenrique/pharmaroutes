@@ -144,41 +144,80 @@ export default function LoginScreen() {
     );
   }
 
-  if (mode === 'forgot') {
-    return (
-      <Shell>
-        <Brand subtitle="Vamos te enviar um link para criar uma senha nova." />
-        <form onSubmit={handleForgot} className="flex flex-col gap-3.5">
-          {emailField}
-          {error && <div role="alert" className="text-xs text-red-300">{error}</div>}
-          <button type="submit" disabled={loading} className={primary}>
-            {loading ? 'Enviando…' : 'Enviar link'}
-          </button>
+  /* Esqueci a senha / link enviado: tela cheia com seta de voltar, igual ao protótipo */
+  const backToLogin = () => {
+    setError(null);
+    setMode('login');
+  };
+  const sent = mode === 'sent';
+  return (
+    <div className="mx-auto flex min-h-dvh w-full max-w-sm flex-col">
+      <header className="px-3 pb-2 pt-4">
+        <button
+          type="button"
+          aria-label="Voltar"
+          onClick={backToLogin}
+          className="grid size-11 place-items-center rounded-xl border-0 bg-transparent text-slate-100"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M15 6l-6 6 6 6" />
+          </svg>
+        </button>
+      </header>
+      <form onSubmit={handleForgot} className="flex flex-1 flex-col gap-6 px-6 pb-7 pt-2">
+        <div className="flex flex-col gap-2">
+          <h1 className="m-0 text-2xl font-bold tracking-tight text-slate-50">{sent ? 'Confira o seu e-mail' : 'Esqueceu a senha?'}</h1>
+          <span className="text-sm leading-relaxed text-slate-400">
+            {sent
+              ? 'Abra o link neste aparelho para criar a senha nova.'
+              : 'Digite o e-mail de acesso. Enviamos um link para você criar uma senha nova.'}
+          </span>
+        </div>
+
+        {sent ? (
+          <div className="flex items-center gap-1.5 text-sm text-slate-300">
+            <strong className="text-slate-100">{email.trim()}</strong>
+          </div>
+        ) : (
+          emailField
+        )}
+
+        {sent && (
+          <div className="flex items-start gap-2.5 rounded-[14px] border border-emerald-800 bg-emerald-950 px-3.5 py-3">
+            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-emerald-500 text-slate-950">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 12l5 5L20 7" />
+              </svg>
+            </span>
+            <span className="flex-1 text-[13px] leading-snug text-slate-300">
+              <b className="text-emerald-300">Link enviado.</b> Abra o e-mail no celular e toque no link. Não chegou? Veja o spam ou peça de novo em 1 minuto.
+            </span>
+          </div>
+        )}
+
+        {error && <div role="alert" className="text-xs text-red-300">{error}</div>}
+
+        <span className="flex-1" />
+
+        <div className="flex flex-col gap-2.5">
+          {!sent && (
+            <button type="submit" disabled={loading} className={primary}>
+              {loading ? 'Enviando…' : 'Enviar link'}
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => {
-              setError(null);
-              setMode('login');
-            }}
-            className="min-h-11 border-0 bg-transparent p-0 text-sm font-semibold text-slate-300 hover:text-white"
+            onClick={backToLogin}
+            className={
+              sent
+                ? primary
+                : 'h-[52px] w-full rounded-[14px] border border-slate-700 bg-slate-950 px-4 text-base font-semibold text-slate-100'
+            }
           >
-            Voltar para o login
+            Voltar ao login
           </button>
-        </form>
-      </Shell>
-    );
-  }
-
-  return (
-    <Shell>
-      <Brand subtitle="Confira o seu e-mail" />
-      <p className="m-0 text-center text-sm leading-snug text-slate-300">
-        Se <strong className="text-slate-100">{email.trim()}</strong> tiver cadastro, o link chega em alguns minutos. Olhe também o spam.
-        Abra o link neste aparelho para criar a senha nova.
-      </p>
-      <button type="button" onClick={() => setMode('login')} className={primary}>
-        Voltar para o login
-      </button>
-    </Shell>
+        </div>
+      </form>
+    </div>
   );
 }

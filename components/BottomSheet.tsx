@@ -7,6 +7,10 @@ import { createPortal } from 'react-dom';
 interface BottomSheetProps {
   /** título em destaque (mesmo modelo dos títulos do cadastro); sem título só aparece a alça */
   title?: string;
+  /** nome da folha para leitores de tela quando não há título visível */
+  label?: string;
+  /** fluxo em passos (primeiro acesso): mostra as barrinhas "Passo X de Y" no lugar do título */
+  progress?: { step: number; total: number };
   /** botões fixos embaixo (ex.: Limpar / Ver resultados) */
   footer?: ReactNode;
   /** tocar no fundo escuro fecha (desligue em formulários para não perder o que foi digitado) */
@@ -21,6 +25,8 @@ interface BottomSheetProps {
  */
 export default function BottomSheet({
   title,
+  label,
+  progress,
   footer,
   dismissOnBackdrop = true,
   onClose,
@@ -50,18 +56,28 @@ export default function BottomSheet({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={title ?? 'Painel'}
+        aria-label={title ?? label ?? (progress ? `Passo ${progress.step} de ${progress.total}` : 'Painel')}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92dvh] w-full max-w-xl flex-col rounded-t-[28px] border-t border-slate-700 bg-slate-900 animate-[sheet-up_.24s_cubic-bezier(.2,.8,.2,1)]"
+        className="flex max-h-[92dvh] w-full max-w-xl flex-col rounded-t-3xl border-t border-slate-700 bg-slate-900 animate-[sheet-up_.24s_cubic-bezier(.2,.8,.2,1)]"
       >
         <div className="px-5 pt-2.5">
           <div className="mx-auto mb-3 h-[5px] w-10 rounded-full bg-slate-700" aria-hidden="true" />
           <div className="flex items-center justify-between gap-3">
-            {title ? (
-              <div className="flex items-center gap-2">
-                <span className="h-4 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
-                <h2 className="m-0 text-[15px] font-bold uppercase tracking-[0.1em] text-blue-400">{title}</h2>
+            {progress ? (
+              <div className="flex items-center gap-1.5" role="img" aria-label={`Passo ${progress.step} de ${progress.total}`}>
+                {Array.from({ length: progress.total }, (_, i) => (
+                  <span
+                    key={i}
+                    className={`h-1 w-7 rounded-full ${i < progress.step ? 'bg-blue-600' : 'bg-slate-700'}`}
+                    aria-hidden="true"
+                  />
+                ))}
+                <span className="ml-1.5 text-xs text-slate-500">
+                  Passo {progress.step} de {progress.total}
+                </span>
               </div>
+            ) : title ? (
+              <h2 className="m-0 text-xl font-bold tracking-tight text-slate-50">{title}</h2>
             ) : (
               <span />
             )}

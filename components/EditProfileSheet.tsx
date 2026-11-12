@@ -17,8 +17,8 @@ interface EditProfileSheetProps {
 }
 
 const inputCls =
-  'w-full min-w-0 box-border h-12 px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
-const label = 'text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400';
+  'w-full min-w-0 box-border h-[52px] px-3.5 rounded-xl border border-slate-700 bg-slate-950 text-slate-100 text-base outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
+const label = 'text-xs font-semibold text-slate-300';
 
 /** Editar perfil: foto, nome, e-mail (só leitura) e trocar senha */
 export default function EditProfileSheet({ email, name, avatarUrl, onSave, onClose }: EditProfileSheetProps) {
@@ -73,7 +73,7 @@ export default function EditProfileSheet({ email, name, avatarUrl, onSave, onClo
             type="button"
             disabled={photoBusy}
             onClick={() => fileRef.current?.click()}
-            className="h-11 rounded-xl border border-slate-700 bg-transparent px-4 text-sm font-semibold text-slate-100 hover:border-slate-500 disabled:opacity-40"
+            className="h-11 rounded-xl border border-slate-700 bg-slate-950 px-4 text-sm font-semibold text-slate-100 disabled:opacity-40"
           >
             {photoBusy ? 'Aguarde…' : avatar ? 'Trocar foto' : 'Escolher foto'}
           </button>
@@ -92,15 +92,15 @@ export default function EditProfileSheet({ email, name, avatarUrl, onSave, onClo
       {photoMsg && <div role="alert" className="text-xs text-red-400">{photoMsg}</div>}
 
       <label className="flex flex-col gap-1">
-        <span className={label}>Nome</span>
+        <span className={label}>Nome que os colegas veem</span>
         <input type="text" autoComplete="name" autoCapitalize="words" value={nome} onChange={(e) => setNome(e.target.value)} className={inputCls} />
-        <span className="text-xs text-slate-500">Os colegas veem: {shortName(nome) || '—'}</span>
+        <span className="text-xs text-slate-500">Aparece nos status e nas visitas. Ex.: &quot;{shortName(nome) || '—'} · 16:55&quot;.</span>
       </label>
       <button
         type="button"
         disabled={!dirty || saving}
         onClick={() => void saveName()}
-        className="h-12 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40"
+        className="h-[52px] rounded-[14px] border-0 bg-blue-600 text-base font-bold text-white hover:bg-blue-500 disabled:opacity-40"
       >
         {saving ? 'Salvando…' : 'Salvar nome'}
       </button>
@@ -111,12 +111,12 @@ export default function EditProfileSheet({ email, name, avatarUrl, onSave, onClo
       )}
 
       <label className="flex flex-col gap-1">
-        <span className={label}>E-mail</span>
-        <input type="email" value={email} readOnly aria-readonly="true" className={`${inputCls} opacity-70`} />
+        <span className={label}>E-mail de acesso</span>
+        <input type="email" value={email} readOnly aria-readonly="true" className={`${inputCls} border-slate-800 text-slate-500`} />
         <span className="text-xs text-slate-500">O e-mail não pode ser alterado por aqui.</span>
       </label>
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-3.5">
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-950 p-3.5">
         <span className={label}>Trocar senha</span>
         <PasswordForm requireCurrent submitLabel="Trocar senha" onSubmit={(cur, next) => changePassword(email, cur, next)} />
       </div>
