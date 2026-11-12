@@ -447,6 +447,10 @@ export default function HomePage() {
   const [sortMode, setSortMode] = useState<SortMode>('manual');
   /** null = Todas as semanas do ciclo */
   const [selectedWeek, setSelectedWeek] = useState<CycleWeek | null>(null);
+  /** siglas de especialidade marcadas nos Filtros (vazio = todas) */
+  const [selectedSpecs, setSelectedSpecs] = useState<string[]>([]);
+  /** como os filtros estavam ao abrir a folha: Cancelar volta para isto */
+  const filtersSnap = useRef<{ cities: string[]; week: CycleWeek | null; cat: string | null; turno: Shift | null; specs: string[]; sort: SortMode } | null>(null);
   /** "Estou visitando na": semana em que os visitados entram automaticamente */
   const [activeWeek, setActiveWeek] = useState<CycleWeek | null>(null);
   /** pergunta da semana (abre no início de cada semana) e a semana da semana passada */
@@ -1013,6 +1017,11 @@ export default function HomePage() {
 
   /** os médicos do MEU painel: a base menos os que eu excluí daqui */
   const panelDoctors = useMemo(() => doctors.filter((d) => !hiddenDocs.hidden.has(d.id)), [doctors, hiddenDocs.hidden]);
+  /** siglas de especialidade que existem no painel (para os chips dos Filtros) */
+  const specCodes = useMemo(
+    () => [...new Set(panelDoctors.map((d) => specialtyCode(d.especialidade)).filter((c): c is string => Boolean(c)))].sort(),
+    [panelDoctors],
+  );
   const cityOptions = useMemo(() => buildCityOptions(panelDoctors.map((d) => d.cidade)), [panelDoctors]);
   const cityComboOptions: ComboOption[] = useMemo(
     () => cityOptions.map((o) => ({ value: o.label, label: prettyCity(o.label), hint: String(o.count) })),
@@ -1367,6 +1376,8 @@ export default function HomePage() {
       // Semana do ciclo: só os médicos marcados nessa semana
       if (selectedWeek && !normalizeCycleWeeks(d.cycle_weeks).includes(selectedWeek)) return false;
 
+      if (selectedSpecs.length > 0 && !selectedSpecs.includes(specialtyCode(d.especialidade) ?? '')) return false;
+
       if (portfolioActive) {
         const code = specialtyCode(d.especialidade);
         if (!portfolio.has(d.id) && !(code && specSet.has(code))) return false;
@@ -1375,7 +1386,7 @@ export default function HomePage() {
       if (q && !matchDoctor(d, q, searchScope).matched) return false;
       return true;
     });
-  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, turnoFilter, searchQuery, searchScope, portfolioActive, profile, portfolio]);
+  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, selectedSpecs, turnoFilter, searchQuery, searchScope, portfolioActive, profile, portfolio]);
 
   /** Médicos de cada cidade no dia escolhido (para o filtro de cidades); sem dia = sem divisão */
   const cityDayCounts = useMemo(() => {
@@ -1726,6 +1737,7 @@ export default function HomePage() {
   /** Limpa todos os filtros da lista (mesmo botão "Limpar" dos Filtros) */
   const clearFilters = () => {
     setSelectedCities([]);
+    setSelectedSpecs([]);
     changeWeek(null);
     setSelectedCategory(null);
     setTurnoFilter(null);
@@ -1753,6 +1765,7 @@ export default function HomePage() {
           at: r.event_at,
           doctorName: d.descricao,
           place: [d.complemento || 'Consultório próprio', d.cidade].filter(Boolean).join(' · '),
+          city: d.cidade || undefined,
           repName: rep,
           unread: new Date(r.event_at).getTime() > readMs,
         },
@@ -1868,6 +1881,7 @@ export default function HomePage() {
 
   const activeFilterCount =
     (selectedCities.length > 0 ? 1 : 0) +
+    (selectedSpecs.length > 0 ? 1 : 0) +
     (selectedWeek ? 1 : 0) +
     (selectedCategory ? 1 : 0) +
     (turnoFilter ? 1 : 0) +
@@ -2095,7 +2109,10 @@ export default function HomePage() {
           </button>
           <button
             type="button"
-            onClick={() => setShowFilters((v) => !v)}
+            onClick={() => {
+              filtersSnap.current = { cities: selectedCities, week: selectedWeek, cat: selectedCategory, turno: turnoFilter, specs: selectedSpecs, sort: sortMode };
+              setShowFilters((v) => !v);
+            }}
             data-tour="filters"
             aria-label={activeFilterCount > 0 ? `Filtros, ${activeFilterCount} ativos` : 'Filtros'}
             aria-expanded={showFilters}
@@ -2234,174 +2251,180 @@ export default function HomePage() {
           </button>
         </div>
 
-        {/* Filtros recolhidos */}
+        {/* Filtros (folha, como no desenho) */}
         {showFilters && (
           <BottomSheet
             title="Filtros"
             onClose={() => setShowFilters(false)}
             footer={
               <>
-                {activeFilterCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-4 text-sm font-medium text-slate-300 hover:text-red-400"
-                  >
-                    Limpar
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const snap = filtersSnap.current;
+                    if (snap) {
+                      setSelectedCities(snap.cities);
+                      changeWeek(snap.week);
+                      setSelectedCategory(snap.cat);
+                      setTurnoFilter(snap.turno);
+                      setSelectedSpecs(snap.specs);
+                      changeSortMode(snap.sort);
+                    }
+                    setShowFilters(false);
+                  }}
+                  className="h-[52px] flex-1 rounded-[14px] border border-slate-800 bg-slate-950 text-base font-semibold text-slate-100"
+                >
+                  Cancelar
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowFilters(false)}
-                  className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500"
+                  className="h-[52px] flex-1 rounded-[14px] border-0 bg-blue-600 text-base font-bold text-white hover:bg-blue-500"
                 >
-                  Ver {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''}
+                  Salvar · {filteredDoctors.length} médico{filteredDoctors.length !== 1 ? 's' : ''}
                 </button>
               </>
             }
           >
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Cidades</span>
-              <CityFilter
-                options={cityOptions}
-                selected={selectedCities}
-                onChange={setSelectedCities}
-                dayCounts={cityDayCounts}
-                dayLabel={dayLongLabel}
-              />
+            <div className="-mt-2 flex justify-end">
+              <button
+                type="button"
+                disabled={activeFilterCount === 0}
+                onClick={clearFilters}
+                className="h-9 border-0 bg-transparent px-1 text-sm font-semibold text-blue-400 disabled:opacity-40"
+              >
+                Limpar tudo
+              </button>
             </div>
 
-            {activeWeek && (
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-                  Avisos da {activeWeek}ª semana
-                </span>
-                <CityFilter
-                  pickMode
-                  options={cityOptions}
-                  selected={weekTemp ?? weekCityList(activeWeek)}
-                  onChange={(keys) => {
-                    if (weekSave) {
-                      setWeekTemp(null);
-                      void weekCities.save(activeWeek, keys);
-                    } else {
-                      setWeekTemp(keys);
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={weekSave}
-                  onClick={() => {
-                    if (!weekSave && weekTemp) {
-                      void weekCities.save(activeWeek, weekTemp);
-                      setWeekTemp(null);
-                    }
-                    setWeekSave((v) => !v);
-                  }}
-                  className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900 px-3.5 text-left"
-                >
-                  <span className="text-sm text-slate-100">Salvar na {activeWeek}ª semana</span>
-                  <span aria-hidden="true" className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${weekSave ? 'bg-blue-600' : 'bg-slate-600'}`}>
-                    <span className={`absolute top-0.5 size-5 rounded-full bg-white transition-all ${weekSave ? 'left-[18px]' : 'left-0.5'}`} />
-                  </span>
-                </button>
-                <span className="text-xs text-slate-500">
-                  São as cidades de onde você recebe avisos dos colegas. Elas não escondem médicos da lista.
-                </span>
-              </div>
-            )}
+            {(() => {
+              const chip = (on: boolean, small = false) =>
+                `${small ? 'h-9 px-3 text-[13px]' : 'h-10 px-3.5 text-sm'} rounded-full border ${
+                  on ? 'border-blue-600 bg-blue-950 font-semibold text-blue-200' : 'border-slate-800 bg-slate-950 text-slate-300'
+                }`;
+              const groupTitle = 'text-[13px] font-semibold text-slate-300';
+              const toggleCity = (key: string) => {
+                const next = selectedCities.includes(key) ? selectedCities.filter((k) => k !== key) : [...selectedCities, key];
+                setSelectedCities(next);
+                if (activeWeek && weekSave) void weekCities.save(activeWeek, next);
+              };
+              return (
+                <div className="flex flex-col gap-5">
+                  <div className="flex flex-col gap-2.5">
+                    <span className={groupTitle}>
+                      Cidade {activeWeek && <span className="font-medium text-blue-300">· {activeWeek}ª semana</span>}
+                    </span>
+                    <div className="flex flex-wrap gap-2">
+                      {cityOptions.map((o) => (
+                        <button key={o.value} type="button" aria-pressed={selectedCities.includes(o.value)} onClick={() => toggleCity(o.value)} className={chip(selectedCities.includes(o.value))}>
+                          {prettyCity(o.label)}
+                        </button>
+                      ))}
+                    </div>
+                    {activeWeek && (
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={weekSave}
+                        onClick={() => {
+                          if (!weekSave) void weekCities.save(activeWeek, selectedCities);
+                          setWeekSave((v) => !v);
+                        }}
+                        className="flex min-h-14 items-center gap-3 rounded-[14px] border border-slate-800 bg-slate-950 px-3.5 py-1.5 text-left"
+                      >
+                        <span className="flex min-w-0 flex-1 flex-col gap-px">
+                          <span className="text-sm font-semibold text-slate-100">Salvar na {activeWeek}ª semana</span>
+                          <span className="text-xs text-slate-500">Já vêm marcadas quando você voltar a ela</span>
+                        </span>
+                        <span aria-hidden="true" className={`flex h-8 w-[52px] shrink-0 items-center rounded-2xl p-[3px] ${weekSave ? 'justify-end bg-blue-600' : 'justify-start bg-slate-700'}`}>
+                          <span className="size-[26px] rounded-full bg-slate-950" />
+                        </span>
+                      </button>
+                    )}
+                  </div>
 
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Semana do ciclo</span>
-              <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Semana do ciclo">
-                {[null, ...CYCLE_WEEKS].map((w) => (
+                  <div className="flex flex-col gap-2.5">
+                    <span className={groupTitle}>Turno</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      {FILTROS_TURNO.map((t) => (
+                        <button
+                          key={t.value}
+                          type="button"
+                          aria-pressed={turnoFilter === t.value}
+                          onClick={() => setTurnoFilter(turnoFilter === t.value ? null : t.value)}
+                          className={`h-11 rounded-xl border text-sm ${turnoFilter === t.value ? 'border-blue-600 bg-blue-950 font-semibold text-blue-200' : 'border-slate-800 bg-slate-950 text-slate-300'}`}
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2.5">
+                    <span className={groupTitle}>Local</span>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ value: 'consultorio', label: 'Consultório' }, { value: 'ubs', label: 'UBS' }, ...FILTROS_PLANTAO.map((f) => ({ value: f.value as string, label: f.label === 'Hospitais' ? 'Hospital' : f.label }))].map((f) => (
+                        <button key={f.value} type="button" aria-pressed={selectedCategory === f.value} onClick={() => setSelectedCategory(selectedCategory === f.value ? null : f.value)} className={chip(selectedCategory === f.value)}>
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {specCodes.length > 0 && (
+                    <div className="flex flex-col gap-2.5">
+                      <span className={groupTitle}>Especialidade</span>
+                      <div className="flex flex-wrap gap-2">
+                        {specCodes.map((c) => {
+                          const on = selectedSpecs.includes(c);
+                          return (
+                            <button key={c} type="button" aria-pressed={on} onClick={() => setSelectedSpecs(on ? selectedSpecs.filter((x) => x !== c) : [...selectedSpecs, c])} className={chip(on, true)}>
+                              {c}
+                            </button>
+                          );
+                        })}
+                        <button type="button" aria-pressed={selectedSpecs.length === 0} onClick={() => setSelectedSpecs([])} className={chip(selectedSpecs.length === 0, true)}>
+                          Todas
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-2.5">
+                    <span className={groupTitle}>Semana do ciclo</span>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {CYCLE_WEEKS.map((w) => (
+                        <button
+                          key={w}
+                          type="button"
+                          aria-pressed={selectedWeek === w}
+                          onClick={() => changeWeek(selectedWeek === w ? null : w)}
+                          className={`h-10 rounded-[10px] border text-[13px] ${selectedWeek === w ? 'border-blue-600 bg-blue-950 font-semibold text-blue-200' : 'border-slate-800 bg-slate-950 text-slate-300'}`}
+                        >
+                          {w}ª
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   <button
-                    key={w ?? 'todas'}
                     type="button"
-                    onClick={() => changeWeek(w)}
-                    aria-pressed={selectedWeek === w}
-                    className={`h-8 px-3 rounded-full text-xs whitespace-nowrap shrink-0 ${
-                      selectedWeek === w ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
-                    }`}
+                    role="switch"
+                    aria-checked={sortMode === 'historico'}
+                    onClick={() => changeSortMode(sortMode === 'historico' ? 'manual' : 'historico')}
+                    className="flex min-h-14 items-center gap-3 rounded-[14px] border border-slate-800 bg-slate-950 px-3.5 py-1.5 text-left"
                   >
-                    {w === null ? 'Todas' : cycleWeekLabel(w)}
+                    <span className="flex min-w-0 flex-1 flex-col gap-px">
+                      <span className="text-sm font-semibold text-slate-100">Ordenar pela média de horário</span>
+                      <span className="text-xs text-slate-500">Desligado: a ordem é a que você montou</span>
+                    </span>
+                    <span aria-hidden="true" className={`flex h-8 w-[52px] shrink-0 items-center rounded-2xl p-[3px] ${sortMode === 'historico' ? 'justify-end bg-blue-600' : 'justify-start bg-slate-700'}`}>
+                      <span className="size-[26px] rounded-full bg-slate-950" />
+                    </span>
                   </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Local e carteira</span>
-              <div className="flex gap-1.5 flex-wrap">
-                {FILTROS_PLANTAO.map((f) => (
-                  <button
-                    key={f.value}
-                    type="button"
-                    onClick={() => setSelectedCategory(selectedCategory === f.value ? null : f.value)}
-                    aria-pressed={selectedCategory === f.value}
-                    className={`h-8 px-3 rounded-full text-xs ${
-                      selectedCategory === f.value ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-                {/* Sem especialidades no perfil por enquanto: o botão só aparece para quem já tem carteira configurada */}
-                {(portfolioConfigured || portfolioActive) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!portfolioConfigured) {
-                      setShowProfile(true);
-                      return;
-                    }
-                    saveProfile({ show_all: !profile?.show_all });
-                  }}
-                  aria-pressed={portfolioActive}
-                  title={portfolioConfigured ? 'Alternar entre minha carteira e todos' : 'Escolha suas especialidades no perfil'}
-                  className={`h-8 px-3 rounded-full text-xs ${
-                    portfolioActive ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {portfolioActive ? 'Minha carteira' : 'Todos'}
-                </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Turno e ordenação</span>
-              <div className="flex gap-1.5 flex-wrap">
-                {FILTROS_TURNO.map((t) => (
-                  <button
-                    key={t.value}
-                    type="button"
-                    onClick={() => setTurnoFilter(turnoFilter === t.value ? null : t.value)}
-                    aria-pressed={turnoFilter === t.value}
-                    className={`h-8 px-3 rounded-full text-xs ${
-                      turnoFilter === t.value ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => changeSortMode(sortMode === 'historico' ? 'manual' : 'historico')}
-                  aria-pressed={sortMode === 'historico'}
-                  title="Ordena pelo horário médio em que cada médico costuma atender"
-                  className={`h-8 px-3 rounded-full text-xs ${
-                    sortMode === 'historico'
-                      ? 'border-0 bg-slate-100 text-slate-950 font-semibold'
-                      : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Média histórica
-                </button>
-              </div>
-            </div>
+                </div>
+              );
+            })()}
           </BottomSheet>
         )}
       
@@ -2420,6 +2443,7 @@ export default function HomePage() {
           activeWeek={activeWeek}
           cityOptions={cityOptions}
           weekCities={activeWeek ? weekCityList(activeWeek) : []}
+          cityNames={activeWeek ? weekCityList(activeWeek).map((k) => cityLabelOf(k)) : []}
           onCitiesChange={(keys) => {
             if (activeWeek) void weekCities.save(activeWeek, keys);
           }}
@@ -2690,8 +2714,13 @@ export default function HomePage() {
           items={noticeItems}
           now={now}
           allCities={!(activeWeek && weekCityList(activeWeek).length > 0)}
+          cityNames={activeWeek ? weekCityList(activeWeek).map((k) => cityLabelOf(k)) : []}
           approvals={approvalItems}
           onDecide={proposals.decide}
+          onSettings={() => {
+            setShowNotices(false);
+            setShowProfile(true);
+          }}
           onOpenDoctor={(id) => setSheetId(id)}
           onMarkAllRead={notif.markAllRead}
           onClose={() => setShowNotices(false)}
