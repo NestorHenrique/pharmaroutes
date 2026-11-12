@@ -22,6 +22,8 @@ export interface DoctorLocation {
   cidade: string;
   map_link: string;
   agenda: AgendaEntry[];
+  /** tipo do local: consultorio, ubs, psm, samu ou hospital (Local 1 usa o do médico; extras: doctor_places.categoria, v18) */
+  categoria?: string | null;
   /** Local 1: não pode ser excluído */
   principal?: boolean;
 }

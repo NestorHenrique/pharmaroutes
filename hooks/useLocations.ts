@@ -46,6 +46,12 @@ export function useLocations(userId: string | null) {
         map_link: l.map_link,
         agenda: cleanAgenda(l.agenda),
       });
+      // categoria só existe depois da migração v18: sem ela, grava sem o tipo em vez de falhar
+      const withType = (l: DoctorLocation) => ({ ...fields(l), categoria: l.categoria ?? 'consultorio' });
+      const write = (l: DoctorLocation, payload: Record<string, unknown>) =>
+        UUID.test(l.id)
+          ? supabase.from('doctor_places').update(payload).eq('id', l.id)
+          : supabase.from('doctor_places').insert({ ...payload, doctor_id: doctorId, created_by: userId });
       let ok = true;
       for (const l of current) {
         if (keep.has(l.id)) continue;
@@ -53,9 +59,8 @@ export function useLocations(userId: string | null) {
         if (error) ok = false;
       }
       for (const l of next) {
-        const { error } = UUID.test(l.id)
-          ? await supabase.from('doctor_places').update(fields(l)).eq('id', l.id)
-          : await supabase.from('doctor_places').insert({ ...fields(l), doctor_id: doctorId, created_by: userId });
+        let { error } = await write(l, withType(l));
+        if (error && /categoria/i.test(error.message)) ({ error } = await write(l, fields(l)));
         if (error) {
           console.error('Erro ao salvar local:', error.message);
           ok = false;

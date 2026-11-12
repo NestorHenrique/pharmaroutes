@@ -9,6 +9,7 @@ import type { ComboOption } from '@/components/ComboBox';
 import type { DoctorLocation } from '@/types/doctor';
 import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '@/hooks/useGeolocation';
 import { mergeAddress } from '@/lib/geocode';
+import { CATEGORIAS } from '@/constants';
 
 const fieldCls =
   'h-[52px] w-full min-w-0 box-border rounded-xl border border-slate-800 bg-slate-950 px-3.5 text-base text-slate-100 outline-hidden placeholder:text-slate-500 focus-visible:border-blue-600';
@@ -57,6 +58,28 @@ export default function LocationSheet({ initial, cityOptions, onSave, onDelete, 
         <FormTitle>Nome do local</FormTitle>
         <input type="text" value={loc.nome} onChange={(e) => set('nome', e.target.value)} placeholder="Clínica, hospital, posto..." className={fieldCls} />
       </label>
+
+      <div className="flex flex-col gap-1.5">
+        <FormTitle>Tipo de local</FormTitle>
+        <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Tipo de local">
+          {CATEGORIAS.map((c) => {
+            const on = (loc.categoria ?? 'consultorio') === c.value;
+            return (
+              <button
+                key={c.value}
+                type="button"
+                aria-pressed={on}
+                onClick={() => set('categoria', c.value)}
+                className={`h-11 rounded-xl text-sm ${
+                  on ? 'border border-blue-600 bg-blue-900 font-semibold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-300'
+                }`}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="grid grid-cols-[2fr_1fr] gap-2">
         <label className="flex flex-col gap-1.5">
