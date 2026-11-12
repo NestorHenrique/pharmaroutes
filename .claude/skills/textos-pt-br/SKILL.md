@@ -39,6 +39,8 @@ Quem lê está em campo, com pressa. Frase curta, palavra simples, uma ideia por
 - **Notificação:** "Já visitou o Dr. Rafael Moura?" + contexto ("Você marcou Rep. no consultório às 16:25.").
 - **Confirmação rápida (toast):** o que foi feito + **Desfazer**. "Ordem salva · só no seu painel".
 
+- **Status no card:** "Último paciente" (avisa a cidade), "Rep. no consultório", "Aguardando médico · 12 min", "Visitado". Quem marcou: "Arthur 16:50"; modo privado: "Rep 16:50" (só a hora se for hoje).
+
 ## Antes de entregar
 - Leia em voz alta: se tropeçar, encurte.
 - Mesma coisa com o mesmo nome em todas as telas (use a tabela).
