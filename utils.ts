@@ -383,9 +383,11 @@ export function whatsappDigits(value: string | null | undefined): string {
 }
 
 /** null = ok (vazio ou 11 dígitos); senão a mensagem para mostrar abaixo da caixa */
-export function whatsappError(value: string | null | undefined): string | null {
+export function whatsappError(value: string | null | undefined, allowLandline = false): string | null {
   const d = (value ?? '').replace(/\D/g, '');
   if (d.length === 0 || d.length === WHATSAPP_DIGITS) return null;
+  // Clínica: telefone fixo tem 10 dígitos (DDD + 8) e também vale
+  if (allowLandline && d.length === WHATSAPP_DIGITS - 1) return null;
   if (d.length < WHATSAPP_DIGITS) {
     const falta = WHATSAPP_DIGITS - d.length;
     return d.length <= 9
