@@ -279,7 +279,8 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onSav
         />
       </section>
 
-      {/* Endereço e GPS */}
+      {/* Endereço e GPS do Local 1. Com 2+ locais, cada endereço fica na lista de Locais (lápis) */}
+      {extras.length === 0 && (
       <section className={cardCls}>
         <FormTitle>Endereço</FormTitle>
         <div className="grid grid-cols-[2fr_1fr] gap-2">
@@ -344,6 +345,7 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onSav
           </div>
         )}
       </section>
+      )}
 
       {/* Contato e observação */}
       <section className={cardCls}>

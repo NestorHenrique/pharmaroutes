@@ -877,6 +877,9 @@ function DoctorCard({
           />
           <input type="text" placeholder="Clínica / Local (PSM, SAMU, Hospital...)" value={editForm.complemento ?? ''} onChange={(e) => setField('complemento', e.target.value)} className={inputCls} />
 
+          {/* Com 2+ locais, cada endereço fica na lista de Locais (lápis) */}
+          {extras.length === 0 && (
+          <>
           <div className="grid grid-cols-[2fr_1fr] gap-1.5">
             <input type="text" placeholder="Endereço" value={editForm.endereco ?? ''} onChange={(e) => setField('endereco', e.target.value)} className={inputCls} />
             <input type="text" placeholder="Número" value={editForm.numero ?? ''} onChange={(e) => setField('numero', e.target.value)} className={inputCls} />
@@ -938,6 +941,9 @@ function DoctorCard({
             >
               🗺️ {GPS_ADDRESS_FALLBACK_LABEL}
             </button>
+          )}
+
+          </>
           )}
 
           <input type="text" placeholder="Observações do Propagandista" value={editForm.observacoes ?? ''} onChange={(e) => setField('observacoes', e.target.value)} className={inputCls} />
