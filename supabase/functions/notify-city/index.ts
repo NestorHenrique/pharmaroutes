@@ -1,7 +1,14 @@
 // @ts-nocheck — Supabase Edge Function (Deno). Fica fora do build do Next.
 //
-// Envia Web Push para os representantes inscritos na cidade do médico quando
+// Envia Web Push para os representantes que recebem avisos da cidade do médico quando
 // alguém marca "Último Paciente" ou "Rep. no Consultório".
+//
+// Quem recebe (migração v12):
+//   - o representante que tem a SEMANA ATIVA desta segunda-feira (rep_profiles.active_week) E cidades salvas
+//     para ela (rep_week_cities) recebe se a cidade do médico está nessa lista;
+//   - quem não escolheu cidades da semana continua como antes: a cidade da inscrição do aparelho;
+//   - rep_profiles.notify_enabled = false desliga os avisos.
+// Sem a migração v12, tudo funciona como antes.
 // Com { test: true } envia um push de teste só para os aparelhos de quem chamou.
 //
 // Secrets necessários (npx supabase secrets set ...):
@@ -39,6 +46,13 @@ function cityKey(city: string): string {
 }
 
 type Sub = { id: string; endpoint: string; p256dh: string; auth: string };
+
+/** Segunda-feira de hoje no horário do Brasil (UTC-3), como "aaaa-mm-dd" (a semana ativa vale só nela) */
+function mondayInBrazil(): string {
+  const d = new Date(Date.now() - 3 * 3600_000); // lê os campos UTC como se fossem os de Brasília
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
 
 async function sendAll(admin, subs: Sub[], payload: string, ttl: number) {
   let sent = 0;
@@ -139,11 +153,29 @@ Deno.serve(async (req) => {
     .maybeSingle();
   if (!doctor?.cidade) return json({ sent: 0, reason: 'doctor without city' });
 
-  const { data: subs } = await admin
+  const key = cityKey(doctor.cidade);
+  const { data: allSubs } = await admin
     .from('push_subscriptions')
-    .select('id, endpoint, p256dh, auth')
-    .eq('city_key', cityKey(doctor.cidade))
+    .select('id, user_id, endpoint, p256dh, auth, city_key')
     .neq('user_id', user.id);
+
+  // Semana ativa e cidades da semana de cada representante (ausentes antes da migração v12: erro = usa o modo antigo)
+  const monday = mondayInBrazil();
+  const [{ data: profs, error: profErr }, { data: weekRows, error: weekErr }] = await Promise.all([
+    admin.from('rep_profiles').select('user_id, active_week, active_week_monday, notify_enabled'),
+    admin.from('rep_week_cities').select('user_id, week, cities'),
+  ]);
+  const profOf = new Map((profErr ? [] : profs ?? []).map((p) => [p.user_id, p]));
+  const citiesOf = new Map((weekErr ? [] : weekRows ?? []).map((r) => [`${r.user_id}:${r.week}`, (r.cities ?? []) as string[]]));
+
+  const subs = (allSubs ?? []).filter((s) => {
+    const p = profOf.get(s.user_id);
+    if (p && p.notify_enabled === false) return false;
+    const weekCities =
+      p && p.active_week && p.active_week_monday === monday ? citiesOf.get(`${s.user_id}:${p.active_week}`) : undefined;
+    if (weekCities && weekCities.length > 0) return weekCities.includes(key);
+    return s.city_key === key; // sem cidades da semana: a cidade do aparelho, como antes
+  });
 
   const payload = JSON.stringify({
     title: `${TITLES[status_type]} — ${doctor.descricao}`,

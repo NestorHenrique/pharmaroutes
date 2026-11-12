@@ -54,8 +54,20 @@ export function useWeekCities(userId: string | null) {
         for (const r of (data as { week: number; cities: string[] | null }[]) ?? []) {
           map[r.week] = (r.cities ?? []).map(String);
         }
-        setByWeek(map);
-        writeCache(userId, map);
+        // O que só existe no aparelho (salvo antes da migração v12) sobe para o servidor
+        const local = readCache(userId);
+        const merged: WeekCities = { ...map };
+        for (const [wk, list] of Object.entries(local)) {
+          const week = Number(wk);
+          if (!(week in map) && list.length > 0) {
+            merged[week] = list;
+            void supabase
+              .from('rep_week_cities')
+              .upsert({ user_id: userId, week, cities: list, updated_at: new Date().toISOString() }, { onConflict: 'user_id,week' });
+          }
+        }
+        setByWeek(merged);
+        writeCache(userId, merged);
       }
       setReady(true);
     })();

@@ -35,7 +35,7 @@ import {
   specialtyCode,
   ROUTE_HISTORY_DAYS,
 } from '@/utils';
-import { ensureServiceWorker, notifyCity } from '@/lib/push';
+import { ensureServiceWorker, getPushSupport, notifyCity, subscribeToCity, unsubscribePush } from '@/lib/push';
 import { enqueue, isNetworkError, isOffline, pendingOps } from '@/lib/offlineQueue';
 import type { QueuedOp } from '@/lib/offlineQueue';
 
@@ -49,6 +49,9 @@ import { useVisits } from '@/hooks/useVisits';
 import { useVisitPrompts } from '@/hooks/useVisitPrompts';
 import VisitPromptModal from '@/components/VisitPromptModal';
 import NameConfirmSheet, { suggestName } from '@/components/NameConfirmSheet';
+import WeekSetupFlow from '@/components/WeekSetupFlow';
+import ConfirmSheet from '@/components/ConfirmSheet';
+import { useWeekCities } from '@/hooks/useWeekCities';
 import { getFlag, setFlag } from '@/lib/repFlags';
 import { alreadyVisited, roundLabel, type VisitPrompt } from '@/lib/visitPrompts';
 import { presenceItems, visitorsOf, visitorsSummary } from '@/lib/visits';
@@ -431,6 +434,14 @@ export default function HomePage() {
   const [activeWeek, setActiveWeek] = useState<CycleWeek | null>(null);
   /** pergunta da semana (abre no início de cada semana) e a semana da semana passada */
   const [weekPrompt, setWeekPrompt] = useState(false);
+  /** o fluxo da semana abriu sozinho (primeiro acesso da semana): só aí valem os avisos de ciclo */
+  const [weekAuto, setWeekAuto] = useState(false);
+  /** confirmação "Começar um novo ciclo?" (com o que fazer depois de confirmar) */
+  const [renewAsk, setRenewAsk] = useState<{ then?: () => void } | null>(null);
+  const [renewBusy, setRenewBusy] = useState(false);
+  /** Filtros > Avisos da semana: salvar as cidades escolhidas na semana (ligado) ou só olhar (desligado) */
+  const [weekSave, setWeekSave] = useState(true);
+  const [weekTemp, setWeekTemp] = useState<string[] | null>(null);
   const [lastWeek, setLastWeek] = useState<CycleWeek | null>(null);
 
   /* UI */
@@ -451,6 +462,8 @@ export default function HomePage() {
   const userId = session?.user.id ?? null;
   const { profile, portfolio, saveProfile, linkDoctor, routeOrder, saveRouteOrder } = useRepProfile(userId);
   const actorName = profile?.display_name?.trim() || session?.user.email?.split('@')[0] || 'App';
+  /** cidades de cada semana (avisos); não escondem médicos */
+  const weekCities = useWeekCities(userId);
 
   /* Primeiro acesso: "Confirme como os colegas te chamam". Fechar sem confirmar = pergunta de novo na próxima abertura. */
   const [nameLater, setNameLater] = useState(false);
@@ -516,6 +529,7 @@ export default function HomePage() {
       if (savedWeek && savedWeek.monday === mondayOf()) setActiveWeek(savedWeek.week);
       else {
         if (savedWeek) setLastWeek(savedWeek.week);
+        setWeekAuto(true);
         setWeekPrompt(true);
       }
     } catch { /* ignore */ }
@@ -523,12 +537,33 @@ export default function HomePage() {
 
   const changeActiveWeek = (week: CycleWeek | null) => {
     setActiveWeek(week);
-    setWeekPrompt(false);
     try {
       if (week) localStorage.setItem(ACTIVE_WEEK_KEY, JSON.stringify({ week, monday: mondayOf() }));
       else localStorage.removeItem(ACTIVE_WEEK_KEY);
     } catch { /* ignore */ }
+    // Cópia no servidor: é por ela que a função de avisos escolhe as cidades da semana
+    void saveProfile({ active_week: week, active_week_monday: week ? mondayOf() : null });
   };
+
+  /** Escolheu a semana: guarda e passa a mostrar só os médicos marcados nela */
+  const pickWeek = (week: CycleWeek) => {
+    changeActiveWeek(week);
+    changeWeek(week);
+  };
+
+  // Outro aparelho já respondeu "qual semana" nesta segunda-feira: segue a mesma
+  useEffect(() => {
+    if (!profile || activeWeek) return;
+    const w = normalizeCycleWeeks([Number(profile.active_week)])[0];
+    if (w && profile.active_week_monday === mondayOf()) {
+      setActiveWeek(w);
+      setWeekPrompt(false);
+      setWeekAuto(false);
+      try {
+        localStorage.setItem(ACTIVE_WEEK_KEY, JSON.stringify({ week: w, monday: mondayOf() }));
+      } catch { /* ignore */ }
+    }
+  }, [profile, activeWeek]);
 
   // App aberto na virada da semana: na segunda-feira a semana escolhida expira
   useEffect(() => {
@@ -537,6 +572,7 @@ export default function HomePage() {
     if (saved && saved.monday !== mondayOf()) {
       setLastWeek(saved.week);
       setActiveWeek(null);
+      setWeekAuto(true);
       setWeekPrompt(true);
     }
   }, [now, activeWeek]);
@@ -1167,15 +1203,23 @@ export default function HomePage() {
   );
 
   /** Novo ciclo: zera só os "Visitado" deste representante (semanas, ordem da rota e horários médios ficam) */
-  const renewCycle = useCallback(async () => {
+  const renewCycle = useCallback(() => {
     if (!sessionUserId) return;
-    const ok = confirm(
-      'Renovar o ciclo de visitas? Só as SUAS visitas voltam para pendente; as dos outros representantes não mudam. Semanas e ordem da rota continuam iguais.',
-    );
-    if (!ok) return;
+    setRenewAsk({}); // abre "Começar um novo ciclo?"; renewMine roda ao confirmar
+  }, [sessionUserId]);
+
+  const confirmRenew = async () => {
+    setRenewBusy(true);
     const done = await renewMine();
-    if (!done) alert('Não foi possível renovar o ciclo. Tente novamente.');
-  }, [sessionUserId, renewMine]);
+    setRenewBusy(false);
+    if (!done) {
+      alert('Não foi possível renovar o ciclo. Tente novamente.');
+      return;
+    }
+    const then = renewAsk?.then;
+    setRenewAsk(null);
+    then?.();
+  };
 
   /** Médicos com as semanas DESTE representante */
   const doctorsWithWeeks = useMemo(
@@ -1550,6 +1594,34 @@ export default function HomePage() {
     }
   }, [rawPrompts, doctors, myVisits, visitsReady, resolvePrompt]);
 
+  /* ═══════════════════ Avisos por semana ═══════════════════ */
+  const weekCityList = (w: number): string[] => weekCities.byWeek[w] ?? [];
+  /** sugestão: cidades dos médicos marcados naquela semana */
+  const defaultWeekCities = (w: number): string[] => {
+    const keys = new Set<string>();
+    for (const d of doctors) {
+      if (d.cidade && weeksByDoctor.get(d.id)?.includes(w as CycleWeek)) keys.add(cityKey(d.cidade));
+    }
+    return [...keys];
+  };
+  const saveWeekAlerts = async (week: CycleWeek, v: { notify: boolean; cities: string[] }): Promise<string | null> => {
+    if (!userId) return 'Entre na sua conta para salvar.';
+    await weekCities.save(week, v.cities);
+    void saveProfile({ notify_enabled: v.notify });
+    if (v.notify) {
+      if (getPushSupport() === 'unsupported') {
+        return 'Este aparelho não suporta avisos. No iPhone, instale o app na Tela de Início primeiro.';
+      }
+      const first = v.cities[0];
+      const label = cityOptions.find((o) => o.value === first)?.label ?? first;
+      const r = await subscribeToCity(userId, label);
+      if (!r.ok) return r.message;
+    } else {
+      await unsubscribePush();
+    }
+    return null;
+  };
+
   /** perguntas já respondidas nesta rodada (para "1 de 2 perguntas") */
   const [answeredRound, setAnsweredRound] = useState(0);
   useEffect(() => {
@@ -1669,7 +1741,10 @@ export default function HomePage() {
           <div className="flex flex-col gap-0.5 min-w-0">
             <button
               type="button"
-              onClick={() => setWeekPrompt(true)}
+              onClick={() => {
+                setWeekAuto(false);
+                setWeekPrompt(true);
+              }}
               className="self-start bg-transparent border-0 p-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 truncate hover:text-slate-200"
             >
               {dayLabel}
@@ -1939,6 +2014,48 @@ export default function HomePage() {
               />
             </div>
 
+            {activeWeek && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+                  Avisos da {activeWeek}ª semana
+                </span>
+                <CityFilter
+                  pickMode
+                  options={cityOptions}
+                  selected={weekTemp ?? weekCityList(activeWeek)}
+                  onChange={(keys) => {
+                    if (weekSave) {
+                      setWeekTemp(null);
+                      void weekCities.save(activeWeek, keys);
+                    } else {
+                      setWeekTemp(keys);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={weekSave}
+                  onClick={() => {
+                    if (!weekSave && weekTemp) {
+                      void weekCities.save(activeWeek, weekTemp);
+                      setWeekTemp(null);
+                    }
+                    setWeekSave((v) => !v);
+                  }}
+                  className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-slate-700 bg-slate-900 px-3.5 text-left"
+                >
+                  <span className="text-sm text-slate-100">Salvar na {activeWeek}ª semana</span>
+                  <span aria-hidden="true" className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${weekSave ? 'bg-blue-600' : 'bg-slate-600'}`}>
+                    <span className={`absolute top-0.5 size-5 rounded-full bg-white transition-all ${weekSave ? 'left-[18px]' : 'left-0.5'}`} />
+                  </span>
+                </button>
+                <span className="text-xs text-slate-500">
+                  São as cidades de onde você recebe avisos dos colegas. Elas não escondem médicos da lista.
+                </span>
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Semana do ciclo</span>
               <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Semana do ciclo">
@@ -2049,6 +2166,7 @@ export default function HomePage() {
           activeWeekLabel={activeWeek ? cycleWeekLabel(activeWeek) : null}
           onChangeWeek={() => {
             setShowProfile(false);
+            setWeekAuto(false);
             setWeekPrompt(true);
           }}
           cycleVisitedCount={cycleVisits.size}
@@ -2272,55 +2390,40 @@ export default function HomePage() {
         </nav>
       )}
 
-      {/* Pergunta da semana: abre no começo de cada semana (segunda-feira) */}
+      {/* Semana do ciclo → aviso de ciclo → avisos dos colegas (abre sozinho no primeiro acesso de cada segunda) */}
       {weekPrompt && !needName && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 animate-[fade-in_.18s_ease-out]">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="week-prompt-title"
-            className="w-full sm:max-w-md rounded-t-[28px] sm:rounded-[28px] border-t sm:border border-slate-700 bg-slate-900 px-5 pt-6 flex flex-col gap-4 animate-[sheet-up_.24s_cubic-bezier(.2,.8,.2,1)]"
-            style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 20px)' }}
-          >
-            <div className="flex flex-col gap-1">
-              <h2 id="week-prompt-title" className="m-0 text-xl font-bold tracking-tight text-white">
-                Qual semana você está visitando esta semana?
-              </h2>
-              <span className="text-sm text-slate-400">
-                Fica salvo até a próxima segunda-feira. Os médicos que você marcar como visitados entram nessa semana.
-              </span>
-            </div>
-            <div className="grid grid-cols-5 gap-2">
-              {CYCLE_WEEKS.map((w) => {
-                const suggested = !activeWeek && lastWeek !== null && w === ((lastWeek % 5) + 1);
-                const current = activeWeek === w;
-                return (
-                  <button
-                    key={w}
-                    type="button"
-                    onClick={() => changeActiveWeek(w)}
-                    aria-pressed={current}
-                    className={`h-16 rounded-2xl text-sm font-bold flex flex-col items-center justify-center gap-0.5 ${
-                      current || suggested
-                        ? 'border-0 bg-blue-600 text-white'
-                        : 'border border-slate-700 bg-slate-800 text-slate-100'
-                    }`}
-                  >
-                    <span className="text-lg leading-none">{w}ª</span>
-                    <span className="text-[10px] font-medium opacity-80">{suggested ? 'sugerida' : 'Sem'}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              onClick={() => setWeekPrompt(false)}
-              className="h-11 rounded-xl border border-slate-700 bg-transparent text-sm text-slate-300 hover:text-white"
-            >
-              {activeWeek ? 'Fechar' : 'Agora não'}
-            </button>
-          </div>
-        </div>
+        <WeekSetupFlow
+          activeWeek={activeWeek}
+          lastWeek={lastWeek}
+          auto={weekAuto}
+          cityOptions={cityOptions}
+          savedCities={weekCityList}
+          defaultCities={defaultWeekCities}
+          notifyInitial={profile?.notify_enabled !== false}
+          onPickWeek={pickWeek}
+          onRequestRenew={(then) => setRenewAsk({ then })}
+          onSaveAlerts={saveWeekAlerts}
+          onClose={() => {
+            setWeekPrompt(false);
+            setWeekAuto(false);
+          }}
+        />
+      )}
+
+      {/* Confirmação de renovar o ciclo */}
+      {renewAsk && (
+        <ConfirmSheet
+          title="Começar um novo ciclo?"
+          confirmLabel="Sim, começar"
+          busy={renewBusy}
+          onConfirm={() => void confirmRenew()}
+          onCancel={() => setRenewAsk(null)}
+        >
+          <p className="m-0">
+            As <strong className="text-slate-100">suas</strong> visitas voltam para pendente. As dos colegas não mudam, e o histórico fica guardado.
+          </p>
+          <p className="m-0 text-slate-400">A ordem da rota e as semanas dos médicos continuam iguais.</p>
+        </ConfirmSheet>
       )}
 
       {/* Status geral: médicos marcados por qualquer representante, agrupados pelo status */}
