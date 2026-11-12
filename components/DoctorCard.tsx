@@ -35,7 +35,7 @@ import AuditBadge from '@/components/AuditBadge';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
 import { VisitorStack } from '@/components/RepAvatar';
-import { visitorsSummary } from '@/lib/visits';
+import { shortName, visitorsSummary } from '@/lib/visits';
 import type { PresenceItem } from '@/lib/visits';
 import PresenceTags from '@/components/PresenceTags';
 import type { Visitor } from '@/lib/visits';
@@ -295,10 +295,10 @@ function DoctorCard({
       statuses.find((s) => s.status_type === 'ultimo_paciente') ??
       statuses.find((s) => s.status_type === 'aguardando_medico') ??
       statuses.find((s) => UNAVAILABLE_STATUSES.includes(s.status_type));
-    const leadTone: Partial<Record<DoctorStatusType, { dot: string; text: string; border: string; pill: string }>> = {
-      representante_no_consultorio: { dot: 'bg-sky-400', text: 'text-sky-400', border: 'border-sky-500/60', pill: 'bg-sky-500 text-slate-950' },
-      ultimo_paciente: { dot: 'bg-red-400', text: 'text-red-400', border: 'border-red-500/60', pill: 'bg-red-500 text-slate-950' },
-      aguardando_medico: { dot: 'bg-amber-400', text: 'text-amber-400', border: 'border-amber-400/60', pill: 'bg-amber-400 text-slate-950' },
+    const leadTone: Partial<Record<DoctorStatusType, { dot: string; text: string; border: string; pill: string; bg: string }>> = {
+      representante_no_consultorio: { dot: 'bg-sky-400', text: 'text-sky-300', border: 'border-sky-500', pill: 'bg-sky-500 text-slate-950', bg: 'bg-sky-500/10' },
+      ultimo_paciente: { dot: 'bg-red-400', text: 'text-red-300', border: 'border-red-500', pill: 'bg-red-500 text-slate-950', bg: 'bg-red-500/10' },
+      aguardando_medico: { dot: 'bg-amber-400', text: 'text-amber-300', border: 'border-amber-500', pill: 'bg-amber-500 text-slate-950', bg: 'bg-amber-500/10' },
     };
     const tone = lead ? leadTone[lead.status_type] : undefined;
     const visitedAt = cycleVisitedAt ?? (categoryMode ? visited?.created_at ?? null : null);
@@ -331,7 +331,11 @@ function DoctorCard({
       subline = hasPresence ? place : formatVisitAudit(null, visitedAt, now);
     } else if (lead) {
       const label = STATUS_META[lead.status_type].label;
-      subline = STATUS_META[lead.status_type].showTime ? `${label} · ${formatTime(lead.created_at)}` : label;
+      subline = lead.return_date
+        ? `${label} · retorna ${new Date(`${lead.return_date}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`
+        : STATUS_META[lead.status_type].showTime
+          ? `${label} · ${formatTime(lead.created_at)}`
+          : label;
     } else if (searchHint && !otherVisitors) {
       subline = `Achou em ${searchHint}`;
     } else if (otherVisitors && !hasPresence) {
@@ -339,17 +343,29 @@ function DoctorCard({
       subline = visitorsSummary(otherVisitors, (name, iso) => formatVisitAudit(name, iso, now)) ?? place;
     }
 
-    // Status ativo vira uma etiqueta colorida no topo do card; a linha de baixo fica só com a hora
+    // Status ativo vira uma etiqueta colorida no topo do card, com "há 6 min · Arthur" ao lado; embaixo fica o local
     const leadPill = tone && lead && !visitedAt ? STATUS_META[lead.status_type].label : null;
-    if (leadPill) {
-      subline = subline === leadPill ? '' : subline.replace(`${leadPill} · `, '');
+    let leadMeta = '';
+    if (leadPill && lead) {
+      subline = place;
+      const offices = presence?.filter((p) => p.kind === 'office').length ?? 0;
+      const who = lead.rep_name ? shortName(lead.rep_name) : '';
+      const mins = Math.max(0, Math.floor(((now ?? Date.now()) - new Date(lead.created_at).getTime()) / 60000));
+      const ago = mins < 1 ? 'agora' : mins < 60 ? `há ${mins} min` : `há ${Math.floor(mins / 60)} h`;
+      leadMeta =
+        lead.status_type === 'representante_no_consultorio' && offices > 1
+          ? `${offices} reps agora`
+          : `${ago}${who ? ` · ${who.split(' ')[0]}` : ''}`;
     }
+    const showFlag = !muted && !visitedAt;
 
     return (
       <div
         id={`doc-${doc.id}`}
         className={`relative rounded-2xl border px-3.5 py-3 flex items-center gap-3 transition-colors active:bg-slate-800 ${
-          muted ? 'border-slate-800 bg-transparent opacity-60' : `bg-slate-900 ${tone?.border ?? 'border-slate-800'}`
+          muted
+            ? 'border-dashed border-slate-700 bg-slate-950 opacity-70'
+            : `${tone?.bg ?? 'bg-slate-900'} ${tone?.border ?? 'border-slate-800'}`
         }`}
       >
         {onDragHandleTouchStart && (
@@ -377,7 +393,10 @@ function DoctorCard({
           className="flex-1 min-w-0 text-left bg-transparent border-0 p-0 flex flex-col gap-0.5 before:absolute before:inset-0 before:rounded-2xl before:content-['']"
         >
           {leadPill && tone && (
-            <span className={`self-start rounded-md px-2 py-0.5 text-[11px] font-bold ${tone.pill}`}>{leadPill}</span>
+            <span className="mb-1 flex items-center gap-2">
+              <span className={`shrink-0 whitespace-nowrap rounded-md px-2 py-0.5 text-[11px] font-bold ${tone.pill}`}>{leadPill}</span>
+              {leadMeta && <span className={`truncate text-xs ${tone.text}`}>{leadMeta}</span>}
+            </span>
           )}
           <span
             className={`text-[15px] font-semibold uppercase truncate ${visitedAt ? 'text-slate-500 line-through' : 'text-white'}`}
@@ -386,7 +405,7 @@ function DoctorCard({
             {isNew && <span className="ml-1.5 align-middle text-[9px] font-bold text-green-400 no-underline">NOVO</span>}
           </span>
           {subline && (
-            <span className={`text-xs uppercase truncate ${visitedAt ? 'text-emerald-400' : tone?.text ?? 'text-slate-400'}`}>
+            <span className={`text-xs uppercase truncate ${visitedAt ? 'text-emerald-400' : muted && lead?.return_date ? 'normal-case text-amber-400' : 'text-slate-400'}`}>
               {subline}
             </span>
           )}
@@ -422,9 +441,13 @@ function DoctorCard({
           <button
             type="button"
             onClick={quickVisit}
-            className="relative z-10 h-11 shrink-0 rounded-xl border-0 bg-emerald-600 px-3.5 text-sm font-bold text-white hover:bg-emerald-500"
+            aria-label="Já visitei"
+            title="Já visitei"
+            className="relative z-10 flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-emerald-600 text-white hover:bg-emerald-500"
           >
-            Já visitei
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 12l5 5L20 7" />
+            </svg>
           </button>
         )}
         {cycleVisitedAt && onToggleCycleVisit ? (
@@ -435,11 +458,26 @@ function DoctorCard({
           >
             Desfazer
           </button>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-600" aria-hidden="true">
-            <path d="M9 6l6 6-6 6" />
-          </svg>
-        )}
+        ) : showFlag ? (
+          <span className="relative z-10 shrink-0">
+            <StatusSelector
+              doctorId={doc.id}
+              doctorName={doc.descricao}
+              doctorSubtitle={[specCode, doc.bairro].filter(Boolean).join(' · ')}
+              statuses={statuses}
+              onSet={onSetStatus}
+              onClear={onClearStatus}
+              visited={categoryMode ? Boolean(visited) : Boolean(cycleVisitedAt)}
+              onToggleVisited={
+                categoryMode
+                  ? (v) => (v ? onSetStatus(doc.id, 'visitado_hoje') : onClearStatus(doc.id, 'visitado_hoje'))
+                  : onToggleCycleVisit
+                    ? (v) => onToggleCycleVisit(doc.id, v)
+                    : undefined
+              }
+            />
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -597,6 +635,7 @@ function DoctorCard({
           <StatusSelector
             doctorId={doc.id}
             doctorName={doc.descricao}
+            doctorSubtitle={[specCode, doc.bairro].filter(Boolean).join(' · ')}
             statuses={statuses}
             onSet={onSetStatus}
             onClear={onClearStatus}

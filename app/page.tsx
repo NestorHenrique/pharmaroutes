@@ -68,7 +68,7 @@ import { getFlag, setFlag } from '@/lib/repFlags';
 import { shouldSignOutOnReopen } from '@/lib/auth';
 import NewPasswordScreen from '@/components/NewPasswordScreen';
 import { alreadyVisited, roundLabel, type VisitPrompt } from '@/lib/visitPrompts';
-import { presenceItems, visitorsOf, visitorsSummary } from '@/lib/visits';
+import { initialsOf, presenceItems, visitorsOf, visitorsSummary } from '@/lib/visits';
 import { matchDoctor, SEARCH_SCOPES } from '@/lib/search';
 import type { SearchScope } from '@/lib/search';
 import type { PresenceItem, Visitor } from '@/lib/visits';
@@ -153,6 +153,14 @@ function initialTab(): string | null {
 }
 
 const NO_VISITORS: Visitor[] = [];
+
+/** "Quinta · 12 nov" */
+function todayLabel(nowMs: number): string {
+  const d = new Date(nowMs);
+  const wd = d.toLocaleDateString('pt-BR', { weekday: 'long' }).split('-')[0];
+  const month = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+  return `${wd.charAt(0).toUpperCase()}${wd.slice(1)} · ${d.getDate()} ${month}`;
+}
 
 /** Nome do dia para frases ("na terça") */
 const DAY_LONG: Record<string, string> = { seg: 'segunda', ter: 'terça', qua: 'quarta', qui: 'quinta', sex: 'sexta' };
@@ -288,10 +296,9 @@ class FeedErrorBoundary extends Component<{ resetKey: number; children: ReactNod
 /** Mesmo modelo dos títulos do cadastro (FormTitle): barrinha + texto forte. Sem `tone` usa a cor de destaque do tema. */
 function SectionTitle({ tone, children }: { tone?: string; children: ReactNode }) {
   return (
-    <div className={`mt-2 flex items-center gap-2 ${tone ?? 'text-blue-400'}`}>
-      <span className={`h-4 w-1 shrink-0 rounded-full ${tone ? 'bg-current' : 'bg-blue-600'}`} aria-hidden="true" />
-      <span className="text-[13px] font-bold uppercase tracking-[0.1em]">{children}</span>
-    </div>
+    <h2 className={`m-0 mt-2 text-[11px] font-bold uppercase tracking-[0.08em] ${tone ?? 'text-slate-100'}`}>
+      {children}:
+    </h2>
   );
 }
 
@@ -348,24 +355,19 @@ function CollapsibleTitle({
       </button>
     );
   }
-  const label = (
-    <>
-      {title} ({count})
-    </>
-  );
+  const label = <>{title}</>;
   if (!onToggle) return <SectionTitle tone={tone}>{label}</SectionTitle>;
   return (
     <button
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className={`mt-2 flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left ${tone ?? 'text-blue-400'}`}
+      className="mt-2 flex w-full items-center justify-between gap-2 border-0 bg-transparent p-0 text-left"
     >
-      <span className="flex items-center gap-2">
-        <span className={`h-4 w-1 shrink-0 rounded-full ${tone ? 'bg-current' : 'bg-blue-600'}`} aria-hidden="true" />
-        <span className="text-[13px] font-bold uppercase tracking-[0.1em]">{label}</span>
+      <span className={`text-[11px] font-bold uppercase tracking-[0.08em] ${tone ?? 'text-slate-100'}`}>
+        {label}: <span className="font-semibold text-slate-500">{count}</span>
       </span>
-      <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium normal-case tracking-normal text-slate-500">
+      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium normal-case tracking-normal text-slate-500">
         {hint}
         <svg
           width="14"
@@ -376,7 +378,7 @@ function CollapsibleTitle({
           strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={open ? 'rotate-180' : ''}
+          className={`transition-transform ${open ? 'rotate-180' : ''}`}
           aria-hidden="true"
         >
           <path d="M6 9l6 6 6-6" />
@@ -1967,80 +1969,84 @@ export default function HomePage() {
     <div className="min-h-dvh bg-slate-950 text-slate-100">
       {/* Cabeçalho: título, busca, filtros recolhidos e dias */}
       <header className="sticky top-0 z-20 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 pt-4 pb-3 flex flex-col gap-3">
-        <div className="flex justify-between items-center gap-3">
-          <div className="flex flex-col gap-0.5 min-w-0">
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <button
               type="button"
               data-tour="week"
+              aria-label="Trocar semana de trabalho"
               onClick={() => {
                 setWeekAuto(false);
                 setWeekPrompt(true);
               }}
-              className="self-start bg-transparent border-0 p-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 truncate hover:text-slate-200"
+              className="inline-flex items-center gap-1 self-start truncate border-0 bg-transparent p-0 text-xs font-medium text-slate-400 hover:text-slate-200"
             >
-              {dayLabel}
-              {' · '}
-              {activeWeek ? cycleWeekLabel(activeWeek) : 'Escolher semana'}
+              {todayLabel(now)} ·{' '}
+              <span className="font-semibold text-blue-400">{activeWeek ? `${activeWeek}ª semana` : 'Escolher semana'}</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
             </button>
-            <h1 className="m-0 flex items-center gap-2 text-2xl font-bold tracking-tight text-white">
-              Rota de hoje
+            <h1 className="m-0 flex items-center gap-2 text-xl font-bold tracking-tight text-white">
+              Rota Propagandista
               <span
                 title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 8 s)'}
                 className={`size-2 rounded-full ${realtimeOn ? 'bg-emerald-500' : 'bg-slate-600'}`}
               />
             </h1>
           </div>
-          <div className="flex gap-1.5 items-center">
-            <button
-              type="button"
-              onClick={() => setShowAddForm((p) => !p)}
-              data-tour="add"
-              aria-label="Novo médico"
-              className="size-10 shrink-0 rounded-full border-0 bg-blue-600 text-white flex items-center justify-center hover:bg-blue-500"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowGuide(true)}
-              data-tour="help"
-              aria-label="Guia de cores e status"
-              title="Guia de cores e status"
-              className={`${iconBtn} text-base font-bold`}
-            >
-              ?
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowNotices(true)}
-              data-tour="bell"
-              aria-label={unreadNotices > 0 ? `Avisos dos colegas, ${unreadNotices} não lidos` : 'Avisos dos colegas'}
-              className={`${iconBtn} relative`}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8" />
-                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-              </svg>
-              {unreadNotices > 0 && (
-                <span className="absolute -right-1 -top-1 flex min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-[18px] text-white">
-                  {unreadNotices > 9 ? '9+' : unreadNotices}
-                </span>
-              )}
-            </button>
-            <button type="button" onClick={() => setShowProfile(true)} data-tour="profile" aria-label="Meu perfil" className={iconBtn}>
-              {profile?.avatar_url ? (
-                <RepAvatar name={actorName} src={profile.avatar_url} size={34} />
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="8" r="4" />
-                  <path d="M4 21a8 8 0 0 1 16 0" />
-                </svg>
-              )}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowGuide(true)}
+            data-tour="help"
+            aria-label="Guia de status e cores"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-base font-bold text-slate-300 hover:text-white"
+          >
+            ?
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowNotices(true)}
+            data-tour="bell"
+            aria-label={unreadNotices > 0 ? `Avisos dos colegas, ${unreadNotices} não lidos` : 'Avisos dos colegas'}
+            className="relative flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-100"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+              <path d="M10 21a2 2 0 0 0 4 0" />
+            </svg>
+            {unreadNotices > 0 && <span className="absolute right-2.5 top-2 size-2 rounded-full bg-blue-600" aria-hidden="true" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowProfile(true)}
+            data-tour="profile"
+            aria-label="Meu perfil"
+            className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-blue-800 bg-blue-950 p-0 text-[15px] font-bold text-blue-600"
+          >
+            {profile?.avatar_url ? <RepAvatar name={actorName} src={profile.avatar_url} size={42} /> : initialsOf(actorName)}
+          </button>
         </div>
+
+        {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
+        <nav data-tour="days" aria-label="Dias da semana" className="grid grid-cols-5 gap-1.5">
+          {TABS_NAVEGACAO.filter((tab) => tab.value !== 'novos').map((tab) => {
+            const on = selectedTab === tab.value;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setSelectedTab(on ? null : tab.value)}
+                aria-pressed={on}
+                className={`h-11 rounded-xl text-[13px] ${
+                  on ? 'border border-blue-600 bg-blue-600 font-bold text-white' : 'border border-slate-800 bg-slate-900 font-semibold text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
 
         {/* Busca + botão de filtros */}
         <div className="flex gap-2">
@@ -2052,7 +2058,7 @@ export default function HomePage() {
             <input
               type="search"
               aria-label="Buscar"
-              placeholder="Buscar médico, CRM, bairro, telefone..."
+              placeholder="Médico, especialidade, CRM..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocus(true)}
@@ -2081,31 +2087,41 @@ export default function HomePage() {
             onClick={() => setShowStatusOverview(true)}
             aria-label="Status geral: médicos marcados pelos representantes"
             title="Status geral"
-            className="h-11 px-3 shrink-0 rounded-xl border border-slate-800 bg-slate-900 text-slate-200 flex items-center gap-1.5 text-sm font-medium"
+            className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-100"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M4 6h2M4 12h2M4 18h2M9 6h11M9 12h11M9 18h11" />
             </svg>
-            Status
           </button>
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             data-tour="filters"
+            aria-label={activeFilterCount > 0 ? `Filtros, ${activeFilterCount} ativos` : 'Filtros'}
             aria-expanded={showFilters}
-            className={`h-11 px-3.5 shrink-0 rounded-xl border flex items-center gap-1.5 text-sm font-medium ${
-              showFilters ? 'border-blue-600 bg-slate-900 text-white' : 'border-slate-800 bg-slate-900 text-slate-200'
+            className={`relative flex size-11 shrink-0 items-center justify-center rounded-xl border bg-slate-900 text-slate-100 ${
+              showFilters || activeFilterCount > 0 ? 'border-blue-600' : 'border-slate-800'
             }`}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
               <path d="M4 6h16M7 12h10M10 18h4" />
             </svg>
-            Filtros
             {activeFilterCount > 0 && (
-              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center">
+              <span className="absolute -right-1 -top-1 flex min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold leading-[18px] text-white">
                 {activeFilterCount}
               </span>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowAddForm((p) => !p)}
+            data-tour="add"
+            aria-label="Novo médico"
+            className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-blue-600 text-white hover:bg-blue-500"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
           </button>
         </div>
 
@@ -2170,21 +2186,35 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
-        <div data-tour="days" className="flex gap-1.5 overflow-x-auto no-scrollbar">
-          {TABS_NAVEGACAO.filter((tab) => tab.value !== 'novos').map((tab) => (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => setSelectedTab(selectedTab === tab.value ? null : tab.value)}
-              aria-pressed={selectedTab === tab.value}
-              className={`h-9 px-4 rounded-full text-[13px] whitespace-nowrap shrink-0 ${
-                selectedTab === tab.value ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200 font-medium'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        {/* Turno + quantos médicos + quantos já visitados */}
+        <div className="flex items-center gap-2">
+          <div role="group" aria-label="Turno" className="flex rounded-[10px] border border-slate-800 bg-slate-900 p-[3px]">
+            {FILTROS_TURNO.map((t) => {
+              const on = turnoFilter === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setTurnoFilter(on ? null : t.value)}
+                  className={`h-[38px] rounded-lg border-0 px-3.5 text-[13px] font-semibold ${on ? 'bg-slate-700 text-slate-100' : 'bg-transparent text-slate-400'}`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+          <span className="min-w-0 truncate text-xs text-slate-400">
+            {selectedCities.length === 1
+              ? `${cityOptions.find((o) => o.value === selectedCities[0])?.label ?? selectedCities[0]} · `
+              : selectedCities.length > 1
+                ? `${selectedCities.length} cidades · `
+                : ''}
+            {sortedDoctors.length} {sortedDoctors.length === 1 ? 'médico' : 'médicos'}
+          </span>
+          <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-blue-400" aria-label={`${visitedList.length} visitados de ${sortedDoctors.length}`}>
+            {visitedList.length}/{sortedDoctors.length}
+          </span>
         </div>
 
         {/* Novos médicos cadastrados (logo abaixo dos dias) */}
@@ -2427,7 +2457,7 @@ export default function HomePage() {
       )}
 
       {/* Conteúdo */}
-      <main className="px-4 pt-4 pb-36 flex flex-col gap-2.5">
+      <main className="px-4 pt-3 pb-10 flex flex-col gap-2.5">
         {showAddForm && (
           <BottomSheet onClose={() => setShowAddForm(false)} dismissOnBackdrop={false}>
           <AddDoctorForm
@@ -2442,73 +2472,6 @@ export default function HomePage() {
           />
           </BottomSheet>
         )}
-
-        {/* Próximo da rota */}
-        {nextDoctor && (
-          <section
-            aria-label="Próximo médico"
-            className="rounded-2xl border border-blue-600 bg-slate-900 p-4 flex flex-col gap-3"
-          >
-            <div className="flex justify-between items-center">
-              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-blue-400">Próximo</span>
-              <span className="text-xs text-slate-400">
-                {cycleVisitedCount} de {filteredDoctors.length} visitado{cycleVisitedCount !== 1 ? 's' : ''}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => openSheet(nextDoctor.id)}
-              className="text-left bg-transparent border-0 p-0 flex flex-col gap-1"
-            >
-              <span className="text-lg font-semibold uppercase text-white">{nextDoctor.descricao}</span>
-              <span className="text-sm uppercase text-slate-400">
-                {[nextDoctor.complemento || 'Consultório próprio', nextDoctor.bairro].filter(Boolean).join(' · ')}
-              </span>
-            </button>
-            <div className="flex justify-between items-center gap-2">
-              <span className="min-w-0 text-sm text-slate-200">
-                {(() => {
-                  // Colegas no consultório / que já visitaram: nome e hora no lugar do "esperado"
-                  const presence = presenceFor(nextDoctor.id);
-                  if (presence.length > 0) return <PresenceTags items={presence} />;
-                  const e = feed.expected.get(nextDoctor.id);
-                  const expectedText = e ? `${formatMinutes(e.startMinutes)} esperado` : null;
-                  // Se um colega já visitou, mostra quem e quando (sem mexer na rota do dia)
-                  const visit = visitLabelOf(nextDoctor.id);
-                  if (visit) return expectedText ? `${visit} · ${expectedText}` : visit;
-                  return expectedText ?? 'Sem horário médio ainda';
-                })()}
-              </span>
-              <button
-                type="button"
-                onClick={() => toggleVisited(nextDoctor.id)}
-                className="h-11 px-5 rounded-xl border-0 bg-emerald-600 text-white text-sm font-bold flex items-center gap-1.5 hover:bg-emerald-500"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M5 12l5 5L20 7" />
-                </svg>
-                Visitado
-              </button>
-            </div>
-          </section>
-        )}
-
-        {/* Contagem */}
-        <div className="flex justify-between items-center gap-2 text-xs text-slate-500 flex-wrap px-0.5">
-          <span>
-            {sortedDoctors.length} médico{sortedDoctors.length !== 1 ? 's' : ''}
-            {selectedCategory && <span> · {selectedCategory.toUpperCase()}</span>}
-            {selectedCities.length > 0 && <span> · {selectedCities.map((k) => cityLabelOf(k)).join(', ')}</span>}
-            {isCategoryMode && (
-              <span className="text-emerald-400">
-                {' '}
-                · {visitedCount} visitado{visitedCount !== 1 ? 's' : ''}
-              </span>
-            )}
-            {loading && <span className="text-blue-400"> · Atualizando...</span>}
-          </span>
-          {sortMode === 'historico' && <span>Média histórica</span>}
-        </div>
 
         {/* Cards em 3 blocos */}
         <FeedErrorBoundary resetKey={resumeTick}>
@@ -2548,7 +2511,7 @@ export default function HomePage() {
         ) : (
           <>
             {topDoctors.length > 0 && (
-              <SectionTitle tone="text-red-400">Em atendimento · {topDoctors.length}</SectionTitle>
+              <SectionTitle>Acontecendo agora</SectionTitle>
             )}
             {attendanceGroups.map((g) => {
               // Sempre recolhida: 2 cards + botão azul "Ver todos (N)" logo abaixo do último
@@ -2556,9 +2519,6 @@ export default function HomePage() {
               const open = collapsible && Boolean(openGroups[g.type]);
               return (
                 <div key={g.type} className="flex flex-col gap-2.5">
-                  <SectionTitle tone={g.tone}>
-                    {g.title} ({g.docs.length})
-                  </SectionTitle>
                   {(open ? g.docs : g.docs.slice(0, COLLAPSED_VISIBLE)).map((doc) => renderCard(doc, 'top'))}
                   {collapsible && (
                     <button
@@ -2576,7 +2536,7 @@ export default function HomePage() {
 
             {routeList.length > 0 && (
               <CollapsibleTitle
-                title="Rota"
+                title="Roteiro padrão"
                 count={routeList.length}
                 open={routeShown}
                 onToggle={toggleRouteClosed}
@@ -2611,6 +2571,7 @@ export default function HomePage() {
             {feed.unavailable.length > 0 && (
               <CollapsibleTitle
                 title="Indisponíveis"
+                tone="text-slate-400"
                 count={feed.unavailable.length}
                 open={unavailShown}
                 onToggle={toggleUnavailOpen}
@@ -2623,56 +2584,6 @@ export default function HomePage() {
         </FeedErrorBoundary>
       </main>
 
-      {/* Barra de ações fixa (no alcance do polegar) */}
-      {targetDoc && !sheetDoc && (
-        <nav
-          aria-label="Ações rápidas"
-          className="fixed inset-x-0 bottom-0 z-30 px-3 pt-2"
-          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
-        >
-          <div className="mx-auto max-w-xl rounded-[22px] border border-slate-700 bg-slate-900/95 backdrop-blur-md shadow-2xl shadow-black/40 p-2 flex flex-col gap-1.5">
-            <span className="px-2 text-[11px] uppercase text-slate-400 truncate">{targetDoc.descricao}</span>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                disabled={!targetNav}
-                onClick={() => targetNav && openExternal(targetNav)}
-                className="h-[52px] rounded-2xl border-0 bg-blue-600 text-white text-sm font-bold flex flex-col items-center justify-center gap-0.5 hover:bg-blue-500 disabled:opacity-40"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M3 11l18-8-8 18-2-8-8-2z" />
-                </svg>
-                Ir
-              </button>
-              <button
-                type="button"
-                onClick={toggleTargetVisited}
-                aria-pressed={targetVisited}
-                className={`h-[52px] rounded-2xl border text-sm font-semibold flex flex-col items-center justify-center gap-0.5 ${
-                  targetVisited
-                    ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-400'
-                    : 'border-slate-700 bg-slate-800 text-slate-100'
-                }`}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400" aria-hidden="true">
-                  <path d="M5 12l5 5L20 7" />
-                </svg>
-                {targetVisited ? 'Desfazer' : 'Visitado'}
-              </button>
-              <button
-                type="button"
-                onClick={openTargetStatus}
-                className="h-[52px] rounded-2xl border border-slate-700 bg-slate-800 text-slate-100 text-sm font-semibold flex flex-col items-center justify-center gap-0.5"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />
-                </svg>
-                Status
-              </button>
-            </div>
-          </div>
-        </nav>
-      )}
 
       {/* Semana do ciclo → aviso de ciclo → avisos dos colegas (abre sozinho no primeiro acesso de cada segunda) */}
       {weekPrompt && !needName && !needTerms && (
