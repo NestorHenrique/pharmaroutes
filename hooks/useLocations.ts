@@ -7,7 +7,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMPTY: readonly DoctorLocation[] = [];
 
 /**
- * Locais EXTRAS de atendimento (tabela doctor_locations, v17). O Local 1 é o endereço do próprio médico.
+ * Locais EXTRAS de atendimento (tabela doctor_places, v17). O Local 1 é o endereço do próprio médico.
  * Antes da migração a tabela não existe: o erro é ignorado e todo médico fica só com o Local 1.
  */
 export function useLocations(userId: string | null) {
@@ -15,7 +15,7 @@ export function useLocations(userId: string | null) {
 
   const refetch = useCallback(async () => {
     if (!userId) return;
-    const { data, error } = await supabase.from('doctor_locations').select('*').order('created_at', { ascending: true });
+    const { data, error } = await supabase.from('doctor_places').select('*').order('created_at', { ascending: true });
     if (error || !data) return;
     setRows(data.map((r) => ({ ...(r as DoctorLocation & { doctor_id: string }), agenda: cleanAgenda((r as DoctorLocation).agenda) })));
   }, [userId]);
@@ -49,13 +49,13 @@ export function useLocations(userId: string | null) {
       let ok = true;
       for (const l of current) {
         if (keep.has(l.id)) continue;
-        const { error } = await supabase.from('doctor_locations').delete().eq('id', l.id);
+        const { error } = await supabase.from('doctor_places').delete().eq('id', l.id);
         if (error) ok = false;
       }
       for (const l of next) {
         const { error } = UUID.test(l.id)
-          ? await supabase.from('doctor_locations').update(fields(l)).eq('id', l.id)
-          : await supabase.from('doctor_locations').insert({ ...fields(l), doctor_id: doctorId, created_by: userId });
+          ? await supabase.from('doctor_places').update(fields(l)).eq('id', l.id)
+          : await supabase.from('doctor_places').insert({ ...fields(l), doctor_id: doctorId, created_by: userId });
         if (error) {
           console.error('Erro ao salvar local:', error.message);
           ok = false;
