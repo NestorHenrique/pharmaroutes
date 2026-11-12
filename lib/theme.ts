@@ -26,7 +26,14 @@ export function resolveTheme(pref: ThemePref): Theme {
 export function applyTheme(pref: ThemePref): Theme {
   const t = resolveTheme(pref);
   document.documentElement.setAttribute('data-theme', t);
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'marfim' ? '#F7F6FB' : '#0B0B12');
+  // Cor da barra de status = fundo do cabeçalho do tema. O iOS só repinta de forma confiável se a
+  // meta for recriada (trocar só o content às vezes deixa o topo preso em branco/preto).
+  const color = t === 'marfim' ? '#F7F6FB' : '#0B0B12';
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
+  const meta = document.createElement('meta');
+  meta.name = 'theme-color';
+  meta.content = color;
+  document.head.appendChild(meta);
   try {
     localStorage.setItem(THEME_KEY, pref);
   } catch { /* ignore */ }

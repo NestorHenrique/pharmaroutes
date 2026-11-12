@@ -10,6 +10,8 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,
+  // Ocupa a tela toda (inclusive atrás do notch/Dynamic Island); o cabeçalho usa env(safe-area-inset-top)
+  viewportFit: 'cover',
   themeColor: '#0B0B12',
   // Escuro por padrão (Ônix); o tema claro (Marfim) é escolhido no app
   colorScheme: 'dark light',
@@ -18,6 +20,9 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Rota Propagandista',
   description: 'Sistema de Roteiro de Visitas',
+  // App da Tela de Início do iPhone: barra de status translúcida sobre o cabeçalho
+  icons: { apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }] },
+  appleWebApp: { capable: true, title: 'Rota Propagandista', statusBarStyle: 'black-translucent' },
 };
 
 const APP_BG = '#0B0B12';

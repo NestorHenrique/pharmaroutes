@@ -261,31 +261,6 @@ export default function DoctorSheet({
                         role="menuitem"
                         onClick={() => {
                           setMenuOpen(false);
-                          setMode('edit');
-                        }}
-                        className="flex min-h-[52px] items-center gap-3 rounded-xl border-0 bg-transparent px-3 text-left hover:bg-slate-800"
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-100" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg>
-                        <span className="text-[15px] font-medium text-slate-100">Editar dados</span>
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setStatusOpen(true);
-                        }}
-                        className="flex min-h-[52px] items-center gap-3 rounded-xl border-0 bg-transparent px-3 text-left hover:bg-slate-800"
-                      >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-100" aria-hidden="true"><path d="M5 21V4M5 4h11l-2.5 4L16 12H5" /></svg>
-                        <span className="text-[15px] font-medium text-slate-100">Marcar status</span>
-                      </button>
-                      <div className="mx-2 my-1 h-px bg-slate-700" />
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMenuOpen(false);
                           onDelete();
                         }}
                         className="flex min-h-[52px] items-center gap-3 rounded-xl border-0 bg-transparent px-3 text-left hover:bg-red-500/10"

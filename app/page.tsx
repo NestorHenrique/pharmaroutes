@@ -2010,7 +2010,7 @@ export default function HomePage() {
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-100">
       {/* Cabeçalho: título, busca, filtros recolhidos e dias */}
-      <header className="sticky top-0 z-20 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 pt-4 pb-3 flex flex-col gap-3">
+      <header className="sticky top-0 z-20 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 pb-3 flex flex-col gap-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
         <div className="flex items-center gap-2">
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <button
@@ -2703,7 +2703,8 @@ export default function HomePage() {
       {/* Status geral: médicos marcados por qualquer representante, agrupados pelo status */}
       {showStatusOverview && (
         <StatusOverview
-          doctors={panelDoctors}
+          doctors={doctors}
+          visitMap={visitMap}
           statusMap={liveStatusMap}
           profiles={repProfiles}
           myId={sessionUserId}

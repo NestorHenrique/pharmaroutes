@@ -1,10 +1,26 @@
 'use client';
 
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { friendlyAuthError, rememberKeepLogin, sendResetEmail } from '@/lib/auth';
+import { passwordRules, passwordValid } from '@/lib/password';
 
-type Mode = 'login' | 'forgot' | 'sent';
+type Mode = 'login' | 'forgot' | 'sent' | 'signup';
+
+/** Este aparelho já passou pela tela de entrada? (a primeira vez abre o Cadastro Rápido) */
+const SEEN_KEY = 'pr-login-seen';
+const markSeen = () => {
+  try {
+    localStorage.setItem(SEEN_KEY, '1');
+  } catch { /* ignore */ }
+};
+const isFirstAccess = () => {
+  try {
+    return localStorage.getItem(SEEN_KEY) !== '1';
+  } catch {
+    return false;
+  }
+};
 
 const inputCls =
   'h-[52px] w-full min-w-0 box-border rounded-xl border border-slate-800 bg-slate-900 px-3.5 text-base text-slate-100 placeholder:text-slate-500 outline-hidden focus-visible:border-blue-600';
@@ -28,7 +44,7 @@ function Brand({ subtitle }: { subtitle: string }) {
 }
 
 function Shell({ children }: { children: ReactNode }) {
-  return <div className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center gap-7 px-6 py-8">{children}</div>;
+  return <div className="mx-auto flex min-h-dvh w-full max-w-sm flex-col justify-center gap-7 px-6 pb-8" style={{ paddingTop: 'max(env(safe-area-inset-top), 32px)' }}>{children}</div>;
 }
 
 export default function LoginScreen() {
@@ -39,6 +55,41 @@ export default function LoginScreen() {
   const [keep, setKeep] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [repeat, setRepeat] = useState('');
+  const [info, setInfo] = useState<string | null>(null);
+
+  // Primeiro acesso neste aparelho: abre o Cadastro Rápido antes do login
+  useEffect(() => {
+    if (isFirstAccess()) setMode('signup');
+  }, []);
+
+  const handleSignup = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const digits = phone.replace(/\D/g, '');
+    if (name.trim().length < 2) return setError('Informe o seu nome.');
+    if (digits.length < 10 || digits.length > 11) return setError('Informe o telefone com DDD.');
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) return setError('Informe um e-mail válido.');
+    if (!passwordValid(password, repeat)) return setError('A senha precisa ter 8 caracteres, letra e número, e as duas senhas devem ser iguais.');
+    setLoading(true);
+    const { data, error: signError } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { data: { full_name: name.trim(), phone: digits } },
+    });
+    setLoading(false);
+    if (signError) return setError(friendlyAuthError(signError.message));
+    markSeen();
+    setPassword('');
+    setRepeat('');
+    // Com sessão aberta o app já entra sozinho; senão (confirmação por e-mail) volta ao login com o aviso
+    if (!data.session) {
+      setInfo('Cadastro feito. Se o app pedir, confirme o e-mail e entre com a sua senha.');
+      setMode('login');
+    }
+  };
 
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
@@ -46,7 +97,10 @@ export default function LoginScreen() {
     setError(null);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     if (authError) setError(friendlyAuthError(authError.message));
-    else rememberKeepLogin(keep);
+    else {
+      rememberKeepLogin(keep);
+      markSeen();
+    }
     setLoading(false);
   };
 
@@ -133,13 +187,68 @@ export default function LoginScreen() {
             </button>
           </div>
 
+          {info && <div role="status" className="text-xs text-emerald-300">{info}</div>}
           {error && <div role="alert" className="text-xs text-red-300">{error}</div>}
 
           <button type="submit" disabled={loading} className={primary}>
             {loading ? 'Entrando…' : 'Entrar'}
           </button>
         </form>
-        <span className="text-center text-xs leading-relaxed text-slate-500">Sem acesso? Fale com o administrador da sua equipe.</span>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setMode('signup');
+          }}
+          className="min-h-11 border-0 bg-transparent p-0 text-center text-sm font-semibold text-blue-400"
+        >
+          Primeiro acesso? Cadastro rápido
+        </button>
+      </Shell>
+    );
+  }
+
+  if (mode === 'signup') {
+    const field = (label: string, node: ReactNode) => (
+      <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-300">
+        {label}
+        {node}
+      </label>
+    );
+    const rules = passwordRules(password, repeat);
+    return (
+      <Shell>
+        <Brand subtitle="Cadastro rápido: leva menos de um minuto." />
+        <form onSubmit={handleSignup} noValidate className="flex flex-col gap-3.5">
+          {field('Nome', <input type="text" autoComplete="name" autoCapitalize="words" required value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />)}
+          {field('Telefone (com DDD)', <input type="tel" inputMode="tel" autoComplete="tel" required placeholder="(86) 99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />)}
+          {field('E-mail', <input type="email" autoComplete="email" required placeholder="voce@empresa.com" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />)}
+          {field('Senha', <input type="password" autoComplete="new-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />)}
+          {field('Confirmação de senha', <input type="password" autoComplete="new-password" required value={repeat} onChange={(e) => setRepeat(e.target.value)} className={inputCls} />)}
+          <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Regras da senha">
+            {rules.map((r) => (
+              <li key={r.id} className={`text-[13px] ${r.ok ? 'text-emerald-300' : 'text-slate-500'}`}>
+                {r.ok ? '✓ ' : '• '}
+                {r.label}
+              </li>
+            ))}
+          </ul>
+          {error && <div role="alert" className="text-xs text-red-300">{error}</div>}
+          <button type="submit" disabled={loading} className={primary}>
+            {loading ? 'Cadastrando…' : 'Cadastrar'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              markSeen();
+              setError(null);
+              setMode('login');
+            }}
+            className="min-h-11 border-0 bg-transparent p-0 text-sm font-semibold text-slate-300"
+          >
+            Já tenho conta, entrar
+          </button>
+        </form>
       </Shell>
     );
   }
@@ -152,7 +261,7 @@ export default function LoginScreen() {
   const sent = mode === 'sent';
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-sm flex-col">
-      <header className="px-3 pb-2 pt-4">
+      <header className="px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
         <button
           type="button"
           aria-label="Voltar"

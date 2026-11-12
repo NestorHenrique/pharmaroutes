@@ -6,25 +6,33 @@ import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { STATUS_META } from '@/types/status';
 import BottomSheet from '@/components/BottomSheet';
 import { RepAvatar } from '@/components/RepAvatar';
-import type { PublicProfile } from '@/lib/visits';
+import type { PublicProfile, VisitMap } from '@/lib/visits';
 import { shortName } from '@/lib/visits';
 import { dayTime, eventRepName, fetchStatusEventsSince, type StatusEventRow } from '@/lib/statusHistory';
-import { FILTROS_PLANTAO, FILTROS_TURNO } from '@/constants';
-import { cityKey, getAgenda, matchesLocation, shiftCovers } from '@/utils';
+import { ESPECIALIDADES, FILTROS_PLANTAO, FILTROS_TURNO } from '@/constants';
+import { cityKey, getAgenda, matchesLocation, shiftCovers, specialtyCode } from '@/utils';
 
 /* ── Tela geral de Status: todos os médicos que algum representante marcou, agrupados pelo status atual ── */
 
 /** Ordem dos grupos na tela */
-const GROUPS: { type: DoctorStatusType; label: string; dot: string }[] = [
+type GroupType = DoctorStatusType | 'visitado';
+
+const GROUPS: { type: GroupType; label: string; dot: string }[] = [
   { type: 'representante_no_consultorio', label: 'No consultório', dot: 'bg-sky-400' },
   { type: 'ultimo_paciente', label: 'Último paciente', dot: 'bg-red-400' },
   { type: 'aguardando_medico', label: 'Aguardando', dot: 'bg-amber-400' },
+  { type: 'visitado', label: 'Visitados', dot: 'bg-emerald-400' },
   { type: 'finalizou_atendimento', label: 'Finalizou', dot: 'bg-slate-400' },
   { type: 'nao_veio_hoje', label: 'Não veio hoje', dot: 'bg-slate-500' },
   { type: 'ferias', label: 'Licença / Afastado', dot: 'bg-amber-500' },
   { type: 'viajando', label: 'Férias / Viagem', dot: 'bg-amber-500' },
 ];
-const GROUP_TYPES = new Set(GROUPS.map((g) => g.type));
+const GROUP_TYPES = new Set<string>(GROUPS.map((g) => g.type));
+
+/** Hoje: visão coletiva em tempo real, tudo o que está acontecendo. 7 e 30 dias: histórico, só os registros
+ *  consolidados (sem "No consultório", "Aguardando" e demais status passageiros do momento). */
+const HISTORY_TYPES = new Set<GroupType>(['visitado', 'nao_veio_hoje', 'ferias', 'viajando']);
+const typeShown = (type: GroupType, period: number) => period === 1 || HISTORY_TYPES.has(type);
 
 const PERIODS = [
   { value: 1, label: 'Hoje' },
@@ -36,7 +44,7 @@ type Period = (typeof PERIODS)[number]['value'];
 const LOCAIS = [{ value: 'consultorio', label: 'Consultório' }, ...FILTROS_PLANTAO] as const;
 
 interface Mark {
-  type: DoctorStatusType;
+  type: GroupType;
   at: string;
   repName: string;
   userId: string | null;
@@ -46,7 +54,10 @@ interface Mark {
 }
 
 interface StatusOverviewProps {
+  /** todos os médicos da base (a visão coletiva inclui quem está fora da rota/painel deste rep) */
   doctors: readonly Doctor[];
+  /** visitas de todos os representantes (doctor_visits) */
+  visitMap: VisitMap;
   /** status ativos agora, por médico (já chega em tempo real) */
   statusMap: Readonly<Record<string, DoctorStatus[]>>;
   profiles: Readonly<Record<string, PublicProfile>>;
@@ -68,7 +79,7 @@ function chip(on: boolean): string {
   }`;
 }
 
-export default function StatusOverview({ doctors, statusMap, profiles, myId, onOpenDoctor, onClose }: StatusOverviewProps) {
+export default function StatusOverview({ doctors, visitMap, statusMap, profiles, myId, onOpenDoctor, onClose }: StatusOverviewProps) {
   const [period, setPeriod] = useState<Period>(7);
   const [events, setEvents] = useState<StatusEventRow[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -111,7 +122,7 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
       }
     };
     for (const e of events ?? []) {
-      if (!GROUP_TYPES.has(e.status_type)) continue;
+      if (!GROUP_TYPES.has(e.status_type) || !typeShown(e.status_type, period)) continue;
       consider(e.doctor_id, {
         type: e.status_type,
         at: e.event_at,
@@ -125,7 +136,7 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
     // período escolhido; Licença e Viagem ficam até o dia antes da volta (o app já tira depois disso).
     for (const [docId, list] of Object.entries(statusMap)) {
       for (const s of list) {
-        if (!GROUP_TYPES.has(s.status_type)) continue;
+        if (!GROUP_TYPES.has(s.status_type) || !typeShown(s.status_type, period)) continue;
         const prolonged = s.status_type === 'ferias' || s.status_type === 'viajando';
         if (!prolonged && new Date(s.created_at).getTime() < since) continue;
         consider(docId, {
@@ -138,8 +149,22 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
         });
       }
     }
+    // Visitados (data e horário): a visita mais recente de qualquer representante dentro do período
+    for (const [docId, list] of Object.entries(visitMap)) {
+      for (const v of list) {
+        if (new Date(v.visited_at).getTime() < since) continue;
+        consider(docId, {
+          type: 'visitado',
+          at: v.visited_at,
+          repName: profiles[v.user_id]?.display_name?.trim() || 'Representante',
+          userId: v.user_id,
+          returnDate: null,
+          active: false,
+        });
+      }
+    }
     return out;
-  }, [events, statusMap, profiles, period]);
+  }, [events, statusMap, visitMap, profiles, period]);
 
   const byId = useMemo(() => new Map(doctors.map((d) => [d.id, d])), [doctors]);
   const marked = useMemo(
@@ -153,17 +178,26 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
     for (const d of marked) if (d.cidade?.trim()) m.set(cityKey(d.cidade), d.cidade.trim());
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
   }, [marked]);
+  // Todas as especialidades cadastradas no sistema (lista oficial + as que existem nos médicos),
+  // não só as dos médicos marcados no período
   const specialties = useMemo(
     () =>
-      [...new Set(marked.map((d) => d.especialidade?.trim()).filter((s): s is string => Boolean(s)))].sort((a, b) =>
-        a.localeCompare(b, 'pt-BR'),
-      ),
-    [marked],
+      [
+        ...new Set([
+          ...ESPECIALIDADES.map((e) => e.label),
+          ...doctors.map((d) => d.especialidade?.trim()),
+        ].filter((s): s is string => Boolean(s))),
+      ].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [doctors],
   );
 
   const visible = marked.filter((d) => {
     if (city && cityKey(d.cidade) !== city) return false;
-    if (specialty && d.especialidade?.trim() !== specialty) return false;
+    if (specialty) {
+      const official = ESPECIALIDADES.find((e) => e.label === specialty);
+      const same = official ? specialtyCode(d.especialidade) === official.code : d.especialidade?.trim() === specialty;
+      if (!same) return false;
+    }
     if (local && !matchesLocation(d, local)) return false;
     if (turno && !getAgenda(d).some((e) => shiftCovers(e.shift, turno))) return false;
     return true;
@@ -239,7 +273,7 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
             ))}
           </div>
         )}
-        {specialties.length > 1 && (
+        {specialties.length > 0 && (
           <select
             aria-label="Especialidade"
             value={specialty ?? ''}
@@ -295,7 +329,7 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
                         </span>
                       </span>
                       {m.active && (
-                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${STATUS_META[m.type].border} ${STATUS_META[m.type].text}`}>
+                        <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${m.type !== 'visitado' ? `${STATUS_META[m.type].border} ${STATUS_META[m.type].text}` : ''}`}>
                           Agora
                         </span>
                       )}
