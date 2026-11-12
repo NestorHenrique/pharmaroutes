@@ -55,6 +55,8 @@ import Tour from '@/components/Tour';
 import StatusGuide from '@/components/StatusGuide';
 import { useWeekCities } from '@/hooks/useWeekCities';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useHiddenDoctors } from '@/hooks/useHiddenDoctors';
+import Toast, { type ToastData } from '@/components/Toast';
 import NotificationsSheet, { type NoticeItem } from '@/components/NotificationsSheet';
 import { getFlag, setFlag } from '@/lib/repFlags';
 import { shouldSignOutOnReopen } from '@/lib/auth';
@@ -476,6 +478,11 @@ export default function HomePage() {
   const actorName = profile?.display_name?.trim() || session?.user.email?.split('@')[0] || 'App';
   /** cidades de cada semana (avisos); não escondem médicos */
   const weekCities = useWeekCities(userId);
+  /** médicos que EU tirei do meu painel (continuam na base e nos colegas) */
+  const hiddenDocs = useHiddenDoctors(userId);
+  /** aviso curto com "Desfazer" */
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const showToast = useCallback((text: string, undo?: () => void) => setToast({ id: Date.now(), text, undo }), []);
   /** sino: avisos dos colegas (últimos 2 dias) */
   const notif = useNotifications(userId);
   const [showNotices, setShowNotices] = useState(false);
@@ -977,7 +984,9 @@ export default function HomePage() {
 
   /* ═══════════════════ Cidades ═══════════════════ */
 
-  const cityOptions = useMemo(() => buildCityOptions(doctors.map((d) => d.cidade)), [doctors]);
+  /** os médicos do MEU painel: a base menos os que eu excluí daqui */
+  const panelDoctors = useMemo(() => doctors.filter((d) => !hiddenDocs.hidden.has(d.id)), [doctors, hiddenDocs.hidden]);
+  const cityOptions = useMemo(() => buildCityOptions(panelDoctors.map((d) => d.cidade)), [panelDoctors]);
   const cityComboOptions: ComboOption[] = useMemo(
     () => cityOptions.map((o) => ({ value: o.label, label: prettyCity(o.label), hint: String(o.count) })),
     [cityOptions],
@@ -1155,18 +1164,17 @@ export default function HomePage() {
     [findDuplicate, prepare, session, actorName, fetchDoctors, setDoctorWeeks],
   );
 
-  const deleteDoctor = useCallback(
-    async (doc: Doctor) => {
-      if (!confirm(`Excluir ${doc.descricao}?`)) return;
-      setDoctors((prev) => prev.filter((d) => d.id !== doc.id));
-      const { error } = await supabase.from('doctors').delete().eq('id', doc.id);
-      if (error) {
-        console.error('Erro ao excluir médico:', error.message);
-        fetchDoctors();
-      }
-    },
-    [fetchDoctors],
-  );
+  /** "Excluir do meu painel": abre a pergunta; o médico continua na base e nos colegas */
+  const [deleteAsk, setDeleteAsk] = useState<Doctor | null>(null);
+  const deleteDoctor = useCallback((doc: Doctor) => setDeleteAsk(doc), []);
+  const confirmDelete = () => {
+    const doc = deleteAsk;
+    if (!doc) return;
+    setDeleteAsk(null);
+    setSheetId((cur) => (cur === doc.id ? null : cur));
+    void hiddenDocs.hide(doc.id);
+    showToast(`${doc.descricao} saiu do seu painel.`, () => void hiddenDocs.unhide(doc.id));
+  };
 
   const isInPortfolio = useCallback((doctorId: string) => portfolio.has(doctorId), [portfolio]);
 
@@ -1195,7 +1203,7 @@ export default function HomePage() {
     return out;
   }, [statusMap, now]);
 
-  const newCount = useMemo(() => doctors.filter((d) => isNewDoctor(d)).length, [doctors]);
+  const newCount = useMemo(() => panelDoctors.filter((d) => isNewDoctor(d)).length, [panelDoctors]);
 
   const mySpecialties = profile?.specialties ?? [];
   const portfolioConfigured = mySpecialties.length > 0 || portfolio.size > 0;
@@ -1253,8 +1261,8 @@ export default function HomePage() {
 
   /** Médicos com as semanas DESTE representante */
   const doctorsWithWeeks = useMemo(
-    () => doctors.map((d) => ({ ...d, cycle_weeks: weeksByDoctor.get(d.id) ?? [] })),
-    [doctors, weeksByDoctor],
+    () => panelDoctors.map((d) => ({ ...d, cycle_weeks: weeksByDoctor.get(d.id) ?? [] })),
+    [panelDoctors, weeksByDoctor],
   );
 
   const filteredDoctors = useMemo(() => {
@@ -1299,13 +1307,13 @@ export default function HomePage() {
   const cityDayCounts = useMemo(() => {
     if (!selectedTab || selectedTab === 'novos') return undefined;
     const out: Record<string, number> = {};
-    for (const d of doctors) {
+    for (const d of panelDoctors) {
       if (!getAgenda(d).some((e) => e.day === selectedTab)) continue;
       const k = cityKey(d.cidade);
       out[k] = (out[k] ?? 0) + 1;
     }
     return out;
-  }, [doctors, selectedTab]);
+  }, [panelDoctors, selectedTab]);
   const dayLongLabel = selectedTab ? DAY_LONG[selectedTab] : undefined;
 
   /** Sugestões ao digitar: acha em TODOS os médicos (não só no dia aberto) e leva direto à ficha */
@@ -1612,23 +1620,23 @@ export default function HomePage() {
    */
   const promptQueue = useMemo<VisitPrompt[]>(() => {
     if (doctors.length === 0 || !visitsReady) return []; // espera médicos e visitas carregarem
-    const byId = new Set(doctors.map((d) => d.id));
+    const byId = new Set(panelDoctors.map((d) => d.id));
     return rawPrompts.filter((p) => byId.has(p.doctor_id) && !alreadyVisited(p, myVisits));
-  }, [rawPrompts, doctors, myVisits, visitsReady]);
+  }, [rawPrompts, doctors.length, panelDoctors, myVisits, visitsReady]);
 
   useEffect(() => {
     if (doctors.length === 0 || !visitsReady) return;
-    const byId = new Set(doctors.map((d) => d.id));
+    const byId = new Set(panelDoctors.map((d) => d.id));
     for (const p of rawPrompts) {
       if (!byId.has(p.doctor_id) || alreadyVisited(p, myVisits)) void resolvePrompt(p);
     }
-  }, [rawPrompts, doctors, myVisits, visitsReady, resolvePrompt]);
+  }, [rawPrompts, doctors.length, panelDoctors, myVisits, visitsReady, resolvePrompt]);
 
   /* ═══════════════════ Sino: avisos dos colegas ═══════════════════
    * Só das cidades da semana (sem cidades escolhidas, mostra todas). Médico que saiu do painel não aparece.
    */
   const noticeItems = useMemo<NoticeItem[]>(() => {
-    const byId = new Map(doctors.map((d) => [d.id, d]));
+    const byId = new Map(panelDoctors.map((d) => [d.id, d]));
     const picked = activeWeek ? weekCities.byWeek[activeWeek] ?? [] : [];
     const set = picked.length > 0 ? new Set(picked) : null;
     const readMs = notif.readAt ? new Date(notif.readAt).getTime() : Number.POSITIVE_INFINITY;
@@ -1650,7 +1658,7 @@ export default function HomePage() {
         },
       ];
     });
-  }, [notif.rows, notif.readAt, doctors, activeWeek, weekCities.byWeek, repProfiles]);
+  }, [notif.rows, notif.readAt, panelDoctors, activeWeek, weekCities.byWeek, repProfiles]);
   const unreadNotices = noticeItems.filter((n) => n.unread).length;
 
   // Ao abrir o sino, busca de novo para não mostrar a lista de um minuto atrás
@@ -1683,7 +1691,7 @@ export default function HomePage() {
   /** sugestão: cidades dos médicos marcados naquela semana */
   const defaultWeekCities = (w: number): string[] => {
     const keys = new Set<string>();
-    for (const d of doctors) {
+    for (const d of panelDoctors) {
       if (d.cidade && weeksByDoctor.get(d.id)?.includes(w as CycleWeek)) keys.add(cityKey(d.cidade));
     }
     return [...keys];
@@ -2544,6 +2552,22 @@ export default function HomePage() {
         />
       )}
 
+      {/* Excluir do meu painel */}
+      {deleteAsk && (
+        <ConfirmSheet
+          title="Excluir do painel"
+          confirmLabel="Sim, excluir do meu painel"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteAsk(null)}
+        >
+          <p className="m-0 text-base font-semibold uppercase text-slate-50">Excluir {deleteAsk.descricao} do seu painel?</p>
+          <p className="m-0">
+            O médico continua na base e no painel dos colegas. Para voltar, cadastre o mesmo CRM em Novo médico e toque em
+            &quot;Adicionar ao meu painel&quot;.
+          </p>
+        </ConfirmSheet>
+      )}
+
       {/* Confirmação de renovar o ciclo */}
       {renewAsk && (
         <ConfirmSheet
@@ -2563,7 +2587,7 @@ export default function HomePage() {
       {/* Status geral: médicos marcados por qualquer representante, agrupados pelo status */}
       {showStatusOverview && (
         <StatusOverview
-          doctors={doctors}
+          doctors={panelDoctors}
           statusMap={liveStatusMap}
           profiles={repProfiles}
           myId={sessionUserId}
@@ -2603,6 +2627,9 @@ export default function HomePage() {
           onClose={closeSheet}
         />
       )}
+
+      {/* Aviso com "Desfazer" */}
+      {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
 
       {/* Sino: avisos dos colegas */}
       {showNotices && (

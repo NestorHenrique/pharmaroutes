@@ -634,7 +634,7 @@ function DoctorCard({
                     }}
                     className="text-left px-3 py-2.5 rounded-lg bg-transparent text-sm text-red-400 hover:bg-slate-800"
                   >
-                    Excluir
+                    Excluir do meu painel
                   </button>
                 </div>
               )}

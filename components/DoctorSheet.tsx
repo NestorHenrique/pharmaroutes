@@ -14,6 +14,7 @@ import type { PresenceItem, PublicProfile, Visitor } from '@/lib/visits';
 
 const NO_PROFILES: Readonly<Record<string, PublicProfile>> = {};
 import StatusHistory from '@/components/StatusHistory';
+import StatusSheet from '@/components/StatusSheet';
 import { STATUS_META } from '@/types/status';
 import {
   doctorWhatsApps,
@@ -124,6 +125,8 @@ export default function DoctorSheet({
 }: DoctorSheetProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [whatsOpen, setWhatsOpen] = useState(false);
   const [mode, setMode] = useState<'status' | 'edit'>('status');
   const [absence, setAbsence] = useState<DoctorStatusType | null>(null);
   const [returnDate, setReturnDate] = useState('');
@@ -248,6 +251,25 @@ export default function DoctorSheet({
                       <span className="text-xs text-slate-400">Telefones, endereço, agenda</span>
                     </span>
                   </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setStatusOpen(true);
+                    }}
+                    className="flex items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800 active:bg-slate-800"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />
+                      </svg>
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="text-sm font-semibold text-slate-100">Marcar status</span>
+                      <span className="text-xs text-slate-400">No consultório, visitado, ausência</span>
+                    </span>
+                  </button>
                   <div className="mx-2 my-1 h-px bg-slate-800" />
                   <button
                     type="button"
@@ -267,8 +289,8 @@ export default function DoctorSheet({
                       </svg>
                     </span>
                     <span className="flex min-w-0 flex-col">
-                      <span className="text-sm font-semibold text-red-400">Excluir médico</span>
-                      <span className="text-xs text-slate-400">Fica guardado no histórico</span>
+                      <span className="text-sm font-semibold text-red-400">Excluir do meu painel</span>
+                      <span className="text-xs text-slate-400">Continua na base e nos colegas</span>
                     </span>
                   </button>
                 </div>
@@ -474,10 +496,45 @@ export default function DoctorSheet({
         </div>
 
         {/* Ações */}
-        <div className="grid grid-cols-2 gap-2 pt-1">
-          <WhatsButton href={whats.medico} label="WhatsApp médico" />
-          <WhatsButton href={whats.clinica} label="WhatsApp clínica" />
+        <div className="pt-1">
+          <button
+            type="button"
+            disabled={!whats.medico && !whats.clinica}
+            onClick={() => setWhatsOpen(true)}
+            className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-emerald-600/50 bg-emerald-500/10 text-sm font-semibold text-emerald-300 disabled:opacity-40"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.7-5.4A8.4 8.4 0 1 1 21 11.5Z" />
+            </svg>
+            WhatsApp
+          </button>
         </div>
+        {whatsOpen && (
+          <BottomSheet title="Falar no WhatsApp" onClose={() => setWhatsOpen(false)}>
+            <p className="m-0 truncate text-sm font-semibold uppercase text-slate-200">{doc.descricao}</p>
+            <div className="grid grid-cols-1 gap-2">
+              <WhatsButton href={whats.medico} label="WhatsApp do médico" />
+              <WhatsButton href={whats.clinica} label="WhatsApp da clínica / atendente" />
+            </div>
+            {(!whats.medico || !whats.clinica) && (
+              <p className="m-0 text-xs text-slate-500">O número que falta pode ser cadastrado em Editar dados.</p>
+            )}
+          </BottomSheet>
+        )}
+        {statusOpen && (
+          <StatusSheet
+            doctorId={doc.id}
+            doctorName={doc.descricao}
+            statuses={statuses}
+            visited={Boolean(visitedAt)}
+            onSet={onSetStatus}
+            onClear={onClearStatus}
+            onToggleVisited={(v) => {
+              if (v !== Boolean(visitedAt)) onToggleVisited();
+            }}
+            onClose={() => setStatusOpen(false)}
+          />
+        )}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
