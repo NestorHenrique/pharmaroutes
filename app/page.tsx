@@ -1828,6 +1828,7 @@ export default function HomePage() {
         autoEdit={editingId === doc.id}
         onEditEnd={endEdit}
         now={tier === 'top' || tier === 'bottom' ? now : undefined}
+        myUserId={sessionUserId}
       />
     );
     if (!manual) return card;
