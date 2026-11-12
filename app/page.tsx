@@ -51,6 +51,8 @@ import VisitPromptModal from '@/components/VisitPromptModal';
 import NameConfirmSheet, { suggestName } from '@/components/NameConfirmSheet';
 import WeekSetupFlow from '@/components/WeekSetupFlow';
 import ConfirmSheet from '@/components/ConfirmSheet';
+import Tour from '@/components/Tour';
+import StatusGuide from '@/components/StatusGuide';
 import { useWeekCities } from '@/hooks/useWeekCities';
 import { getFlag, setFlag } from '@/lib/repFlags';
 import { alreadyVisited, roundLabel, type VisitPrompt } from '@/lib/visitPrompts';
@@ -439,6 +441,10 @@ export default function HomePage() {
   /** confirmação "Começar um novo ciclo?" (com o que fazer depois de confirmar) */
   const [renewAsk, setRenewAsk] = useState<{ then?: () => void } | null>(null);
   const [renewBusy, setRenewBusy] = useState(false);
+  /** tutorial da tela inicial e guia de cores */
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourDismissed, setTourDismissed] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   /** Filtros > Avisos da semana: salvar as cidades escolhidas na semana (ligado) ou só olhar (desligado) */
   const [weekSave, setWeekSave] = useState(true);
   const [weekTemp, setWeekTemp] = useState<string[] | null>(null);
@@ -1594,6 +1600,25 @@ export default function HomePage() {
     }
   }, [rawPrompts, doctors, myVisits, visitsReady, resolvePrompt]);
 
+  /* ═══════════════════ Tutorial (primeiro acesso) ═══════════════════
+   * Abre depois de tudo que é pergunta (nome, semana e avisos, "Já visitou?"), uma vez por usuário.
+   */
+  const tourSeen = Boolean(profile?.tour_seen_at) || (userId ? getFlag(userId, 'tour-seen') === '1' : false);
+  useEffect(() => {
+    if (tourOpen || tourDismissed || tourSeen) return;
+    if (!userId || !profile || doctors.length === 0) return;
+    if (needName || weekPrompt || renewAsk || promptQueue.length > 0 || sheetId || showProfile) return;
+    setTourOpen(true);
+  }, [tourOpen, tourDismissed, tourSeen, userId, profile, doctors.length, needName, weekPrompt, renewAsk, promptQueue.length, sheetId, showProfile]);
+
+  const endTour = () => {
+    setTourOpen(false);
+    setTourDismissed(true);
+    if (!userId) return;
+    setFlag(userId, 'tour-seen', '1'); // reserva: sem a coluna v12 não pode repetir
+    void saveProfile({ tour_seen_at: new Date().toISOString() });
+  };
+
   /* ═══════════════════ Avisos por semana ═══════════════════ */
   const weekCityList = (w: number): string[] => weekCities.byWeek[w] ?? [];
   /** sugestão: cidades dos médicos marcados naquela semana */
@@ -1741,6 +1766,7 @@ export default function HomePage() {
           <div className="flex flex-col gap-0.5 min-w-0">
             <button
               type="button"
+              data-tour="week"
               onClick={() => {
                 setWeekAuto(false);
                 setWeekPrompt(true);
@@ -1772,6 +1798,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setShowAddForm((p) => !p)}
+              data-tour="add"
               aria-label="Novo médico"
               className="size-10 shrink-0 rounded-full border-0 bg-blue-600 text-white flex items-center justify-center hover:bg-blue-500"
             >
@@ -1797,7 +1824,7 @@ export default function HomePage() {
                 </svg>
               )}
             </button>
-            <button type="button" onClick={() => setShowProfile(true)} aria-label="Meu perfil" className={iconBtn}>
+            <button type="button" onClick={() => setShowProfile(true)} data-tour="profile" aria-label="Meu perfil" className={iconBtn}>
               {profile?.avatar_url ? (
                 <RepAvatar name={actorName} src={profile.avatar_url} size={34} />
               ) : (
@@ -1812,7 +1839,7 @@ export default function HomePage() {
 
         {/* Busca + botão de filtros */}
         <div className="flex gap-2">
-          <label className="flex-1 min-w-0 flex items-center gap-2 h-11 px-3.5 rounded-xl border border-slate-800 bg-slate-900">
+          <label data-tour="search" className="flex-1 min-w-0 flex items-center gap-2 h-11 px-3.5 rounded-xl border border-slate-800 bg-slate-900">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-slate-400" aria-hidden="true">
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" />
@@ -1859,6 +1886,7 @@ export default function HomePage() {
           <button
             type="button"
             onClick={() => setShowFilters((v) => !v)}
+            data-tour="filters"
             aria-expanded={showFilters}
             className={`h-11 px-3.5 shrink-0 rounded-xl border flex items-center gap-1.5 text-sm font-medium ${
               showFilters ? 'border-blue-600 bg-slate-900 text-white' : 'border-slate-800 bg-slate-900 text-slate-200'
@@ -1938,7 +1966,7 @@ export default function HomePage() {
         )}
 
         {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
-        <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+        <div data-tour="days" className="flex gap-1.5 overflow-x-auto no-scrollbar">
           {TABS_NAVEGACAO.filter((tab) => tab.value !== 'novos').map((tab) => (
             <button
               key={tab.value}
@@ -2171,6 +2199,11 @@ export default function HomePage() {
           }}
           cycleVisitedCount={cycleVisits.size}
           onRenewCycle={renewCycle}
+          onOpenGuide={() => setShowGuide(true)}
+          onReplayTour={() => {
+            setShowProfile(false);
+            setTourOpen(true);
+          }}
         />
       )}
 
@@ -2469,6 +2502,12 @@ export default function HomePage() {
           onClose={closeSheet}
         />
       )}
+
+      {/* Guia de cores e status */}
+      {showGuide && <StatusGuide onClose={() => setShowGuide(false)} />}
+
+      {/* Dicas da tela inicial (primeiro acesso ou "Rever o tutorial") */}
+      {tourOpen && <Tour onFinish={endTour} onSkip={endTour} />}
 
       {/* Primeiro acesso: como os colegas te chamam */}
       {needName && session && (

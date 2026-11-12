@@ -26,6 +26,10 @@ interface ProfileSettingsProps {
   /** visitados no ciclo atual */
   cycleVisitedCount: number;
   onRenewCycle: () => void;
+  /** Ajuda: abre o guia de cores e status */
+  onOpenGuide: () => void;
+  /** Ajuda: refaz o tutorial da tela inicial */
+  onReplayTour: () => void;
 }
 
 const inputCls =
@@ -49,6 +53,8 @@ export default function ProfileSettings({
   onChangeWeek,
   cycleVisitedCount,
   onRenewCycle,
+  onOpenGuide,
+  onReplayTour,
 }: ProfileSettingsProps) {
   const [displayName, setDisplayName] = useState(profile.display_name ?? '');
   const [specialties, setSpecialties] = useState<string[]>(profile.specialties);
@@ -438,6 +444,24 @@ export default function ProfileSettings({
             </>
           )}
           {pushMsg && <span className="text-sm text-slate-300">{pushMsg}</span>}
+        </section>
+
+        <section className="flex flex-col gap-2">
+          <span className={titleCls}>Ajuda</span>
+          <button
+            type="button"
+            onClick={onOpenGuide}
+            className="h-12 rounded-xl border border-slate-700 bg-transparent text-left px-4 text-sm font-semibold text-slate-100 hover:border-slate-500"
+          >
+            Guia de cores e status
+          </button>
+          <button
+            type="button"
+            onClick={onReplayTour}
+            className="h-12 rounded-xl border border-slate-700 bg-transparent text-left px-4 text-sm font-semibold text-slate-100 hover:border-slate-500"
+          >
+            Rever o tutorial
+          </button>
         </section>
 
         <button
