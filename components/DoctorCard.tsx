@@ -53,7 +53,7 @@ interface DoctorCardProps {
   categoryMode?: boolean;
   onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
   onDeleteDoctor: (doc: Doctor) => void;
-  onSetStatus: (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string }) => void;
+  onSetStatus: (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string; locationId?: string }) => void;
   onClearStatus: (doctorId: string, type: DoctorStatusType) => void;
   /** cidades da base (grafia oficial) para o campo Cidade da edição */
   cityOptions: ComboOption[];
@@ -89,6 +89,10 @@ interface DoctorCardProps {
   now?: number;
   /** id de quem está usando o app: o atalho "Já visitei" só aparece no card azul DELE */
   myUserId?: string | null;
+  /** corrige o local em que o status do médico foi marcado ("Local errado?") */
+  onFixStatusLocation?: (doctorId: string, locationId: string | null) => void;
+  /** grava os locais extras do médico (v17); ausente = ficam só na tela */
+  onSaveExtras?: (doctorId: string, extras: readonly DoctorLocation[]) => Promise<boolean>;
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
@@ -148,6 +152,8 @@ function DoctorCard({
   autoEdit = false,
   onEditEnd,
   now,
+  onSaveExtras,
+  onFixStatusLocation,
 }: DoctorCardProps) {
   const draftKey = `edit_${doc.id}`;
   const hasDraft = hasSavedDraft(draftKey);
@@ -162,6 +168,11 @@ function DoctorCard({
   /* ── Vários locais (só visual): Local 1 vem do cadastro; extras ficam só na tela por enquanto ── */
   const base = useMemo(() => getLocations(doc), [doc]);
   const [extras, setExtras] = useState<DoctorLocation[]>(() => base.slice(1));
+  // Os locais gravados chegaram ou mudaram (outro aparelho, recarga): acompanha, menos no meio da edição
+  useEffect(() => {
+    if (!isEditing) setExtras(base.slice(1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base]);
   const locais = useMemo(() => [base[0], ...extras], [base, extras]);
   const multi = locais.length > 1;
   const [pickedId, setPickedId] = useState<string | null>(null);
@@ -172,7 +183,7 @@ function DoctorCard({
   const showLocais = multi || LOCAIS_PREVIEW;
 
   const handleSet: typeof onSetStatus = (id, type, opts) => {
-    onSetStatus(id, type, opts);
+    onSetStatus(id, type, multi && selected.id !== 'principal' && !selected.principal ? { ...opts, locationId: selected.id } : opts);
     if (multi) setMarkedId(selected.id);
   };
   const wrongPlace = () => {
@@ -180,6 +191,7 @@ function DoctorCard({
     const next = locais[(locais.indexOf(markedLoc) + 1) % locais.length];
     setMarkedId(next.id);
     setPickedId(next.id);
+    onFixStatusLocation?.(doc.id, next.principal ? null : next.id);
   };
 
   const isNew = isNewDoctor(doc);
@@ -243,6 +255,7 @@ function DoctorCard({
   };
 
   const handleCancelEdit = () => {
+    setExtras(base.slice(1));
     clearDraft(draftKey);
     setIsEditing(false);
     onEditEnd?.();
@@ -290,6 +303,11 @@ function DoctorCard({
       if (weeks.join(',') !== normalizeCycleWeeks(doc.cycle_weeks).join(',')) payload.cycle_weeks = weeks;
       const ok = await onUpdateDoctor(doc.id, payload, doc.descricao || '');
       if (ok) {
+        const extrasOk = onSaveExtras ? await onSaveExtras(doc.id, extras) : true;
+        if (!extrasOk) {
+          setFormError('Os dados foram salvos, mas não foi possível salvar os locais. Tente novamente.');
+          return;
+        }
         clearDraft(draftKey);
         setIsEditing(false);
         onEditEnd?.();

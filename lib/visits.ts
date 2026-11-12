@@ -156,6 +156,8 @@ export function presenceItems(
   visitors: readonly Visitor[] | undefined,
   profiles?: Readonly<Record<string, PublicProfile>>,
   myId?: string | null,
+  /** id do local (ou 'principal') → nome curto; só vem quando o médico tem mais de um local */
+  locationNames?: Readonly<Record<string, string>>,
 ): PresenceItem[] {
   const out: PresenceItem[] = [];
   for (const s of statuses ?? []) {
@@ -168,6 +170,7 @@ export function presenceItems(
         at: s.created_at,
         isMe: Boolean(myId) && s.created_by === myId,
         avatarUrl: p?.avatar_url ?? null,
+        locationName: locationNames ? locationNames[s.location_id ?? 'principal'] ?? null : null,
       });
     }
   }

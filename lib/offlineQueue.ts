@@ -27,6 +27,8 @@ export interface StatusRecord {
   return_date: string | null;
   rep_name: string | null;
   created_by: string;
+  /** local onde foi marcado (só quando não é o Local 1) */
+  location_id?: string;
 }
 
 /** Linha de doctor_visits como o app grava (uma por médico e por representante) */

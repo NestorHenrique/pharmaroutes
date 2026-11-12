@@ -17,6 +17,8 @@ export interface DoctorStatus {
   return_date: string | null;
   rep_name?: string | null;
   created_by: string;
+  /** local onde o status foi marcado (v17); vazio = Local 1 */
+  location_id?: string | null;
 }
 
 /** Linha de doctor_status_events (histórico de horários) */

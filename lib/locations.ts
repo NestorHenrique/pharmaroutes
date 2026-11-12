@@ -48,3 +48,29 @@ export function locationAddress(loc: DoctorLocation): string {
 export function locationShort(loc: DoctorLocation): string {
   return loc.nome.replace(/^(cl[ií]nica|hospital|consult[oó]rio)\s+/i, '').trim() || loc.nome;
 }
+
+/** Agenda dos locais extras limpa (dias válidos, sem repetir dia) */
+export function cleanAgenda(agenda: unknown): DoctorLocation['agenda'] {
+  if (!Array.isArray(agenda)) return [];
+  const seen = new Set<string>();
+  const out: DoctorLocation['agenda'] = [];
+  for (const e of agenda) {
+    if (!e || typeof e.day !== 'string' || !DAY_CODES.includes(e.day) || seen.has(e.day)) continue;
+    seen.add(e.day);
+    out.push({ day: e.day, shift: e.shift });
+  }
+  return out;
+}
+
+/**
+ * Agenda para o filtro de dia: dias do Local 1 mais os dos locais extras.
+ * Assim o médico aparece na rota de quinta mesmo que quinta seja só do outro local.
+ */
+export function agendaAllLocations(doc: Doctor): DoctorLocation['agenda'] {
+  const main = getAgenda(doc);
+  const extras = (doc.locais ?? []).slice(1);
+  if (extras.length === 0) return main;
+  const have = new Set(main.map((e) => e.day));
+  const add = extras.flatMap((l) => l.agenda).filter((e) => !have.has(e.day) && have.add(e.day));
+  return [...main, ...add];
+}

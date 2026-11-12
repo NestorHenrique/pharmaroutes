@@ -47,6 +47,8 @@ import { useDoctorFilters } from '@/hooks/useDoctorFilters';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useVisits } from '@/hooks/useVisits';
 import { useAdmin } from '@/hooks/useAdmin';
+import { useLocations } from '@/hooks/useLocations';
+import { agendaAllLocations, getLocations, locationShort } from '@/lib/locations';
 import { maskRep, setPrivacy } from '@/lib/privacy';
 import { useVisitPrompts } from '@/hooks/useVisitPrompts';
 import VisitPromptModal from '@/components/VisitPromptModal';
@@ -898,6 +900,7 @@ export default function HomePage() {
   /* Modo privado: os colegas em modo privado aparecem como "Representante" (sem nome nem foto).
    * O administrador vê todos pelo nome real. O banco grava sempre o usuário verdadeiro. */
   const isAdmin = useAdmin(userId);
+  const { extrasOf, saveExtras } = useLocations(userId);
   const privateNames = new Set<string>();
   for (const id of privateIds) {
     const n = repProfilesRaw[id]?.display_name?.trim().toLowerCase();
@@ -930,7 +933,7 @@ export default function HomePage() {
     async (
       doctorId: string,
       type: DoctorStatusType,
-      opts?: { repName?: string; returnDate?: string; persistent?: boolean },
+      opts?: { repName?: string; returnDate?: string; persistent?: boolean; locationId?: string },
     ) => {
       if (!session) return;
       const meta = STATUS_META[type];
@@ -955,6 +958,7 @@ export default function HomePage() {
         return_date: opts?.returnDate || null,
         rep_name: opts?.repName || actorName,
         created_by: session.user.id,
+        ...(opts?.locationId ? { location_id: opts.locationId } : {}),
       };
 
       // 1) Tela atualiza na hora
@@ -994,6 +998,25 @@ export default function HomePage() {
       if (PINNED_STATUSES.includes(type)) notifyCity(doctorId, type);
     },
     [session, actorName, statusMap],
+  );
+
+  /** "Local errado?": troca o local dos status ativos DESTE representante no médico, sem renovar o horário */
+  const fixStatusLocation = useCallback(
+    async (doctorId: string, locationId: string | null) => {
+      if (!session) return;
+      setStatusMap((prev) => ({
+        ...prev,
+        [doctorId]: (prev[doctorId] || []).map((s) => (s.created_by === session.user.id ? { ...s, location_id: locationId } : s)),
+      }));
+      if (isOffline()) return;
+      const { error } = await supabase
+        .from('doctor_statuses')
+        .update({ location_id: locationId })
+        .eq('doctor_id', doctorId)
+        .eq('created_by', session.user.id);
+      if (error) console.error('Erro ao corrigir o local do status:', error.message);
+    },
+    [session],
   );
 
   const clearDoctorStatus = useCallback(
@@ -1381,8 +1404,16 @@ export default function HomePage() {
 
   /** Médicos com as semanas DESTE representante */
   const doctorsWithWeeks = useMemo(
-    () => panelDoctors.map((d) => ({ ...d, cycle_weeks: weeksByDoctor.get(d.id) ?? [] })),
-    [panelDoctors, weeksByDoctor],
+    () =>
+      panelDoctors.map((d) => {
+        const extras = extrasOf(d.id);
+        return {
+          ...d,
+          cycle_weeks: weeksByDoctor.get(d.id) ?? [],
+          ...(extras.length > 0 ? { locais: [...getLocations(d), ...extras] } : {}),
+        };
+      }),
+    [panelDoctors, weeksByDoctor, extrasOf],
   );
 
   /** Visitados que não aparecem nesta aba: os de dia anterior (em qualquer aba) e, vendo outro dia
@@ -1401,7 +1432,7 @@ export default function HomePage() {
     const citySet = new Set(selectedCities);
 
     return doctorsWithWeeks.filter((d) => {
-      const agenda = getAgenda(d);
+      const agenda = agendaAllLocations(d);
 
       if (selectedTab === 'novos') {
         if (!isNewDoctor(d)) return false;
@@ -1443,7 +1474,7 @@ export default function HomePage() {
     if (!selectedTab || selectedTab === 'novos') return undefined;
     const out: Record<string, number> = {};
     for (const d of panelDoctors) {
-      if (!getAgenda(d).some((e) => e.day === selectedTab)) continue;
+      if (!agendaAllLocations(d).some((e) => e.day === selectedTab)) continue;
       const k = cityKey(d.cidade);
       out[k] = (out[k] ?? 0) + 1;
     }
@@ -1733,8 +1764,17 @@ export default function HomePage() {
   const [plantaoOpen, setPlantaoOpen] = useState(false);
   const plantaoShown = plantaoOpen || searchQuery.trim() !== '';
 
+  /** Nome do local de cada status, só para médico com mais de um local */
+  const locationNamesOf = (id: string): Record<string, string> | undefined => {
+    const extras = extrasOf(id);
+    const d = doctors.find((x) => x.id === id);
+    if (!d || extras.length === 0) return undefined;
+    const out: Record<string, string> = {};
+    for (const l of [...getLocations(d), ...extras]) out[l.principal ? 'principal' : l.id] = locationShort(l);
+    return out;
+  };
   const presenceFor = (id: string): PresenceItem[] =>
-    presenceItems(liveStatusMap[id], isCategoryMode ? undefined : visitorsFor(id), repProfiles, sessionUserId);
+    presenceItems(liveStatusMap[id], isCategoryMode ? undefined : visitorsFor(id), repProfiles, sessionUserId, locationNamesOf(id));
   const toggleVisited = (id: string) => {
     const visited = Boolean(visitedAtOf(id));
     if (isCategoryMode) {
@@ -1970,6 +2010,8 @@ export default function HomePage() {
         onEditEnd={endEdit}
         now={tier === 'top' || tier === 'bottom' ? now : undefined}
         myUserId={sessionUserId}
+        onSaveExtras={saveExtras}
+        onFixStatusLocation={fixStatusLocation}
       />
     );
     if (!manual) return card;
