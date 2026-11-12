@@ -2806,6 +2806,7 @@ export default function HomePage() {
           })()}
           cityOptions={cityComboOptions}
           onUpdateDoctor={updateDoctor}
+          onSaveExtras={saveExtras}
           onDelete={() => {
             setSheetId(null);
             void deleteDoctor(sheetDoc);

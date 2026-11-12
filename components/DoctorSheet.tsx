@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Doctor, ExpectedVisit } from '@/types/doctor';
+import type { Doctor, DoctorLocation, ExpectedVisit } from '@/types/doctor';
 import { normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import type { ComboOption } from '@/components/ComboBox';
@@ -50,6 +50,8 @@ interface DoctorSheetProps {
   /** edição dentro da própria ficha; ao salvar/cancelar volta para a ficha */
   cityOptions: ComboOption[];
   onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
+  /** grava os locais extras do médico */
+  onSaveExtras?: (doctorId: string, extras: readonly DoctorLocation[]) => Promise<boolean>;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -165,6 +167,7 @@ export default function DoctorSheet({
   onNavigate,
   cityOptions,
   onUpdateDoctor,
+  onSaveExtras,
   onDelete,
   onClose,
 }: DoctorSheetProps) {
@@ -302,6 +305,7 @@ export default function DoctorSheet({
               doc={doc}
               cityOptions={cityOptions}
               onUpdateDoctor={onUpdateDoctor}
+              onSaveExtras={onSaveExtras}
               onDone={() => {
                 setMode('status');
                 panelRef.current?.querySelector('.overflow-y-auto')?.scrollTo({ top: 0 });

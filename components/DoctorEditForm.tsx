@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { AgendaEntry, Doctor } from '@/types/doctor';
+import type { AgendaEntry, Doctor, DoctorLocation } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import { CATEGORIAS } from '@/constants';
 import { SPECIALTY_LIST, clearDraft, getAgenda, loadDraft, normalizeCrm, saveDraft, specialtyCode, whatsappDigits } from '@/utils';
@@ -11,6 +11,8 @@ import { mergeAddress } from '@/lib/geocode';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
 import FormTitle from '@/components/FormTitle';
+import LocationsEditor from '@/components/LocationsEditor';
+import { getLocations } from '@/lib/locations';
 import type { ComboOption } from '@/components/ComboBox';
 
 /* ── Edição do médico dentro da ficha (mesmo visual da ficha de status) ── */
@@ -19,6 +21,8 @@ interface DoctorEditFormProps {
   doc: Doctor;
   cityOptions: ComboOption[];
   onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
+  /** grava os locais extras do médico; ausente = ficam só na tela */
+  onSaveExtras?: (doctorId: string, extras: readonly DoctorLocation[]) => Promise<boolean>;
   /** volta para a ficha de status (salvou ou cancelou) */
   onDone: () => void;
 }
@@ -54,7 +58,7 @@ function initialForm(doc: Doctor): EditForm {
   };
 }
 
-export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDone }: DoctorEditFormProps) {
+export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onSaveExtras, onDone }: DoctorEditFormProps) {
   const draftKey = `edit_${doc.id}`;
   const [form, setForm] = useState<EditForm>(() => {
     const base = initialForm(doc);
@@ -66,6 +70,8 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
   const [error, setError] = useState<string | null>(null);
   const [waTouched, setWaTouched] = useState(false);
   const gps = useGeolocation();
+  const base = getLocations(doc);
+  const [extras, setExtras] = useState<DoctorLocation[]>(() => base.slice(1));
 
   // Rascunho automático (não perde o que foi digitado se o app fechar)
   useEffect(() => {
@@ -129,6 +135,10 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
       if (wc !== whatsappDigits(doc.whatsapp_clinica)) payload.whatsapp_clinica = wc || null;
       const ok = await onUpdateDoctor(doc.id, payload, doc.descricao || '');
       if (ok) {
+        if (onSaveExtras && !(await onSaveExtras(doc.id, extras))) {
+          setError('Os dados foram salvos, mas não foi possível salvar os locais. Tente novamente.');
+          return;
+        }
         clearDraft(draftKey);
         onDone();
       } else {
@@ -243,6 +253,29 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onDon
           value={form.complemento ?? ''}
           onChange={(e) => set('complemento', e.target.value)}
           className={inputCls}
+        />
+      </section>
+
+      {/* Locais de atendimento: Local 1 usa os campos de endereço abaixo */}
+      <section className={cardCls}>
+        <LocationsEditor
+          principal={{
+            id: base[0].id,
+            nome: form.complemento || 'Consultório próprio',
+            endereco: form.endereco ?? '',
+            numero: form.numero ?? '',
+            bairro: form.bairro ?? '',
+            cidade: form.cidade ?? '',
+            map_link: form.map_link ?? '',
+            agenda: form.agenda,
+            principal: true,
+          }}
+          onPrincipalChange={(l) =>
+            setForm((p) => ({ ...p, complemento: l.nome, endereco: l.endereco, numero: l.numero, bairro: l.bairro, cidade: l.cidade, map_link: l.map_link, agenda: l.agenda }))
+          }
+          extras={extras}
+          onExtrasChange={setExtras}
+          cityOptions={cityOptions}
         />
       </section>
 
