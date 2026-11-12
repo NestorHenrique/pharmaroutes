@@ -57,6 +57,8 @@ import { useWeekCities } from '@/hooks/useWeekCities';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useHiddenDoctors } from '@/hooks/useHiddenDoctors';
 import Toast, { type ToastData } from '@/components/Toast';
+import ConnectionBanner from '@/components/ConnectionBanner';
+import EmptyState from '@/components/EmptyState';
 import NotificationsSheet, { type NoticeItem } from '@/components/NotificationsSheet';
 import { getFlag, setFlag } from '@/lib/repFlags';
 import { shouldSignOutOnReopen } from '@/lib/auth';
@@ -1415,9 +1417,13 @@ export default function HomePage() {
   const applyMiddleOrder = useCallback(
     (visible: string[]) => {
       // Os médicos fora da lista visível (filtro, visitados, em atendimento) ficam no lugar salvo
-      void saveRouteOrder(manualKey, mergeVisibleOrder(manualOrder, visible));
+      const previous = manualOrder ?? [];
+      const next = mergeVisibleOrder(manualOrder, visible);
+      if (next.join(',') === previous.join(',')) return;
+      void saveRouteOrder(manualKey, next);
+      showToast('Ordem salva só no seu painel.', () => void saveRouteOrder(manualKey, previous));
     },
-    [manualOrder, manualKey, saveRouteOrder],
+    [manualOrder, manualKey, saveRouteOrder, showToast],
   );
 
   /* Arrastar e soltar (só no bloco do meio, modo manual) */
@@ -1646,6 +1652,28 @@ export default function HomePage() {
       if (!byId.has(p.doctor_id) || alreadyVisited(p, myVisits)) void resolvePrompt(p);
     }
   }, [rawPrompts, doctors.length, panelDoctors, myVisits, visitsReady, resolvePrompt]);
+
+  /* "Tudo enviado": aparece por alguns segundos quando a fila offline esvazia */
+  const [syncedFlash, setSyncedFlash] = useState(false);
+  const prevPending = useRef(0);
+  useEffect(() => {
+    if (prevPending.current > 0 && offline.pending === 0 && offline.online) {
+      prevPending.current = 0;
+      setSyncedFlash(true);
+      const t = setTimeout(() => setSyncedFlash(false), 3500);
+      return () => clearTimeout(t);
+    }
+    prevPending.current = offline.pending;
+  }, [offline.pending, offline.online]);
+
+  /** Limpa todos os filtros da lista (mesmo botão "Limpar" dos Filtros) */
+  const clearFilters = () => {
+    setSelectedCities([]);
+    changeWeek(null);
+    setSelectedCategory(null);
+    setTurnoFilter(null);
+    changeSortMode('manual');
+  };
 
   /* ═══════════════════ Sino: avisos dos colegas ═══════════════════
    * Só das cidades da semana (sem cidades escolhidas, mostra todas). Médico que saiu do painel não aparece.
@@ -1885,15 +1913,6 @@ export default function HomePage() {
                 title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 8 s)'}
                 className={`size-2 rounded-full ${realtimeOn ? 'bg-emerald-500' : 'bg-slate-600'}`}
               />
-              {(!offline.online || offline.pending > 0) && (
-                <span
-                  role="status"
-                  className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold tracking-normal text-amber-400"
-                >
-                  {!offline.online ? 'Sem internet' : offline.syncing ? 'Enviando' : 'Pendente'}
-                  {offline.pending > 0 && ` · ${offline.pending} ${offline.pending === 1 ? 'alteração' : 'alterações'}`}
-                </span>
-              )}
             </h1>
           </div>
           <div className="flex gap-1.5 items-center">
@@ -2120,13 +2139,7 @@ export default function HomePage() {
                 {activeFilterCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedCities([]);
-                      changeWeek(null);
-                      setSelectedCategory(null);
-                      setTurnoFilter(null);
-                      changeSortMode('manual');
-                    }}
+                    onClick={clearFilters}
                     className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-4 text-sm font-medium text-slate-300 hover:text-red-400"
                   >
                     Limpar
@@ -2230,6 +2243,8 @@ export default function HomePage() {
                     {f.label}
                   </button>
                 ))}
+                {/* Sem especialidades no perfil por enquanto: o botão só aparece para quem já tem carteira configurada */}
+                {(portfolioConfigured || portfolioActive) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -2247,6 +2262,7 @@ export default function HomePage() {
                 >
                   {portfolioActive ? 'Minha carteira' : 'Todos'}
                 </button>
+                )}
               </div>
             </div>
 
@@ -2283,6 +2299,8 @@ export default function HomePage() {
             </div>
           </BottomSheet>
         )}
+      
+        <ConnectionBanner online={offline.online} pending={offline.pending} syncing={offline.syncing} justSynced={syncedFlash} />
       </header>
 
       {/* Install Banner */}
@@ -2418,7 +2436,38 @@ export default function HomePage() {
         {/* Cards em 3 blocos */}
         <FeedErrorBoundary resetKey={resumeTick}>
         {sortedDoctors.length === 0 && !loading ? (
-          <div className="text-center text-slate-500 text-sm py-12">Nenhum médico encontrado para o filtro selecionado.</div>
+          searchQuery.trim() ? (
+            <EmptyState
+              icon="🔎"
+              title={`Nenhum resultado para “${searchQuery.trim()}”`}
+              text="Confira a grafia ou tente outro termo (nome, CRM, bairro, telefone)."
+              action={{
+                label: 'Limpar busca',
+                onClick: () => {
+                  setSearchQuery('');
+                  setSearchScope('tudo');
+                },
+              }}
+            />
+          ) : panelDoctors.length === 0 ? (
+            <EmptyState
+              icon="🩺"
+              title="Seu painel está vazio"
+              text={
+                doctors.length > 0
+                  ? 'Você tirou todos os médicos do seu painel. Digite o CRM em Novo médico para trazer de volta.'
+                  : 'Cadastre o primeiro médico no botão +.'
+              }
+              action={{ label: 'Novo médico', onClick: () => setShowAddForm(true) }}
+            />
+          ) : (
+            <EmptyState
+              icon="📅"
+              title={selectedTab && selectedTab !== 'novos' ? `Nenhum médico na ${dayLongLabel}` : 'Nenhum médico para hoje'}
+              text={activeFilterCount > 0 ? 'Há filtros ligados. Limpe os filtros para ver mais médicos.' : 'Veja outro dia da semana.'}
+              action={activeFilterCount > 0 ? { label: 'Limpar filtros', onClick: clearFilters } : undefined}
+            />
+          )
         ) : (
           <>
             {topDoctors.length > 0 && (
