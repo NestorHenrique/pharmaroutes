@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import type { AgendaEntry, Doctor, DoctorLocation } from '@/types/doctor';
 import { CYCLE_WEEKS, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
-import { CATEGORIAS } from '@/constants';
 import { SPECIALTY_LIST, clearDraft, getAgenda, loadDraft, normalizeCrm, saveDraft, specialtyCode, whatsappDigits } from '@/utils';
 import WhatsAppFields, { whatsappFormError } from '@/components/WhatsAppFields';
 import ComboBox from '@/components/ComboBox';
@@ -208,10 +207,11 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onSav
             cidade: form.cidade ?? '',
             map_link: form.map_link ?? '',
             agenda: form.agenda,
+            categoria: form.categoria ?? 'consultorio',
             principal: true,
           }}
           onPrincipalChange={(l) =>
-            setForm((p) => ({ ...p, complemento: l.nome, endereco: l.endereco, numero: l.numero, bairro: l.bairro, cidade: l.cidade, map_link: l.map_link, agenda: l.agenda }))
+            setForm((p) => ({ ...p, complemento: l.nome, endereco: l.endereco, numero: l.numero, bairro: l.bairro, cidade: l.cidade, map_link: l.map_link, agenda: l.agenda, categoria: (l.categoria ?? 'consultorio') as Doctor['categoria'] }))
           }
           extras={extras}
           onExtrasChange={setExtras}
@@ -219,27 +219,8 @@ export default function DoctorEditForm({ doc, cityOptions, onUpdateDoctor, onSav
         />
       </section>
 
-      {/* Tipo de local (abaixo de Locais) e semanas do ciclo */}
+      {/* Semanas do ciclo (o tipo de local fica dentro de cada local) */}
       <section className={cardCls}>
-        <FormTitle>Tipo de local</FormTitle>
-        <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Tipo de local">
-          {CATEGORIAS.map((c) => {
-            const on = (form.categoria ?? 'consultorio') === c.value;
-            return (
-              <button
-                key={c.value}
-                type="button"
-                aria-pressed={on}
-                onClick={() => set('categoria', c.value as Doctor['categoria'])}
-                className={`h-10 rounded-xl text-sm ${
-                  on ? 'border border-blue-600 bg-blue-900 font-semibold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-300'
-                }`}
-              >
-                {c.label}
-              </button>
-            );
-          })}
-        </div>
         <div className="flex flex-col gap-2">
           <FormTitle>Semanas do ciclo</FormTitle>
           <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="Semanas do ciclo">

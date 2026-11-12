@@ -1,5 +1,5 @@
 import type { Doctor, DoctorLocation } from '@/types/doctor';
-import { SHIFT_LABEL, getAgenda } from '@/utils';
+import { SHIFT_LABEL, dayLabel, getAgenda } from '@/utils';
 
 const DAY_CODES = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
 const DAY_FULL: Record<string, string> = {
@@ -36,6 +36,12 @@ export function locationWhen(loc: DoctorLocation): string {
   if (!e) return 'Sem dia definido';
   const extra = loc.agenda.length > 1 ? ` +${loc.agenda.length - 1}` : '';
   return `${DAY_FULL[e.day] ?? e.day} · ${SHIFT_LABEL[e.shift]}${extra}`;
+}
+
+/** "Seg manhã · Qua tarde" (resumo curto dos dias do local) */
+export function agendaSummary(agenda: DoctorLocation['agenda']): string {
+  if (agenda.length === 0) return 'Sem dia definido';
+  return agenda.map((e) => `${dayLabel(e.day)} ${SHIFT_LABEL[e.shift].toLowerCase()}`).join(' · ');
 }
 
 /** "Av. Brasil, 120 · Centro" */

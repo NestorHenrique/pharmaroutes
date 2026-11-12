@@ -5,7 +5,8 @@ import LocationSheet from '@/components/LocationSheet';
 import FormTitle from '@/components/FormTitle';
 import type { ComboOption } from '@/components/ComboBox';
 import type { DoctorLocation } from '@/types/doctor';
-import { locationAddress } from '@/lib/locations';
+import { agendaSummary } from '@/lib/locations';
+import { CATEGORIAS } from '@/constants';
 
 interface LocationsEditorProps {
   /** Local 1, montado com os campos do formulário */
@@ -29,27 +30,28 @@ export default function LocationsEditor({ principal, onPrincipalChange, extras, 
     <div className="flex flex-col gap-2">
       <FormTitle>Locais</FormTitle>
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
-        {all.map((l, i) => (
-          <li key={l.id} className="flex min-h-14 items-center gap-2 rounded-[14px] border border-slate-800 bg-slate-900 py-1.5 pl-3 pr-1.5">
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-sm font-semibold text-slate-100">
-                {l.nome || 'Sem nome'}
-                <span className="ml-1.5 text-[11px] font-medium text-slate-400">{i === 0 ? 'Local 1 · principal' : `Local ${i + 1}`}</span>
-              </span>
-              <span className="truncate text-xs text-slate-400">{locationAddress(l)}</span>
-            </span>
-            <button
-              type="button"
-              aria-label={`Editar ${l.nome || `local ${i + 1}`}`}
-              onClick={() => setEditing(i === 0 ? { kind: 'principal' } : { kind: 'extra', id: l.id })}
-              className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-transparent text-slate-300 hover:text-white"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />
-              </svg>
-            </button>
-          </li>
-        ))}
+        {all.map((l, i) => {
+          const tipo = CATEGORIAS.find((c) => c.value === (l.categoria ?? 'consultorio'))?.label;
+          return (
+            <li key={l.id}>
+              <button
+                type="button"
+                aria-label={`Editar ${l.nome || `local ${i + 1}`}`}
+                onClick={() => setEditing(i === 0 ? { kind: 'principal' } : { kind: 'extra', id: l.id })}
+                className="flex min-h-14 w-full items-center gap-2 rounded-[14px] border border-slate-800 bg-slate-900 py-1.5 pl-3 pr-3 text-left"
+              >
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-semibold text-slate-100">{l.nome || 'Sem nome'}</span>
+                  <span className="truncate text-xs text-slate-400">{agendaSummary(l.agenda)}</span>
+                </span>
+                {tipo && <span className="shrink-0 rounded-full bg-blue-900 px-2.5 py-0.5 text-[11px] font-semibold text-blue-200">{tipo}</span>}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-500" aria-hidden="true">
+                  <path d="M9 6l6 6-6 6" />
+                </svg>
+              </button>
+            </li>
+          );
+        })}
       </ul>
       <button
         type="button"
