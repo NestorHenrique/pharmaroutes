@@ -3,7 +3,8 @@
 -- Rode no Supabase SQL Editor DEPOIS do migrations_v9.sql. Pode rodar mais de uma vez.
 --
 -- O app já pergunta "Já visitou?" ao abrir (não precisa de nada do banco para isso).
--- Este arquivo liga o AVISO NO CELULAR (push) no minuto em que o status vence.
+-- Este arquivo liga o AVISO NO CELULAR (push) no minuto em que o status vence. O aviso se repete
+-- a cada 5 minutos até a pessoa responder no app (por até 1 hora depois do vencimento).
 --
 -- PASSOS (nesta ordem):
 --   1. Rode a PARTE 1 abaixo.
@@ -14,7 +15,7 @@
 -- ============================================================
 
 -- ── PARTE 1 ─────────────────────────────────────────────────
--- Marca quando o lembrete daquele vencimento já foi enviado (não manda duas vezes).
+-- Guarda quando o último lembrete foi enviado (é daqui que se contam os 5 minutos).
 -- Se o status for remarcado, expires_at passa a ser maior que reminded_at e o lembrete volta a valer.
 ALTER TABLE doctor_statuses ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ;
 

@@ -4,6 +4,8 @@
 // do próprio representante que acabaram de vencer (Rep. no consultório 10 min; Aguardando e
 // Último paciente 30 min) e manda um Web Push só para os aparelhos DELE: "Já visitou {médico}?".
 // Ao abrir o app, a janela "Já visitou?" aparece e ele responde.
+// O aviso se REPETE a cada 5 minutos enquanto não houver resposta (por até 1 hora depois do
+// vencimento); responder no app (Sim ou Ainda não) apaga a pendência e o aviso para.
 //
 // Deploy:  npx supabase functions deploy visit-reminder --no-verify-jwt
 // Secrets: CRON_SECRET (qualquer texto longo; o mesmo do agendamento no SQL)
@@ -23,8 +25,10 @@ const LABELS: Record<string, string> = {
 };
 const STATUSES = Object.keys(LABELS);
 
-/** Só lembra de status que venceram há pouco; o que ficou para trás o app pergunta ao abrir */
-const MAX_AGE_MS = 2 * 60 * 60_000;
+/** Só lembra de status que venceram há pouco; depois disso o app continua perguntando ao abrir */
+const MAX_AGE_MS = 60 * 60_000;
+/** Repete o aviso a cada 5 min. 4,5 min de limite: a função roda a cada minuto, então cai nos 5 min certos */
+const REPEAT_MS = 4.5 * 60_000;
 /** O aparelho pode estar desligado/sem sinal: o push espera até 6 h */
 const TTL_SECONDS = 6 * 60 * 60;
 
@@ -52,11 +56,16 @@ Deno.serve(async (req) => {
     .limit(200);
   if (error) return json({ error: error.message }, 500);
 
-  // Ainda sem lembrete para ESTE vencimento (se o status foi remarcado, expires_at ficou maior que reminded_at)
-  const due = (rows ?? []).filter((r) => !r.reminded_at || new Date(r.reminded_at) < new Date(r.expires_at));
+  // Sem lembrete ainda para ESTE vencimento (status remarcado: expires_at fica maior que reminded_at)
+  // ou o último lembrete foi há 5 minutos ou mais
+  const due = (rows ?? []).filter((r) => {
+    if (!r.reminded_at || new Date(r.reminded_at) < new Date(r.expires_at)) return true;
+    return now - new Date(r.reminded_at).getTime() >= REPEAT_MS;
+  });
   if (due.length === 0) return json({ due: 0, sent: 0 });
 
   // Marca antes de enviar: duas execuções seguidas não mandam o mesmo lembrete duas vezes
+  // (e é daqui que se conta os 5 minutos até o próximo)
   await admin.from('doctor_statuses').update({ reminded_at: new Date(now).toISOString() }).in('id', due.map((r) => r.id));
 
   const doctorIds = [...new Set(due.map((r) => r.doctor_id))];
