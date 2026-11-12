@@ -140,7 +140,8 @@ export function shortWhen(iso: string, nowMs: number = Date.now()): string {
 
 /** "Arthur no consultório 16:50" / "Nestor visitou 10/11 16:55" */
 export function presenceText(item: PresenceItem, nowMs?: number): string {
-  return `${item.name} ${item.kind === 'office' ? 'no consultório' : 'visitou'} ${shortWhen(item.at, nowMs)}`;
+  if (item.kind === 'office') return `${item.isMe ? 'Você' : item.name} · ${shortWhen(item.at, nowMs)}`;
+  return `${item.isMe ? 'Você' : item.name} visitou ${shortWhen(item.at, nowMs)}`;
 }
 
 /**

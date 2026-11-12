@@ -23,13 +23,11 @@ export default function PresenceTags({ items, max = 2, className = '' }: Presenc
       {shown.map((it) => (
         <span
           key={it.key}
-          className={`inline-flex h-6 items-center gap-1.5 rounded-full border pl-0.5 pr-2.5 text-[11px] font-semibold whitespace-nowrap ${
-            it.kind === 'office'
-              ? 'border-sky-500/60 bg-sky-500/15 text-sky-300'
-              : 'border-emerald-600/50 bg-emerald-500/10 text-emerald-300'
+          className={`inline-flex h-[26px] items-center gap-1.5 rounded-full pl-1 pr-2.5 text-xs font-medium whitespace-nowrap ${
+            it.kind === 'office' ? 'bg-sky-500/15 text-sky-300' : 'bg-emerald-500/15 text-emerald-300'
           }`}
         >
-          <RepAvatar name={it.name} src={it.avatarUrl} me={it.isMe} size={20} />
+          <RepAvatar name={it.name} src={it.avatarUrl} me={it.isMe} size={18} />
           {presenceText(it)}
         </span>
       ))}

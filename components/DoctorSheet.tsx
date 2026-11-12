@@ -1,33 +1,31 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { Doctor, ExpectedVisit } from '@/types/doctor';
-import { TOP_PRIORITY_STATUSES, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
+import { normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import type { ComboOption } from '@/components/ComboBox';
 import BottomSheet from '@/components/BottomSheet';
-import ReturnDatePicker from '@/components/ReturnDatePicker';
 import DoctorEditForm from '@/components/DoctorEditForm';
 import DoctorHistory from '@/components/DoctorHistory';
-import { RepAvatar } from '@/components/RepAvatar';
-import type { PresenceItem, PublicProfile, Visitor } from '@/lib/visits';
-
-const NO_PROFILES: Readonly<Record<string, PublicProfile>> = {};
 import StatusHistory from '@/components/StatusHistory';
 import StatusSheet from '@/components/StatusSheet';
-import { STATUS_META } from '@/types/status';
+import { RepAvatar } from '@/components/RepAvatar';
+import type { PresenceItem, PublicProfile, Visitor } from '@/lib/visits';
 import {
   doctorWhatsApps,
   formatAgendaBadge,
-  formatElapsed,
   formatMinutes,
   formatCrm,
-  formatTime,
   getAgenda,
   isNewDoctor,
+  specialtyCode,
 } from '@/utils';
 
-/* ── Ficha do médico: sobe de baixo para cima ── */
+/* ── Ficha do médico: página com cabeçalho, chips, quem está lá, 4 ações e informações ── */
+
+const NO_PROFILES: Readonly<Record<string, PublicProfile>> = {};
 
 interface DoctorSheetProps {
   doc: Doctor;
@@ -49,62 +47,109 @@ interface DoctorSheetProps {
   onSetStatus: (doctorId: string, type: DoctorStatusType, opts?: { repName?: string; returnDate?: string }) => void;
   onClearStatus: (doctorId: string, type: DoctorStatusType) => void;
   onNavigate: (() => void) | null;
-  /** edição dentro da própria ficha; ao salvar/cancelar volta para os status */
+  /** edição dentro da própria ficha; ao salvar/cancelar volta para a ficha */
   cityOptions: ComboOption[];
   onUpdateDoctor: (docId: string, updatedData: Partial<Doctor>, docName: string) => Promise<boolean>;
   onDelete: () => void;
   onClose: () => void;
 }
 
-/** Status de um toque, com a cor de cada um */
-const QUICK: { type: DoctorStatusType; label: string; on: string; text: string }[] = [
-  { type: 'representante_no_consultorio', label: 'No consultório', on: 'border-sky-500 bg-sky-500/15', text: 'text-sky-400' },
-  { type: 'ultimo_paciente', label: 'Último paciente', on: 'border-red-500 bg-red-500/15', text: 'text-red-400' },
-  { type: 'aguardando_medico', label: 'Aguardando', on: 'border-amber-400 bg-amber-500/15', text: 'text-amber-400' },
-  { type: 'finalizou_atendimento', label: 'Finalizou', on: 'border-slate-500 bg-slate-500/20', text: 'text-slate-200' },
-  { type: 'nao_veio_hoje', label: 'Não veio hoje', on: 'border-slate-500 bg-slate-500/20', text: 'text-slate-300' },
-];
+const label = 'text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400';
 
-const ABSENCE: { type: DoctorStatusType; label: string }[] = [
-  { type: 'ferias', label: 'Licença / Afastado' },
-  { type: 'viajando', label: 'Férias / Viagem' },
-];
-
-const label = 'text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400';
-
-function shortDate(iso: string): string {
-  return new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-  });
+/** "1ª e 3ª sem", "1ª, 2ª e 3ª sem" */
+function weeksLabel(weeks: number[]): string {
+  if (weeks.length === 0) return '';
+  const parts = weeks.map((w) => `${w}ª`);
+  const joined = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
+  return `${joined} sem`;
 }
 
-/** Botão de WhatsApp; sem número fica desligado */
-function WhatsButton({ href, label: text }: { href: string | null; label: string }) {
-  const cls =
-    'h-[52px] rounded-2xl border text-sm font-semibold no-underline flex items-center justify-center gap-2';
-  const icon = (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.7-5.4A8.4 8.4 0 1 1 21 11.5Z" />
-    </svg>
+/** Número para o botão Ligar (telefone, ou o WhatsApp da clínica, ou o do médico) */
+function callHref(doc: Doctor): string | null {
+  const raw = doc.telefone || doc.whatsapp_clinica || doc.whatsapp_medico || '';
+  const d = raw.replace(/\D/g, '');
+  if (d.length < 8) return null;
+  return `tel:${d.length <= 11 ? `+55${d}` : `+${d}`}`;
+}
+
+const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+const dayHhmm = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} ${hhmm(iso)}`;
+};
+
+/** Botão de WhatsApp da escolha; sem número fica desligado */
+function WhatsOption({ href, title, sub }: { href: string | null; title: string; sub: string }) {
+  const body = (
+    <>
+      <span className="flex size-[38px] shrink-0 items-center justify-center rounded-full bg-emerald-500 text-slate-950">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z" />
+        </svg>
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="text-[15px] font-semibold text-slate-100">{title}</span>
+        <span className="text-[13px] text-slate-400">{href ? sub : 'Número não cadastrado'}</span>
+      </span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-slate-500" aria-hidden="true">
+        <path d="M9 6l6 6-6 6" />
+      </svg>
+    </>
   );
+  const cls = 'flex min-h-16 items-center gap-3 rounded-[14px] border border-slate-800 bg-slate-950 px-3.5 text-left no-underline';
   return href ? (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`${cls} border-emerald-600/50 bg-emerald-500/10 text-emerald-300`}
-    >
-      {icon}
-      {text}
+    <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
+      {body}
     </a>
   ) : (
-    <button type="button" disabled className={`${cls} border-slate-700 bg-slate-800 text-slate-100 opacity-40`}>
-      {icon}
+    <div className={`${cls} opacity-50`}>{body}</div>
+  );
+}
+
+/** Um dos 4 botões grandes da ficha */
+function Tile({
+  children,
+  text,
+  primary = false,
+  disabled = false,
+  href,
+  onClick,
+}: {
+  children: ReactNode;
+  text: string;
+  primary?: boolean;
+  disabled?: boolean;
+  href?: string | null;
+  onClick?: () => void;
+}) {
+  const cls = `flex h-16 flex-col items-center justify-center gap-1 rounded-[14px] text-xs no-underline ${
+    primary ? 'border-0 bg-blue-600 font-bold text-white' : 'border border-slate-800 bg-slate-900 font-semibold text-slate-100'
+  } ${disabled ? 'pointer-events-none opacity-40' : ''}`;
+  const content = (
+    <>
+      {children}
       {text}
+    </>
+  );
+  if (href && !disabled) {
+    return (
+      <a href={href} className={cls}>
+        {content}
+      </a>
+    );
+  }
+  return (
+    <button type="button" disabled={disabled} onClick={onClick} className={cls}>
+      {content}
     </button>
   );
 }
+
+const ico = (d: ReactNode, w = 1.8) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {d}
+  </svg>
+);
 
 export default function DoctorSheet({
   doc,
@@ -128,8 +173,6 @@ export default function DoctorSheet({
   const [statusOpen, setStatusOpen] = useState(false);
   const [whatsOpen, setWhatsOpen] = useState(false);
   const [mode, setMode] = useState<'status' | 'edit'>('status');
-  const [absence, setAbsence] = useState<DoctorStatusType | null>(null);
-  const [returnDate, setReturnDate] = useState('');
 
   // Fecha com Esc e trava o scroll da página por trás
   useEffect(() => {
@@ -145,425 +188,240 @@ export default function DoctorSheet({
     };
   }, [onClose]);
 
-  const has = (t: DoctorStatusType) => statuses.find((s) => s.status_type === t);
   const agenda = getAgenda(doc);
   const weeks = normalizeCycleWeeks(doc.cycle_weeks);
   const whats = doctorWhatsApps(doc);
-  const address = [[doc.endereco, doc.numero].filter(Boolean).join(', '), doc.bairro, doc.cidade]
-    .filter(Boolean)
-    .join(' · ');
+  const call = callHref(doc);
+  const code = specialtyCode(doc.especialidade);
+  const address = [[doc.endereco, doc.numero].filter(Boolean).join(', '), doc.bairro, doc.cidade].filter(Boolean).join(' · ');
+  const inOffice = (presence ?? []).filter((p) => p.kind === 'office');
+  const visitedBy = (presence ?? []).filter((p) => p.kind === 'visit');
+  const sub = [doc.especialidade, doc.crm ? formatCrm(doc.crm, doc.uf) : '', doc.rqe ? `RQE ${doc.rqe}` : ''].filter(Boolean).join(' · ');
 
-  const toggleQuick = (type: DoctorStatusType) => {
-    if (has(type)) onClearStatus(doc.id, type);
-    else onSetStatus(doc.id, type);
-  };
+  const chip = 'inline-flex h-6 items-center rounded-md px-2 text-[11px] font-bold';
 
-  const confirmAbsence = () => {
-    if (!absence || !returnDate) return;
-    onSetStatus(doc.id, absence, { returnDate });
-    setAbsence(null);
-    setReturnDate('');
-  };
+  const person = (p: PresenceItem, tone: 'sky' | 'emerald') => (
+    <div key={p.key} className="flex items-center gap-2.5">
+      <RepAvatar name={p.name} src={p.avatarUrl} me={p.isMe} size={28} />
+      <span className="flex-1 text-sm text-slate-100">
+        {p.name}
+        {p.isMe && <span className="text-slate-400"> (você)</span>}
+      </span>
+      <span className={`text-[13px] tabular-nums ${tone === 'sky' ? 'text-slate-400' : 'text-emerald-300'}`}>
+        {p.kind === 'visit' ? dayHhmm(p.at) : hhmm(p.at)}
+      </span>
+    </div>
+  );
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 animate-[fade-in_.18s_ease-out]" onClick={onClose}>
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Ficha de ${doc.descricao}`}
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl max-h-[90dvh] overflow-y-auto rounded-t-[28px] border-t border-slate-700 bg-slate-900 px-5 pt-2.5 flex flex-col gap-4 animate-[sheet-up_.24s_cubic-bezier(.2,.8,.2,1)]"
-        style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 20px)' }}
-      >
-        <div className="self-center h-[5px] w-10 rounded-full bg-slate-700" aria-hidden="true" />
+    <div className="fixed inset-0 z-40 bg-slate-950 animate-[fade-in_.18s_ease-out]">
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-label={`Ficha de ${doc.descricao}`} className="mx-auto flex h-full w-full max-w-xl flex-col">
+        {/* Cabeçalho: voltar · Editar · mais opções */}
+        <header className="flex items-center gap-2 px-3 pb-2 pt-4">
+          <button
+            type="button"
+            aria-label={mode === 'edit' ? 'Voltar para a ficha' : 'Voltar'}
+            onClick={() => (mode === 'edit' ? setMode('status') : onClose())}
+            className="flex size-11 items-center justify-center rounded-xl border-0 bg-transparent text-slate-100"
+          >
+            {ico(<path d="M15 6l-6 6 6 6" />, 2)}
+          </button>
+          <span className="flex-1 truncate text-sm font-semibold uppercase tracking-[0.08em] text-blue-400">
+            {mode === 'edit' ? 'Editando dados' : ''}
+          </span>
+          {mode === 'status' && (
+            <>
+              <button
+                type="button"
+                onClick={() => setMode('edit')}
+                className="h-11 rounded-xl border border-slate-800 bg-slate-900 px-3.5 text-sm font-semibold text-slate-100"
+              >
+                Editar
+              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="Mais opções"
+                  aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen((o) => !o)}
+                  className="flex size-11 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-100"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <circle cx="5" cy="12" r="1.8" />
+                    <circle cx="12" cy="12" r="1.8" />
+                    <circle cx="19" cy="12" r="1.8" />
+                  </svg>
+                </button>
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" aria-hidden="true" onClick={() => setMenuOpen(false)} />
+                    <div role="menu" className="absolute right-0 top-12 z-20 flex w-64 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 p-1.5 shadow-2xl shadow-black/60">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setMode('edit');
+                        }}
+                        className="flex flex-col rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800"
+                      >
+                        <span className="text-sm font-semibold text-slate-100">Editar dados</span>
+                        <span className="text-xs text-slate-400">Telefones, endereço, agenda</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setStatusOpen(true);
+                        }}
+                        className="flex flex-col rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800"
+                      >
+                        <span className="text-sm font-semibold text-slate-100">Marcar status</span>
+                        <span className="text-xs text-slate-400">No consultório, visitado, ausência</span>
+                      </button>
+                      <div className="mx-2 my-1 h-px bg-slate-800" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          onDelete();
+                        }}
+                        className="flex flex-col rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-red-500/10"
+                      >
+                        <span className="text-sm font-semibold text-red-400">Excluir do meu painel</span>
+                        <span className="text-xs text-slate-400">Continua na base e nos colegas</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </header>
 
-        {/* Cabeçalho */}
-        <div className="flex justify-between items-start gap-3">
-          <div className="flex flex-col gap-1 min-w-0">
-            <h2 className="m-0 text-[22px] font-bold tracking-tight uppercase text-white break-words">
+        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pb-8" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 32px)' }}>
+          {/* Nome, especialidade/CRM e chips */}
+          <div className="flex flex-col gap-2">
+            <h1 className="m-0 text-2xl font-bold uppercase tracking-tight text-white">
               {doc.descricao}
               {isNewDoctor(doc) && <span className="ml-2 align-middle text-[10px] font-bold text-green-400">NOVO</span>}
-            </h2>
-            {mode === 'edit' ? (
-              <span className="text-sm font-semibold uppercase tracking-[0.08em] text-blue-400">Editando dados</span>
-            ) : (doc.especialidade || doc.crm) && (
-              <span className="text-sm uppercase text-slate-400">
-                {[
-                  doc.especialidade,
-                  formatCrm(doc.crm, doc.uf),
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </span>
+            </h1>
+            {sub && <span className="text-[13px] text-slate-400">{sub}</span>}
+            {(code || agenda.length > 0 || weeks.length > 0) && (
+              <div className="flex flex-wrap gap-1.5">
+                {code && <span className={`${chip} bg-rose-950 text-rose-300`}>{code}</span>}
+                {agenda.map((e) => (
+                  <span key={e.day} className={`${chip} bg-slate-800 text-slate-300`}>
+                    {formatAgendaBadge(e)}
+                  </span>
+                ))}
+                {weeks.length > 0 && <span className={`${chip} bg-blue-950 text-blue-300`}>{weeksLabel(weeks)}</span>}
+              </div>
             )}
           </div>
-          <div className="relative flex gap-1.5 shrink-0">
-            {mode === 'status' && (
-            <button
-              type="button"
-              aria-label="Mais opções"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((o) => !o)}
-              className="size-11 rounded-xl border border-slate-700 bg-transparent text-slate-200 flex items-center justify-center hover:text-white"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <circle cx="5" cy="12" r="1.8" />
-                <circle cx="12" cy="12" r="1.8" />
-                <circle cx="19" cy="12" r="1.8" />
-              </svg>
-            </button>
-            )}
-            <button
-              type="button"
-              aria-label="Fechar"
-              onClick={onClose}
-              className="size-11 rounded-xl border border-slate-700 bg-transparent text-slate-200 flex items-center justify-center hover:text-white"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                <path d="M6 6l12 12M18 6L6 18" />
-              </svg>
-            </button>
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-10" aria-hidden="true" onClick={() => setMenuOpen(false)} />
-                <div
-                  role="menu"
-                  className="absolute right-0 top-12 z-20 w-64 overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 p-1.5 shadow-2xl shadow-black/60 flex flex-col"
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setMode('edit');
-                    }}
-                    className="flex items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800 active:bg-slate-800"
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-blue-400">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 20h9" />
-                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                      </svg>
-                    </span>
-                    <span className="flex min-w-0 flex-col">
-                      <span className="text-sm font-semibold text-slate-100">Editar dados</span>
-                      <span className="text-xs text-slate-400">Telefones, endereço, agenda</span>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setStatusOpen(true);
-                    }}
-                    className="flex items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-slate-800 active:bg-slate-800"
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />
-                      </svg>
-                    </span>
-                    <span className="flex min-w-0 flex-col">
-                      <span className="text-sm font-semibold text-slate-100">Marcar status</span>
-                      <span className="text-xs text-slate-400">No consultório, visitado, ausência</span>
-                    </span>
-                  </button>
-                  <div className="mx-2 my-1 h-px bg-slate-800" />
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onDelete();
-                    }}
-                    className="flex items-center gap-3 rounded-xl border-0 bg-transparent px-3 py-2.5 text-left hover:bg-red-500/10 active:bg-red-500/10"
-                  >
-                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-red-500/15 text-red-400">
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M3 6h18" />
-                        <path d="M8 6V4h8v2" />
-                        <path d="M19 6l-1 14H6L5 6" />
-                        <path d="M10 11v5M14 11v5" />
-                      </svg>
-                    </span>
-                    <span className="flex min-w-0 flex-col">
-                      <span className="text-sm font-semibold text-red-400">Excluir do meu painel</span>
-                      <span className="text-xs text-slate-400">Continua na base e nos colegas</span>
-                    </span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
 
-        {mode === 'edit' ? (
-          <DoctorEditForm
-            doc={doc}
-            cityOptions={cityOptions}
-            onUpdateDoctor={onUpdateDoctor}
-            onDone={() => {
-              setMode('status');
-              // Voltou do Editar: sobe ao topo para o botão de fechar ficar à vista
-              panelRef.current?.scrollTo({ top: 0 });
-            }}
-          />
-        ) : (
-          <>
-        {/* Dias, semanas */}
-        {(agenda.length > 0 || weeks.length > 0) && (
-          <div className="flex gap-1.5 flex-wrap">
-            {agenda.map((e) => (
-              <span key={e.day} className="h-7 px-2.5 rounded-full border border-slate-700 text-xs text-slate-200 inline-flex items-center uppercase">
-                {formatAgendaBadge(e)}
-              </span>
-            ))}
-            {weeks.map((w) => (
-              <span key={w} className="h-7 px-2.5 rounded-full border border-blue-600 text-xs text-blue-400 inline-flex items-center uppercase">
-                {cycleWeekLabel(w)}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Informações */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 flex flex-col gap-3">
-          <div className="flex flex-col gap-0.5">
-            <span className={label}>Local</span>
-            <span className="text-[15px] text-slate-100">{doc.complemento || 'Consultório próprio'}</span>
-            {address && <span className="text-sm text-slate-400">{address}</span>}
-          </div>
-          <div className="h-px bg-slate-800" />
-          <div className="flex justify-between gap-3">
-            <div className="flex flex-col gap-0.5">
-              <span className={label}>Horário médio</span>
-              <span className="text-[15px] text-slate-100">
-                {expected
-                  ? `${formatMinutes(expected.startMinutes)}${expected.endMinutes !== null ? ` – ${formatMinutes(expected.endMinutes)}` : ''}`
-                  : '—'}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5 items-end">
-              <span className={label}>Sua visita</span>
-              <span className={`text-right text-[15px] ${visitedAt ? 'text-emerald-400' : 'text-slate-100'}`}>
-                {visitedAt ? 'Feita' : 'Pendente'}
-              </span>
-            </div>
-          </div>
-          {doc.observacoes && (
+          {mode === 'edit' ? (
+            <DoctorEditForm
+              doc={doc}
+              cityOptions={cityOptions}
+              onUpdateDoctor={onUpdateDoctor}
+              onDone={() => {
+                setMode('status');
+                panelRef.current?.querySelector('.overflow-y-auto')?.scrollTo({ top: 0 });
+              }}
+            />
+          ) : (
             <>
-              <div className="h-px bg-slate-800" />
-              <div className="flex flex-col gap-0.5">
-                <span className={label}>Observação</span>
-                <span className="text-sm text-slate-200">{doc.observacoes}</span>
+              {/* Agora no consultório */}
+              {inOffice.length > 0 && (
+                <section className="flex flex-col gap-2 rounded-2xl border border-sky-500 bg-sky-500/10 px-3.5 py-3">
+                  <span className="text-xs font-bold text-sky-300">Agora no consultório</span>
+                  {inOffice.map((p) => person(p, 'sky'))}
+                </section>
+              )}
+              {visitedBy.length > 0 && (
+                <section className="flex flex-col gap-2 rounded-2xl border border-emerald-700 bg-emerald-500/10 px-3.5 py-3">
+                  <span className="text-xs font-bold text-emerald-300">Já visitaram neste ciclo</span>
+                  {visitedBy.map((p) => person(p, 'emerald'))}
+                </section>
+              )}
+
+              {/* 4 ações */}
+              <div className="grid grid-cols-4 gap-2">
+                <Tile primary onClick={() => setStatusOpen(true)} text="Status">
+                  {ico(<path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />, 2)}
+                </Tile>
+                <Tile disabled={!onNavigate} onClick={() => onNavigate?.()} text="Rota">
+                  {ico(<><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" /><circle cx="12" cy="9" r="2.5" /></>)}
+                </Tile>
+                <Tile disabled={!whats.medico && !whats.clinica} onClick={() => setWhatsOpen(true)} text="WhatsApp">
+                  {ico(<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z" />)}
+                </Tile>
+                <Tile disabled={!call} href={call} text="Ligar">
+                  {ico(<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />)}
+                </Tile>
+              </div>
+              {!visitedAt && activeWeekLabel && (
+                <span className="-mt-1.5 text-center text-xs text-slate-500">O visitado entra na {activeWeekLabel}</span>
+              )}
+
+              {/* Local, endereço, horário médio e observação */}
+              <section className="flex flex-col rounded-2xl border border-slate-800 bg-slate-900 px-3.5 py-1">
+                {[
+                  ['Local', doc.complemento || 'Consultório próprio'],
+                  ['Endereço', address],
+                  ['Horário médio', expected ? `${formatMinutes(expected.startMinutes)}${expected.endMinutes !== null ? ` – ${formatMinutes(expected.endMinutes)}` : ''}` : ''],
+                  ['Obs.', doc.observacoes ?? ''],
+                ]
+                  .filter(([, v]) => Boolean(v))
+                  .map(([k, v], i, arr) => (
+                    <div key={k} className={`flex gap-3 py-2.5 ${i < arr.length - 1 ? 'border-b border-slate-800' : ''}`}>
+                      <span className="w-[76px] shrink-0 text-[13px] text-slate-500">{k}</span>
+                      <span className="flex-1 text-[13px] text-slate-100">{v}</span>
+                    </div>
+                  ))}
+              </section>
+
+              {/* Últimos status (quem marcou e quando) e últimas edições */}
+              <StatusHistory doctorId={doc.id} statuses={statuses} profiles={profiles ?? NO_PROFILES} />
+              <div className="flex flex-col gap-2">
+                <span className={label}>Últimas edições</span>
+                <DoctorHistory doc={doc} />
               </div>
             </>
           )}
         </div>
-
-        {/* Representantes: uma linha por pessoa (foto, nome e o que fez, com data e hora) */}
-        {presence && presence.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <span className={label}>Representantes · {presence.length}</span>
-            <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-              {presence.map((p) => (
-                <li
-                  key={p.key}
-                  className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2"
-                >
-                  <RepAvatar name={p.name} src={p.avatarUrl} me={p.isMe} size={32} />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-semibold text-slate-100">
-                      {p.name}
-                      {p.isMe && <span className="ml-1.5 text-[11px] font-bold text-blue-400">VOCÊ</span>}
-                    </span>
-                    <span className={`text-xs ${p.kind === 'office' ? 'text-sky-400' : 'text-emerald-400'}`}>
-                      {p.kind === 'office' ? 'No consultório desde' : 'Visitou'} {shortDate(p.at)} às {formatTime(p.at)}
-                    </span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* Histórico de status: não se perde se o representante esquecer de marcar Visitado */}
-        <StatusHistory doctorId={doc.id} statuses={statuses} profiles={profiles ?? NO_PROFILES} />
-
-        {/* Status de um toque */}
-        <div className="flex flex-col gap-2">
-          <span className={label}>Status · um toque</span>
-          <div className="grid grid-cols-2 gap-2">
-            {QUICK.map((q) => {
-              const active = has(q.type);
-              return (
-                <button
-                  key={q.type}
-                  type="button"
-                  aria-pressed={Boolean(active)}
-                  onClick={() => toggleQuick(q.type)}
-                  className={`min-h-12 px-3 py-2 rounded-xl border text-left flex flex-col justify-center ${
-                    active ? `${q.on} ${q.text}` : `border-slate-700 bg-slate-800 ${q.text}`
-                  }`}
-                >
-                  <span className="text-sm font-semibold">
-                    {q.label}
-                  </span>
-                  {active && (
-                    <span className="text-[11px] opacity-80">
-                      {TOP_PRIORITY_STATUSES.includes(q.type)
-                        ? formatElapsed(active.created_at)
-                        : STATUS_META[q.type].showTime
-                          ? `às ${formatTime(active.created_at)}`
-                          : 'hoje'}{' '}
-                      · toque p/ remover
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Licença / Afastado e Férias / Viagem */}
-        <div className="flex flex-col gap-2">
-          <span className={label}>Ausência</span>
-          <div className="grid grid-cols-2 gap-2">
-            {ABSENCE.map((a) => {
-              const active = has(a.type);
-              return (
-                <button
-                  key={a.type}
-                  type="button"
-                  aria-pressed={Boolean(active) || absence === a.type}
-                  onClick={() => {
-                    if (active) onClearStatus(doc.id, a.type);
-                    else setAbsence(absence === a.type ? null : a.type);
-                  }}
-                  className={`min-h-12 px-3 py-2 rounded-xl border text-left flex flex-col justify-center text-amber-400 ${
-                    active || absence === a.type ? 'border-amber-400 bg-amber-500/15' : 'border-slate-700 bg-slate-800'
-                  }`}
-                >
-                  <span className="text-sm font-semibold">
-                    {a.label}
-                  </span>
-                  {active?.return_date && (
-                    <span className="text-[11px] opacity-80">Volta {shortDate(active.return_date)} · toque p/ remover</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          {absence && (
-            <BottomSheet
-              title="Até quando?"
-              dismissOnBackdrop={false}
-              onClose={() => {
-                setAbsence(null);
-                setReturnDate('');
-              }}
-              footer={
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAbsence(null);
-                      setReturnDate('');
-                    }}
-                    className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-5 text-sm font-medium text-slate-300 hover:text-white"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!returnDate}
-                    onClick={confirmAbsence}
-                    className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40"
-                  >
-                    Confirmar
-                  </button>
-                </>
-              }
-            >
-              <p className="m-0 text-sm text-slate-300">
-                {doc.descricao} · <strong className="text-amber-400">{STATUS_META[absence].label}</strong>
-              </p>
-              <ReturnDatePicker value={returnDate} onChange={setReturnDate} />
-            </BottomSheet>
-          )}
-        </div>
-
-        {/* Ações */}
-        <div className="pt-1">
-          <button
-            type="button"
-            disabled={!whats.medico && !whats.clinica}
-            onClick={() => setWhatsOpen(true)}
-            className="flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-emerald-600/50 bg-emerald-500/10 text-sm font-semibold text-emerald-300 disabled:opacity-40"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 11.5a8.4 8.4 0 0 1-12.4 7.4L3 20.5l1.7-5.4A8.4 8.4 0 1 1 21 11.5Z" />
-            </svg>
-            WhatsApp
-          </button>
-        </div>
-        {whatsOpen && (
-          <BottomSheet title="Falar no WhatsApp" onClose={() => setWhatsOpen(false)}>
-            <p className="m-0 truncate text-sm font-semibold uppercase text-slate-200">{doc.descricao}</p>
-            <div className="grid grid-cols-1 gap-2">
-              <WhatsButton href={whats.medico} label="WhatsApp do médico" />
-              <WhatsButton href={whats.clinica} label="WhatsApp da clínica / atendente" />
-            </div>
-            {(!whats.medico || !whats.clinica) && (
-              <p className="m-0 text-xs text-slate-500">O número que falta pode ser cadastrado em Editar dados.</p>
-            )}
-          </BottomSheet>
-        )}
-        {statusOpen && (
-          <StatusSheet
-            doctorId={doc.id}
-            doctorName={doc.descricao}
-            statuses={statuses}
-            visited={Boolean(visitedAt)}
-            onSet={onSetStatus}
-            onClear={onClearStatus}
-            onToggleVisited={(v) => {
-              if (v !== Boolean(visitedAt)) onToggleVisited();
-            }}
-            onClose={() => setStatusOpen(false)}
-          />
-        )}
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={!onNavigate}
-            onClick={() => onNavigate?.()}
-            className="h-[52px] rounded-2xl border border-slate-700 bg-slate-800 text-slate-100 text-sm font-semibold disabled:opacity-40"
-          >
-            Ir (GPS)
-          </button>
-          <button
-            type="button"
-            onClick={onToggleVisited}
-            aria-pressed={Boolean(visitedAt)}
-            className={`h-[52px] rounded-2xl text-sm font-bold ${
-              visitedAt
-                ? 'border border-emerald-500/60 bg-emerald-500/10 text-emerald-400'
-                : 'border-0 bg-emerald-600 text-white hover:bg-emerald-500'
-            }`}
-          >
-            {visitedAt ? 'Desfazer visita' : 'Visitado'}
-          </button>
-        </div>
-        {!visitedAt && activeWeekLabel && (
-          <span className="-mt-2 text-center text-xs text-slate-500">O visitado entra na {activeWeekLabel}</span>
-        )}
-        <DoctorHistory doc={doc} />
-          </>
-        )}
       </div>
+
+      {whatsOpen && (
+        <BottomSheet title="Abrir WhatsApp de quem?" onClose={() => setWhatsOpen(false)}>
+          <div className="grid grid-cols-1 gap-2">
+            <WhatsOption href={whats.medico} title="WhatsApp do médico" sub={doc.whatsapp_medico ?? ''} />
+            <WhatsOption href={whats.clinica} title="WhatsApp da clínica" sub={doc.whatsapp_clinica || doc.telefone || ''} />
+          </div>
+          {(!whats.medico || !whats.clinica) && (
+            <p className="m-0 text-xs text-slate-500">O número que falta pode ser cadastrado em Editar dados.</p>
+          )}
+        </BottomSheet>
+      )}
+
+      {statusOpen && (
+        <StatusSheet
+          doctorId={doc.id}
+          doctorName={doc.descricao}
+          doctorSubtitle={[code, doc.bairro].filter(Boolean).join(' · ')}
+          statuses={statuses}
+          visited={Boolean(visitedAt)}
+          onSet={onSetStatus}
+          onClear={onClearStatus}
+          onToggleVisited={(v) => {
+            if (v !== Boolean(visitedAt)) onToggleVisited();
+          }}
+          onClose={() => setStatusOpen(false)}
+        />
+      )}
     </div>
   );
 }

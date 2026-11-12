@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { CityOption } from '@/utils';
 import { normalizeText, prettyCity } from '@/utils';
@@ -19,10 +19,12 @@ interface CityFilterProps {
    * Sem isto o componente é o filtro da lista (vazio = todas as cidades).
    */
   pickMode?: boolean;
+  /** desenha o próprio botão que abre a folha (recebe abrir() e o resumo) */
+  renderTrigger?: (open: () => void, summary: string) => ReactNode;
 }
 
 /** Filtro de cidades: botão que abre uma folha por baixo, com busca, "marcar as do dia" e Aplicar */
-export default function CityFilter({ options, selected, onChange, dayCounts, dayLabel, pickMode = false }: CityFilterProps) {
+export default function CityFilter({ options, selected, onChange, dayCounts, dayLabel, pickMode = false, renderTrigger }: CityFilterProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string[]>(selected);
   const [query, setQuery] = useState('');
@@ -111,6 +113,9 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
 
   return (
     <>
+      {renderTrigger ? (
+        renderTrigger(openSheet, summary)
+      ) : (
       <button
         type="button"
         aria-haspopup="dialog"
@@ -125,6 +130,7 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
+      )}
 
       {open &&
         createPortal(

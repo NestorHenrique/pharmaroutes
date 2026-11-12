@@ -48,7 +48,7 @@ export interface StatusMeta {
 
 export const STATUS_META: Record<DoctorStatusType, StatusMeta> = {
   ultimo_paciente: {
-    label: 'Último Paciente',
+    label: 'Último paciente',
     emoji: '🔴',
     border: 'border-red-500',
     bg: 'bg-red-500/10',
@@ -60,7 +60,7 @@ export const STATUS_META: Record<DoctorStatusType, StatusMeta> = {
     showTime: true,
   },
   representante_no_consultorio: {
-    label: 'Rep. no Consultório',
+    label: 'Rep. no consultório',
     emoji: '👤',
     border: 'border-emerald-500',
     bg: 'bg-emerald-500/10',
@@ -72,7 +72,7 @@ export const STATUS_META: Record<DoctorStatusType, StatusMeta> = {
     showTime: true,
   },
   aguardando_medico: {
-    label: 'Aguardando Médico',
+    label: 'Aguardando médico',
     emoji: '⏳',
     border: 'border-sky-500',
     bg: 'bg-sky-500/10',
@@ -96,7 +96,7 @@ export const STATUS_META: Record<DoctorStatusType, StatusMeta> = {
     showTime: false,
   },
   finalizou_atendimento: {
-    label: 'Finalizou o Atendimento',
+    label: 'Finalizou o atendimento',
     emoji: '🏁',
     border: 'border-slate-500',
     bg: 'bg-slate-500/15',

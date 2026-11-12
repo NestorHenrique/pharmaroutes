@@ -9,6 +9,8 @@ import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 interface StatusSelectorProps {
   doctorId: string;
   doctorName: string;
+  /** "ORT · Centro" */
+  doctorSubtitle?: string;
   statuses: DoctorStatus[];
   onSet: (
     doctorId: string,
@@ -25,6 +27,7 @@ interface StatusSelectorProps {
 export default function StatusSelector({
   doctorId,
   doctorName,
+  doctorSubtitle,
   statuses,
   onSet,
   onClear,
@@ -55,6 +58,7 @@ export default function StatusSelector({
         <StatusSheet
           doctorId={doctorId}
           doctorName={doctorName}
+          doctorSubtitle={doctorSubtitle}
           statuses={statuses}
           visited={visited}
           onSet={onSet}
