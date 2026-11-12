@@ -217,7 +217,7 @@ export default function DoctorSheet({
     <div className="fixed inset-0 z-40 bg-slate-950 animate-[fade-in_.18s_ease-out]">
       <div ref={panelRef} role="dialog" aria-modal="true" aria-label={`Ficha de ${doc.descricao}`} className="mx-auto flex h-full w-full max-w-xl flex-col">
         {/* Cabeçalho: voltar · Editar · mais opções */}
-        <header className="flex items-center gap-2 px-3 pb-2 pt-4">
+        <header className="flex items-center gap-2 px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
           <button
             type="button"
             aria-label={mode === 'edit' ? 'Voltar para a ficha' : 'Voltar'}

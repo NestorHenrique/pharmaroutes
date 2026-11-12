@@ -121,7 +121,7 @@ export default function ProfileSheet(p: ProfileSheetProps) {
   return (
     <div className="fixed inset-0 z-40 bg-slate-950 animate-[fade-in_.18s_ease-out]">
       <div role="dialog" aria-modal="true" aria-label="Perfil" className="mx-auto flex h-full w-full max-w-xl flex-col">
-        <header className="flex items-center gap-2 px-3 pb-2 pt-4">
+        <header className="flex items-center gap-2 px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
           <button type="button" aria-label="Voltar" onClick={p.onClose} className="grid size-11 place-items-center rounded-xl border-0 bg-transparent text-slate-100">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M15 6l-6 6 6 6" />
@@ -137,6 +137,11 @@ export default function ProfileSheet(p: ProfileSheetProps) {
               <span className="truncate text-xl font-bold tracking-tight text-slate-50">{p.name || 'Sem nome'}</span>
               <span className="truncate text-[13px] text-slate-400">{p.email}</span>
             </span>
+            <button type="button" aria-label="Fechar perfil" onClick={p.onClose} className="grid size-11 shrink-0 place-items-center rounded-xl border border-slate-800 bg-slate-900 text-slate-100 order-last">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
             <button type="button" onClick={p.onEditProfile} className="h-11 shrink-0 rounded-xl border border-slate-800 bg-slate-900 px-3.5 text-sm font-semibold text-slate-100">
               Editar
             </button>

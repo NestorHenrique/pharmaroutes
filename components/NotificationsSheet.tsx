@@ -129,7 +129,7 @@ export default function NotificationsSheet({ items, now, allCities, cityNames, a
   return (
     <div className="fixed inset-0 z-40 bg-slate-950 animate-[fade-in_.18s_ease-out]">
       <div role="dialog" aria-modal="true" aria-label="Notificações" className="mx-auto flex h-full w-full max-w-xl flex-col">
-        <header className="flex items-center gap-2 px-3 pb-2 pt-4">
+        <header className="flex items-center gap-2 px-3 pb-2" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
           <button type="button" aria-label="Voltar" onClick={onClose} className="grid size-11 place-items-center rounded-xl border-0 bg-transparent text-slate-100">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M15 6l-6 6 6 6" />
