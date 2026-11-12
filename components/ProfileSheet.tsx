@@ -25,6 +25,9 @@ interface ProfileSheetProps {
   onRenewCycle: () => void;
   /** liga/desliga os avisos; devolve uma mensagem de erro ou null */
   onToggleNotify: (on: boolean) => Promise<string | null>;
+  /** exigir aprovação de um colega para mudar nome, CRM, UF e especialidade (vale para todos) */
+  approvalOn: boolean;
+  onToggleApproval: (on: boolean) => Promise<string | null>;
   onThemeChange: (pref: ThemePref) => void;
   onOpenGuide: () => void;
   onReplayTour: () => void;
@@ -60,6 +63,15 @@ function Row({ label, value, action }: { label: string; value: ReactNode; action
 export default function ProfileSheet(p: ProfileSheetProps) {
   const [notifyBusy, setNotifyBusy] = useState(false);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalMsg, setApprovalMsg] = useState<string | null>(null);
+  const toggleApproval = async () => {
+    setApprovalBusy(true);
+    setApprovalMsg(null);
+    const err = await p.onToggleApproval(!p.approvalOn);
+    setApprovalBusy(false);
+    if (err) setApprovalMsg(err);
+  };
 
   const toggleNotify = async () => {
     setNotifyBusy(true);
@@ -131,6 +143,30 @@ export default function ProfileSheet(p: ProfileSheetProps) {
           </span>
         </button>
         {notifyMsg && <div role="alert" className="text-xs leading-snug text-red-400">{notifyMsg}</div>}
+      </section>
+
+      <section className={section}>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={p.approvalOn}
+          disabled={approvalBusy}
+          onClick={() => void toggleApproval()}
+          className="flex min-h-12 items-center justify-between gap-3 border-0 bg-transparent p-0 text-left"
+        >
+          <span className="flex min-w-0 flex-col">
+            <span className="text-[15px] font-semibold text-slate-100">Aprovação de edições</span>
+            <span className="text-xs text-slate-400">
+              {p.approvalOn
+                ? 'Ligada: mudar nome, CRM, UF ou especialidade de um médico pede o ok de um colega (ou vale sozinho em 24 h). Vale para todos.'
+                : 'Desligada: todos editam direto. Ligue se quiser que um colega confirme mudanças de nome, CRM, UF e especialidade.'}
+            </span>
+          </span>
+          <span aria-hidden="true" className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${p.approvalOn ? 'bg-blue-600' : 'bg-slate-600'}`}>
+            <span className={`absolute top-1 size-5 rounded-full bg-white transition-all ${p.approvalOn ? 'left-6' : 'left-1'}`} />
+          </span>
+        </button>
+        {approvalMsg && <div role="alert" className="text-xs leading-snug text-red-400">{approvalMsg}</div>}
       </section>
 
       <section className={section}>

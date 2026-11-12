@@ -49,6 +49,8 @@ import { useVisits } from '@/hooks/useVisits';
 import { useVisitPrompts } from '@/hooks/useVisitPrompts';
 import VisitPromptModal from '@/components/VisitPromptModal';
 import NameConfirmSheet, { suggestName } from '@/components/NameConfirmSheet';
+import TermsGate from '@/components/TermsGate';
+import { TERMS_VERSION } from '@/lib/terms';
 import WeekSetupFlow from '@/components/WeekSetupFlow';
 import ConfirmSheet from '@/components/ConfirmSheet';
 import Tour from '@/components/Tour';
@@ -56,10 +58,12 @@ import StatusGuide from '@/components/StatusGuide';
 import { useWeekCities } from '@/hooks/useWeekCities';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useHiddenDoctors } from '@/hooks/useHiddenDoctors';
+import { useEditProposals } from '@/hooks/useEditProposals';
+import { GUARDED_FIELDS, changeLines, hoursLeft, type ProposalChanges } from '@/lib/editProposals';
 import Toast, { type ToastData } from '@/components/Toast';
 import ConnectionBanner from '@/components/ConnectionBanner';
 import EmptyState from '@/components/EmptyState';
-import NotificationsSheet, { type NoticeItem } from '@/components/NotificationsSheet';
+import NotificationsSheet, { type ApprovalItem, type NoticeItem } from '@/components/NotificationsSheet';
 import { getFlag, setFlag } from '@/lib/repFlags';
 import { shouldSignOutOnReopen } from '@/lib/auth';
 import NewPasswordScreen from '@/components/NewPasswordScreen';
@@ -489,11 +493,26 @@ export default function HomePage() {
   const notif = useNotifications(userId);
   const [showNotices, setShowNotices] = useState(false);
 
+  /* Termos de uso e privacidade (LGPD): bloqueia o app até aceitar a versão atual */
+  const [termsSaving, setTermsSaving] = useState(false);
+  const termsAccepted =
+    (profile?.terms_version === TERMS_VERSION && Boolean(profile?.terms_accepted_at)) ||
+    (userId ? getFlag(userId, 'terms-accepted') === TERMS_VERSION : false);
+  const needTerms = Boolean(userId && profile && !termsAccepted);
+  const acceptTerms = async () => {
+    if (!userId) return;
+    setTermsSaving(true);
+    setFlag(userId, 'terms-accepted', TERMS_VERSION); // reserva: sem a coluna v14 a pergunta não pode repetir
+    const ok = await saveProfile({ terms_accepted_at: new Date().toISOString(), terms_version: TERMS_VERSION });
+    if (!ok) setFlag(userId, 'terms-accepted', null);
+    setTermsSaving(false);
+  };
+
   /* Primeiro acesso: "Confirme como os colegas te chamam". Fechar sem confirmar = pergunta de novo na próxima abertura. */
   const [nameLater, setNameLater] = useState(false);
   const [nameSaving, setNameSaving] = useState(false);
   const nameConfirmed = Boolean(profile?.name_confirmed_at) || (userId ? getFlag(userId, 'name-confirmed') === '1' : false);
-  const needName = Boolean(userId && profile && !nameConfirmed && !nameLater);
+  const needName = Boolean(userId && profile && !needTerms && !nameConfirmed && !nameLater);
   const confirmName = async (fullName: string) => {
     if (!userId) return;
     setNameSaving(true);
@@ -677,6 +696,10 @@ export default function HomePage() {
       setLoading(false);
     }
   }, [session]);
+
+  /** propostas de alteração de nome/CRM/UF/especialidade (aprovação de colegas) */
+  const proposals = useEditProposals(userId, () => void fetchDoctors());
+
 
   useEffect(() => {
     fetchDoctors();
@@ -1067,8 +1090,40 @@ export default function HomePage() {
       if (weeks !== undefined && !(await setDoctorWeeks(docId, weeks))) return false;
       if (Object.keys(fields).length === 0) return true;
 
-      const payload = { ...prepare(fields), updated_by_name: actorName, change_source: 'app' };
       const previous = doctors.find((d) => d.id === docId);
+      const prepared: Record<string, unknown> = { ...prepare(fields) };
+
+      // Nome, CRM, UF e especialidade são dados de todos: a mudança vira uma proposta para um colega aprovar
+      if (previous && proposals.available && proposals.required) {
+        const changes: ProposalChanges = {};
+        for (const k of GUARDED_FIELDS) {
+          if (!(k in prepared)) continue;
+          const de = (previous[k] ?? '') as string;
+          const para = (prepared[k] ?? '') as string;
+          if (String(de).trim() !== String(para).trim()) changes[k] = { de: de || null, para: para || null };
+          delete prepared[k];
+        }
+        if (Object.keys(changes).length > 0) {
+          if (isOffline()) {
+            alert('Para mudar nome, CRM, UF ou especialidade é preciso estar com internet.');
+            return false;
+          }
+          const sent = await proposals.propose(docId, actorName, changes);
+          if (sent === 'error') {
+            alert('Não foi possível enviar a alteração para aprovação. Tente de novo.');
+            return false;
+          }
+          if (sent === 'ok') {
+            showToast('Alteração enviada para aprovação dos colegas. Vale em até 24 h.');
+          } else {
+            // tabela ainda não existe: salva direto, como antes
+            for (const k of GUARDED_FIELDS) if (k in changes) prepared[k] = changes[k]?.para ?? null;
+          }
+        }
+        if (Object.keys(prepared).length === 0) return true;
+      }
+
+      const payload = { ...prepared, updated_by_name: actorName, change_source: 'app' };
 
       // 1) A tela muda na hora (o selo "Atualizado por" também)
       setDoctors((prev) =>
@@ -1099,7 +1154,7 @@ export default function HomePage() {
       void fetchDoctors(); // confirma com o servidor sem travar a tela
       return true;
     },
-    [prepare, actorName, fetchDoctors, setDoctorWeeks, doctors, userId],
+    [prepare, actorName, fetchDoctors, setDoctorWeeks, doctors, userId, proposals, showToast],
   );
 
   const findDuplicate = useCallback(
@@ -1702,7 +1757,26 @@ export default function HomePage() {
       ];
     });
   }, [notif.rows, notif.readAt, panelDoctors, activeWeek, weekCities.byWeek, repProfiles]);
-  const unreadNotices = noticeItems.filter((n) => n.unread).length;
+  /** Alterações de nome/CRM/UF/especialidade esperando decisão (as dos colegas primeiro) */
+  const approvalItems = useMemo<ApprovalItem[]>(() => {
+    const byId = new Map(doctors.map((d) => [d.id, d]));
+    return proposals.pending.flatMap((p): ApprovalItem[] => {
+      const d = byId.get(p.doctor_id);
+      if (!d) return [];
+      return [
+        {
+          id: p.id,
+          doctorName: d.descricao,
+          by: (repProfiles[p.proposed_by]?.display_name || p.proposed_by_name || 'Um colega').trim().split(/\s+/)[0],
+          lines: changeLines(p.changes),
+          mine: p.proposed_by === userId,
+          hoursLeft: hoursLeft(p.created_at, now),
+        },
+      ];
+    });
+  }, [proposals.pending, doctors, repProfiles, userId, now]);
+  const toReviewCount = approvalItems.filter((a) => !a.mine).length;
+  const unreadNotices = noticeItems.filter((n) => n.unread).length + toReviewCount;
 
   // Ao abrir o sino, busca de novo para não mostrar a lista de um minuto atrás
   const refetchNotices = notif.refetch;
@@ -1717,9 +1791,9 @@ export default function HomePage() {
   useEffect(() => {
     if (tourOpen || tourDismissed || tourSeen) return;
     if (!userId || !profile || doctors.length === 0) return;
-    if (needName || weekPrompt || renewAsk || promptQueue.length > 0 || sheetId || showProfile) return;
+    if (needTerms || needName || weekPrompt || renewAsk || promptQueue.length > 0 || sheetId || showProfile) return;
     setTourOpen(true);
-  }, [tourOpen, tourDismissed, tourSeen, userId, profile, doctors.length, needName, weekPrompt, renewAsk, promptQueue.length, sheetId, showProfile]);
+  }, [tourOpen, tourDismissed, tourSeen, userId, profile, doctors.length, needTerms, needName, weekPrompt, renewAsk, promptQueue.length, sheetId, showProfile]);
 
   const endTour = () => {
     setTourOpen(false);
@@ -2329,6 +2403,8 @@ export default function HomePage() {
           }}
           onRenewCycle={renewCycle}
           onToggleNotify={toggleNotify}
+          approvalOn={proposals.required}
+          onToggleApproval={async (on) => ((await proposals.setRequired(on)) ? null : 'Não foi possível mudar agora. Tente de novo.')}
           onThemeChange={changeTheme}
           onOpenGuide={() => setShowGuide(true)}
           onReplayTour={() => {
@@ -2599,7 +2675,7 @@ export default function HomePage() {
       )}
 
       {/* Semana do ciclo → aviso de ciclo → avisos dos colegas (abre sozinho no primeiro acesso de cada segunda) */}
-      {weekPrompt && !needName && (
+      {weekPrompt && !needName && !needTerms && (
         <WeekSetupFlow
           activeWeek={activeWeek}
           lastWeek={lastWeek}
@@ -2703,6 +2779,8 @@ export default function HomePage() {
           items={noticeItems}
           now={now}
           allCities={!(activeWeek && weekCityList(activeWeek).length > 0)}
+          approvals={approvalItems}
+          onDecide={proposals.decide}
           onOpenDoctor={(id) => setSheetId(id)}
           onMarkAllRead={notif.markAllRead}
           onClose={() => setShowNotices(false)}
@@ -2714,6 +2792,9 @@ export default function HomePage() {
 
       {/* Dicas da tela inicial (primeiro acesso ou "Rever o tutorial") */}
       {tourOpen && <Tour onFinish={endTour} onSkip={endTour} />}
+
+      {/* Termos de uso e privacidade */}
+      {needTerms && <TermsGate saving={termsSaving} onAccept={() => void acceptTerms()} onLogout={handleLogout} />}
 
       {/* Primeiro acesso: como os colegas te chamam */}
       {needName && session && (
