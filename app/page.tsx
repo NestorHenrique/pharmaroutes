@@ -302,6 +302,13 @@ function SectionTitle({ tone, children }: { tone?: string; children: ReactNode }
   );
 }
 
+const BAR_STYLES = {
+  visited: { box: 'border-emerald-500/40 bg-emerald-500/10', icon: 'bg-emerald-500 text-slate-950', text: 'text-emerald-400', badge: 'bg-emerald-500/20', path: 'M5 12l5 5L20 7' },
+  route: { box: 'border-blue-800 bg-blue-950', icon: 'bg-blue-600 text-slate-950', text: 'text-blue-300', badge: 'bg-blue-900', path: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01' },
+  unavail: { box: 'border-slate-700 bg-slate-900', icon: 'bg-slate-700 text-slate-100', text: 'text-slate-400', badge: 'bg-slate-800', path: 'M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z' },
+  plantao: { box: 'border-amber-500/40 bg-amber-500/10', icon: 'bg-amber-400 text-slate-950', text: 'text-amber-400', badge: 'bg-amber-500/20', path: 'M12 5v14M5 12h14' },
+} as const;
+
 /** Título de lista que recolhe/expande (setinha + contador). `onToggle` ausente = título fixo. */
 function CollapsibleTitle({
   tone,
@@ -318,24 +325,25 @@ function CollapsibleTitle({
   open: boolean;
   onToggle?: () => void;
   hint?: string;
-  /** "visited": linha recolhida verde (check + contagem), como no desenho */
-  variant?: 'visited';
+  /** barra recolhível colorida (ícone + contagem + seta), no molde de "Visitados hoje" */
+  variant?: 'visited' | 'route' | 'unavail' | 'plantao';
 }) {
-  if (variant === 'visited' && onToggle) {
+  if (variant && onToggle) {
+    const v = BAR_STYLES[variant];
     return (
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="mt-2 flex min-h-[52px] w-full items-center gap-2.5 rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 text-left"
+        className={`mt-2 flex min-h-[52px] w-full items-center gap-2.5 rounded-2xl border px-3.5 text-left ${v.box}`}
       >
-        <span className="grid size-[26px] shrink-0 place-items-center rounded-lg bg-emerald-500 text-slate-950">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M5 12l5 5L20 7" />
+        <span className={`grid size-[26px] shrink-0 place-items-center rounded-lg ${v.icon}`}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d={v.path} />
           </svg>
         </span>
-        <span className="flex-1 text-sm font-semibold text-emerald-400">{title}</span>
-        <span className="grid h-[26px] min-w-[26px] place-items-center rounded-full bg-emerald-500/20 px-2 text-[13px] font-bold text-emerald-400">
+        <span className={`flex-1 text-sm font-semibold ${v.text}`}>{title}</span>
+        <span className={`grid h-[26px] min-w-[26px] place-items-center rounded-full px-2 text-[13px] font-bold ${v.badge} ${v.text}`}>
           {count}
         </span>
         <svg
@@ -347,7 +355,7 @@ function CollapsibleTitle({
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`shrink-0 text-emerald-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`shrink-0 transition-transform ${v.text} ${open ? 'rotate-180' : ''}`}
           aria-hidden="true"
         >
           <path d="M6 9l6 6 6-6" />
@@ -1683,7 +1691,8 @@ export default function HomePage() {
     return out;
   }, [isCategoryMode, now, feed.middle, feed.visited, liveStatusMap, visitorsByDoctor]);
   const routeList = feed.middle.filter((d) => !plantaoIds.has(d.id));
-  const visitedList = feed.visited.filter((d) => !plantaoIds.has(d.id));
+  /** Plantonistas visitados entram aqui também; a aba de plantonistas é só para saber quem são os do dia */
+  const visitedList = feed.visited;
   const plantaoList = [...feed.middle, ...feed.visited].filter((d) => plantaoIds.has(d.id));
   const [plantaoOpen, setPlantaoOpen] = useState(false);
   const plantaoShown = plantaoOpen || searchQuery.trim() !== '';
@@ -2567,6 +2576,7 @@ export default function HomePage() {
             {routeList.length > 0 && (
               <CollapsibleTitle
                 title="Roteiro padrão"
+                variant="route"
                 count={routeList.length}
                 open={routeShown}
                 onToggle={toggleRouteClosed}
@@ -2578,6 +2588,7 @@ export default function HomePage() {
             {plantaoList.length > 0 && (
               <CollapsibleTitle
                 title="Plantonistas hoje"
+                variant="plantao"
                 count={plantaoList.length}
                 open={plantaoShown}
                 onToggle={() => setPlantaoOpen((o) => !o)}
@@ -2601,7 +2612,7 @@ export default function HomePage() {
             {feed.unavailable.length > 0 && (
               <CollapsibleTitle
                 title="Indisponíveis"
-                tone="text-slate-400"
+                variant="unavail"
                 count={feed.unavailable.length}
                 open={unavailShown}
                 onToggle={toggleUnavailOpen}
