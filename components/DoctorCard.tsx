@@ -83,6 +83,8 @@ interface DoctorCardProps {
   onEditEnd?: () => void;
   /** relógio da tela (ms): faz o "há X min" dos cards em atendimento crescer sozinho */
   now?: number;
+  /** id de quem está usando o app: o atalho "Já visitei" só aparece no card azul DELE */
+  myUserId?: string | null;
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
@@ -132,6 +134,7 @@ function DoctorCard({
   presence,
   searchHint = null,
   onToggleCycleVisit,
+  myUserId,
   activeWeekLabel = null,
   expanded = true,
   onToggleExpand,
@@ -303,6 +306,22 @@ function DoctorCard({
     const placeLines = formatPlaceLines(doc);
     const place = placeLines.line1;
     const hasPresence = Boolean(presence && presence.length > 0);
+    // Atalho no card azul: eu estou no consultório (status meu ativo) e ainda não visitei
+    const iAmInOffice =
+      Boolean(myUserId) &&
+      !visitedAt &&
+      statuses.some((s) => s.status_type === 'representante_no_consultorio' && s.created_by === myUserId);
+    const quickVisit = () => {
+      if (categoryMode) {
+        // PSM/SAMU/Hospital: a visita é do dia e encerra o atendimento
+        for (const s of statuses) {
+          if (['representante_no_consultorio', 'aguardando_medico', 'ultimo_paciente'].includes(s.status_type)) onClearStatus(doc.id, s.status_type);
+        }
+        onSetStatus(doc.id, 'visitado_hoje');
+      } else {
+        onToggleCycleVisit?.(doc.id, true);
+      }
+    };
     let subline = place;
     if (tier === 'top' && lead && TOP_PRIORITY_STATUSES.includes(lead.status_type)) {
       // Em atendimento: tempo decorrido crescente
@@ -399,6 +418,15 @@ function DoctorCard({
         )}
         {/* Fotos só quando não há etiqueta (a etiqueta já traz foto, nome e hora) */}
         {!hasPresence && visitors && visitors.length > 0 && <VisitorStack visitors={visitors} />}
+        {iAmInOffice && (
+          <button
+            type="button"
+            onClick={quickVisit}
+            className="relative z-10 h-11 shrink-0 rounded-xl border-0 bg-emerald-600 px-3.5 text-sm font-bold text-white hover:bg-emerald-500"
+          >
+            Já visitei
+          </button>
+        )}
         {cycleVisitedAt && onToggleCycleVisit ? (
           <button
             type="button"

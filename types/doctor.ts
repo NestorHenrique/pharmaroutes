@@ -145,6 +145,10 @@ export interface RepProfile {
   /** semana do ciclo em que está nesta semana (vale só na segunda-feira de active_week_monday) */
   active_week?: number | null;
   active_week_monday?: string | null;
+  /* ── v14 ── */
+  /** aceitou os termos de uso / privacidade (LGPD) */
+  terms_accepted_at?: string | null;
+  terms_version?: string | null;
 }
 
 /** Campos de rep_profiles criados na migração v12 */
@@ -154,6 +158,8 @@ export const REP_PROFILE_V12_KEYS = [
   'notify_enabled',
   'active_week',
   'active_week_monday',
+  'terms_accepted_at',
+  'terms_version',
 ] as const;
 
 /** Visita do ciclo: uma por médico e por representante (tabela doctor_visits) */

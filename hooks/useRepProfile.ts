@@ -120,6 +120,8 @@ export function useRepProfile(userId: string | null) {
         notify_enabled: p?.notify_enabled ?? true,
         active_week: p?.active_week ?? null,
         active_week_monday: p?.active_week_monday ?? null,
+        terms_accepted_at: p?.terms_accepted_at ?? null,
+        terms_version: p?.terms_version ?? null,
       });
       setPortfolio(new Set(((links as { doctor_id: string }[] | null) ?? []).map((l) => l.doctor_id)));
     })();
