@@ -187,11 +187,29 @@ Deno.serve(async (req) => {
   }
   if (!city) return json({ sent: 0, reason: 'doctor without city' });
 
-  const { data: subs } = await admin
+  const key = cityKey(city);
+  const { data: allSubs } = await admin
     .from('push_subscriptions')
-    .select('id, endpoint, p256dh, auth')
-    .eq('city_key', cityKey(city))
+    .select('id, user_id, endpoint, p256dh, auth, city_key')
     .neq('user_id', user.id);
+
+  // Semana ativa e cidades da semana de cada representante (ausentes antes da migração v12: erro = usa o modo antigo)
+  const monday = mondayInBrazil();
+  const [{ data: profs, error: profErr }, { data: weekRows, error: weekErr }] = await Promise.all([
+    admin.from('rep_profiles').select('user_id, active_week, active_week_monday, notify_enabled'),
+    admin.from('rep_week_cities').select('user_id, week, cities'),
+  ]);
+  const profOf = new Map((profErr ? [] : profs ?? []).map((p) => [p.user_id, p]));
+  const citiesOf = new Map((weekErr ? [] : weekRows ?? []).map((r) => [`${r.user_id}:${r.week}`, (r.cities ?? []) as string[]]));
+
+  const subs = (allSubs ?? []).filter((s) => {
+    const p = profOf.get(s.user_id);
+    if (p && p.notify_enabled === false) return false;
+    const weekCities =
+      p && p.active_week && p.active_week_monday === monday ? citiesOf.get(`${s.user_id}:${p.active_week}`) : undefined;
+    if (weekCities && weekCities.length > 0) return weekCities.includes(key);
+    return s.city_key === key; // sem cidades da semana: a cidade do aparelho, como antes
+  });
 
   const who = (await admin.from('rep_profiles').select('display_name').eq('user_id', user.id).maybeSingle()).data?.display_name;
   const title = fix
