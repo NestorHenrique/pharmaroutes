@@ -8,9 +8,8 @@ import BottomSheet from '@/components/BottomSheet';
  */
 
 const STEPS = [
-  'Toque na bandeira do card (ou abra a ficha do médico).',
-  'Toque no status. Ele já fica marcado e os colegas veem na hora.',
-  'Para tirar, toque no mesmo status de novo.',
+  'Toque na bandeira do card do médico.',
+  'Escolha o status. Ele já fica marcado e os colegas veem na hora.',
 ];
 
 const COLORS: { dot: string; title: string; text: string }[] = [
@@ -38,7 +37,7 @@ export default function StatusGuide({ onClose }: { onClose: () => void }) {
       }
     >
       <section className="flex flex-col gap-2">
-        <h3 className="m-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Como marcar em 3 passos</h3>
+        <h3 className="m-0 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">Como marcar em 2 toques</h3>
         <ol className="m-0 flex list-none flex-col gap-2 p-0">
           {STEPS.map((s, i) => (
             <li key={s} className="flex items-start gap-3 text-sm text-slate-200">
@@ -49,6 +48,7 @@ export default function StatusGuide({ onClose }: { onClose: () => void }) {
             </li>
           ))}
         </ol>
+        <p className="m-0 text-xs text-slate-400">Para tirar, toque no mesmo status de novo.</p>
       </section>
 
       <section className="flex flex-col gap-2">
