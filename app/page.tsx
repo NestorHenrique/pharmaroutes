@@ -46,6 +46,8 @@ import { useRepProfile } from '@/hooks/useRepProfile';
 import { useDoctorFilters } from '@/hooks/useDoctorFilters';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useVisits } from '@/hooks/useVisits';
+import { useAdmin } from '@/hooks/useAdmin';
+import { maskRep, setPrivacy } from '@/lib/privacy';
 import { useVisitPrompts } from '@/hooks/useVisitPrompts';
 import VisitPromptModal from '@/components/VisitPromptModal';
 import NameConfirmSheet, { suggestName } from '@/components/NameConfirmSheet';
@@ -886,11 +888,27 @@ export default function HomePage() {
   /* ═══════════════════ Modo offline: fila + sincronização ═══════════════════ */
 
   /* Visitas do ciclo: cada representante tem as suas */
-  const { ready: visitsReady, visitMap, profiles: repProfiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits } = useVisits(
+  const { ready: visitsReady, visitMap, profiles: repProfilesRaw, privateIds, myVisits, markVisited, undoVisited, renewMine, refetchVisits } = useVisits(
     userId,
     accessToken,
     actorName,
   );
+  /* Modo privado: os colegas em modo privado aparecem como "Representante" (sem nome nem foto).
+   * O administrador vê todos pelo nome real. O banco grava sempre o usuário verdadeiro. */
+  const isAdmin = useAdmin(userId);
+  const privateNames = new Set<string>();
+  for (const id of privateIds) {
+    const n = repProfilesRaw[id]?.display_name?.trim().toLowerCase();
+    if (n && id !== userId) privateNames.add(n);
+  }
+  setPrivacy({ privateIds, privateNames, isAdmin, myId: userId });
+  const repProfiles = useMemo(() => {
+    const out: typeof repProfilesRaw = {};
+    for (const [id, p] of Object.entries(repProfilesRaw)) {
+      out[id] = privateIds.has(id) && !isAdmin && id !== userId ? { display_name: maskRep(id, p.display_name) as string, avatar_url: null } : p;
+    }
+    return out;
+  }, [repProfilesRaw, privateIds, isAdmin, userId]);
   /* "Já visitou?": status meu que venceu e ainda não respondi */
   const { pending: rawPrompts, resolve: resolvePrompt } = useVisitPrompts(userId);
 
@@ -1288,11 +1306,13 @@ export default function HomePage() {
     const out: Record<string, DoctorStatus[]> = {};
     for (const [docId, list] of Object.entries(statusMap)) {
       // 'visitado_hoje' sem expiração é a visita antiga do ciclo (agora em doctor_visits): ignora
-      const live = list.filter((s) => isLive(s, now) && !(s.status_type === CYCLE_VISIT_STATUS && !s.expires_at));
+      const live = list
+        .filter((s) => isLive(s, now) && !(s.status_type === CYCLE_VISIT_STATUS && !s.expires_at))
+        .map((s) => (s.rep_name ? { ...s, rep_name: maskRep(s.created_by, s.rep_name) as string } : s));
       if (live.length) out[docId] = live;
     }
     return out;
-  }, [statusMap, now]);
+  }, [statusMap, now, privateIds, isAdmin]);
 
   const newCount = useMemo(() => panelDoctors.filter((d) => isNewDoctor(d)).length, [panelDoctors]);
 
@@ -2485,6 +2505,9 @@ export default function HomePage() {
           }}
           onRenewCycle={renewCycle}
           onToggleNotify={toggleNotify}
+          privateOn={profile.private_mode === true}
+          onTogglePrivate={async (on) => ((await saveProfile({ private_mode: on })) ? null : 'Não foi possível mudar agora. Tente de novo.')}
+          isAdmin={isAdmin}
           approvalOn={proposals.required}
           onToggleApproval={async (on) => ((await proposals.setRequired(on)) ? null : 'Não foi possível mudar agora. Tente de novo.')}
           onThemeChange={changeTheme}

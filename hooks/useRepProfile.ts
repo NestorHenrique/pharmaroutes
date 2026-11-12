@@ -122,6 +122,7 @@ export function useRepProfile(userId: string | null) {
         active_week_monday: p?.active_week_monday ?? null,
         terms_accepted_at: p?.terms_accepted_at ?? null,
         terms_version: p?.terms_version ?? null,
+        private_mode: p?.private_mode ?? false,
       });
       setPortfolio(new Set(((links as { doctor_id: string }[] | null) ?? []).map((l) => l.doctor_id)));
     })();

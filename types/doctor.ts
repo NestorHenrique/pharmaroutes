@@ -149,6 +149,9 @@ export interface RepProfile {
   /** aceitou os termos de uso / privacidade (LGPD) */
   terms_accepted_at?: string | null;
   terms_version?: string | null;
+  /* ── v16 ── */
+  /** modo privado: os colegas veem "Representante" no lugar do nome e da foto */
+  private_mode?: boolean;
 }
 
 /** Campos de rep_profiles criados na migração v12 */
@@ -160,6 +163,7 @@ export const REP_PROFILE_V12_KEYS = [
   'active_week_monday',
   'terms_accepted_at',
   'terms_version',
+  'private_mode',
 ] as const;
 
 /** Visita do ciclo: uma por médico e por representante (tabela doctor_visits) */

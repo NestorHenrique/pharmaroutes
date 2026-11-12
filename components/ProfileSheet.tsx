@@ -25,6 +25,11 @@ interface ProfileSheetProps {
   onRenewCycle: () => void;
   /** liga/desliga os avisos; devolve uma mensagem de erro ou null */
   onToggleNotify: (on: boolean) => Promise<string | null>;
+  /** modo privado: os colegas veem "Representante" no lugar do seu nome e da sua foto */
+  privateOn: boolean;
+  onTogglePrivate: (on: boolean) => Promise<string | null>;
+  /** administrador do app (vê o nome real de quem está em modo privado) */
+  isAdmin: boolean;
   /** exigir aprovação de um colega para mudar nome, CRM, UF e especialidade (vale para todos) */
   approvalOn: boolean;
   onToggleApproval: (on: boolean) => Promise<string | null>;
@@ -69,6 +74,8 @@ function Switch({ on }: { on: boolean }) {
 
 /** Perfil: página com semana, cidades, avisos, aparência, ciclo, ajuda e sair (igual ao desenho) */
 export default function ProfileSheet(p: ProfileSheetProps) {
+  const [privBusy, setPrivBusy] = useState(false);
+  const [privMsg, setPrivMsg] = useState<string | null>(null);
   const [notifyBusy, setNotifyBusy] = useState(false);
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
@@ -87,6 +94,13 @@ export default function ProfileSheet(p: ProfileSheetProps) {
     };
   }, [p]);
 
+  const togglePrivate = async () => {
+    setPrivBusy(true);
+    setPrivMsg(null);
+    const err = await p.onTogglePrivate(!p.privateOn);
+    setPrivBusy(false);
+    if (err) setPrivMsg(err);
+  };
   const toggleNotify = async () => {
     setNotifyBusy(true);
     setNotifyMsg(null);
@@ -183,6 +197,26 @@ export default function ProfileSheet(p: ProfileSheetProps) {
               <Switch on={p.notifyOn} />
             </button>
             {notifyMsg && <div role="alert" className="text-xs leading-snug text-red-400">{notifyMsg}</div>}
+          </section>
+
+          <section className="flex flex-col gap-2">
+            <span className={heading}>Privacidade</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={p.privateOn}
+              disabled={privBusy}
+              onClick={() => void togglePrivate()}
+              className={`${rowCls} min-h-16`}
+            >
+              <span className="flex min-w-0 flex-1 flex-col gap-px">
+                <span className="text-[15px] font-semibold">Modo privado</span>
+                <span className="text-[13px] text-slate-400">Os colegas veem &quot;Representante&quot;, sem seu nome e foto</span>
+              </span>
+              <Switch on={p.privateOn} />
+            </button>
+            {privMsg && <div role="alert" className="text-xs leading-snug text-red-400">{privMsg}</div>}
+            {p.isAdmin && <span className="text-xs text-slate-500">Você é administrador: vê o nome real de quem está em modo privado.</span>}
           </section>
 
           <section className="flex flex-col gap-2">

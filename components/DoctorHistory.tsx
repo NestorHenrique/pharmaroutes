@@ -1,5 +1,6 @@
 'use client';
 
+import { maskByName } from '@/lib/privacy';
 import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Doctor } from '@/types/doctor';
@@ -10,6 +11,7 @@ interface AuditRow {
   id: number;
   action: 'INSERT' | 'UPDATE' | 'DELETE';
   actor_name: string | null;
+  actor_private?: boolean;
   created_at: string;
   changes: Record<string, { de: unknown; para: unknown }> | null;
 }
@@ -74,12 +76,17 @@ export default function DoctorHistory({ doc }: { doc: Doctor }) {
 
   const load = useCallback(async () => {
     setState('loading');
-    const { data, error } = await supabase
-      .from('doctor_audit_logs')
-      .select('id, action, actor_name, created_at, changes')
-      .eq('doctor_id', doc.id)
-      .order('created_at', { ascending: false })
-      .limit(MAX_ROWS);
+    // Pela função doctor_history (v16): quem está em modo privado aparece como "Representante"
+    let { data, error } = await supabase.rpc('doctor_history', { p_doctor: doc.id });
+    if (error && (error.code === 'PGRST202' || error.code === '42883')) {
+      // migração v16 ainda não rodou: usa a tabela direto, como antes
+      ({ data, error } = await supabase
+        .from('doctor_audit_logs')
+        .select('id, action, actor_name, created_at, changes')
+        .eq('doctor_id', doc.id)
+        .order('created_at', { ascending: false })
+        .limit(MAX_ROWS));
+    }
     if (error) {
       // 42P01 / PGRST205: tabela ainda não existe (migrations_v6 não rodou)
       const missing = error.code === '42P01' || error.code === 'PGRST205';
@@ -98,7 +105,7 @@ export default function DoctorHistory({ doc }: { doc: Doctor }) {
 
   const created =
     doc.created_via === 'APP_FIELD' && doc.created_by_name?.trim()
-      ? `Cadastrado por ${doc.created_by_name.trim()}${doc.created_at ? ` em ${fmtDateTime(doc.created_at)}` : ''}`
+      ? `Cadastrado por ${maskByName(doc.created_by_name.trim())}${doc.created_at ? ` em ${fmtDateTime(doc.created_at)}` : ''}`
       : null;
   const edited =
     doc.updated_by_name?.trim() && doc.updated_at

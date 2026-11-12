@@ -35,6 +35,8 @@ function overlayPendingVisits(map: VisitMap, owner: string): VisitMap {
 export function useVisits(userId: string | null, accessToken: string | null, actorName: string) {
   const [visitMap, setVisitMap] = useState<VisitMap>({});
   const [profiles, setProfiles] = useState<Record<string, PublicProfile>>({});
+  /** representantes em modo privado (a tela mostra "Representante" no lugar do nome e da foto) */
+  const [privateIds, setPrivateIds] = useState<Set<string>>(new Set());
   /** a primeira busca de visitas já terminou (com ou sem erro) */
   const [ready, setReady] = useState(false);
   const userRef = useRef(userId);
@@ -42,10 +44,17 @@ export function useVisits(userId: string | null, accessToken: string | null, act
 
   const fetchVisits = useCallback(async () => {
     if (!userId) return;
-    const [{ data, error }, { data: profs, error: profErr }] = await Promise.all([
+    const [{ data, error }, first] = await Promise.all([
       supabase.from('doctor_visits').select('doctor_id, user_id, rep_name, visited_at'),
-      supabase.from('rep_profiles').select('user_id, display_name, avatar_url'),
+      supabase.from('rep_profiles').select('user_id, display_name, avatar_url, private_mode'),
     ]);
+    let { data: profs, error: profErr } = first;
+    if (profErr) {
+      // migração v16 ainda não rodou (sem a coluna private_mode): busca sem ela
+      const retry = await supabase.from('rep_profiles').select('user_id, display_name, avatar_url');
+      profs = retry.data as typeof profs;
+      profErr = retry.error;
+    }
     if (userRef.current !== userId) return;
     setReady(true);
 
@@ -60,10 +69,13 @@ export function useVisits(userId: string | null, accessToken: string | null, act
       console.warn('Perfis indisponíveis:', profErr.message);
     } else {
       const next: Record<string, PublicProfile> = {};
-      for (const p of (profs as ({ user_id: string } & PublicProfile)[] | null) ?? []) {
+      const priv = new Set<string>();
+      for (const p of (profs as ({ user_id: string; private_mode?: boolean | null } & PublicProfile)[] | null) ?? []) {
         next[p.user_id] = { display_name: p.display_name ?? null, avatar_url: p.avatar_url ?? null };
+        if (p.private_mode) priv.add(p.user_id);
       }
       setProfiles(next);
+      setPrivateIds(priv);
     }
   }, [userId]);
 
@@ -71,6 +83,7 @@ export function useVisits(userId: string | null, accessToken: string | null, act
   useEffect(() => {
     setVisitMap({});
     setProfiles({});
+    setPrivateIds(new Set());
     setReady(false);
   }, [userId]);
 
@@ -208,5 +221,5 @@ export function useVisits(userId: string | null, accessToken: string | null, act
     return true;
   }, [userId, visitMap]);
 
-  return { ready, visitMap, profiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits: fetchVisits };
+  return { ready, visitMap, profiles, privateIds, myVisits, markVisited, undoVisited, renewMine, refetchVisits: fetchVisits };
 }
