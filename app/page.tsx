@@ -1362,13 +1362,15 @@ export default function HomePage() {
     [panelDoctors, weeksByDoctor],
   );
 
-  /** Visitados em dia anterior (neste ciclo): não aparecem nos próximos dias de atendimento */
+  /** Visitados que não aparecem nesta aba: os de dia anterior (em qualquer aba) e, vendo outro dia
+   *  da semana que não é hoje, também os de hoje. "Visitados hoje" só existe no dia da visita. */
   const visitedEarlier = useMemo(() => {
     const today = new Date(now).toDateString();
+    const viewingOtherDay = Boolean(selectedTab && selectedTab !== 'novos' && selectedTab !== getTodayDayCode());
     const out = new Set<string>();
-    for (const [id, at] of myVisits) if (new Date(at).toDateString() !== today) out.add(id);
+    for (const [id, at] of myVisits) if (viewingOtherDay || new Date(at).toDateString() !== today) out.add(id);
     return out;
-  }, [myVisits, now]);
+  }, [myVisits, now, selectedTab]);
 
   const filteredDoctors = useMemo(() => {
     const q = searchQuery.trim();
