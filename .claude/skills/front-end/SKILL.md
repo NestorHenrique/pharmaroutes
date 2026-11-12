@@ -91,7 +91,7 @@ Arquivos: `app/icon.svg`, `app/apple-icon.png`, `app/favicon.ico`, `public/icons
 - Nomes de médicos e clínicas de exemplo são fictícios. Nas dicas do primeiro acesso, use cards de EXEMPLO com etiqueta.
 
 ## Regras de produto que o visual deve respeitar
-- A **semana do ciclo** é por rep. A semana escolhida filtra os médicos; as **cidades** filtram só as notificações.
+- A **semana do ciclo** é por rep. Ao escolher a semana, a lista mostra só as **cidades marcadas para ela**; o filtro "Semana do ciclo" fica desmarcado até o rep distribuir os médicos pelas semanas (mudança do código, 581bc5b).
 - Cidades são salvas **por semana e por rep**.
 - Turno por dia: **Manhã, Tarde ou Integral** (sem Noite).
 - Marcar "Já visitei" mostra o nome do rep e a hora. Com vários reps: "Arthur 16:50 · Nestor 16:55 +3".
