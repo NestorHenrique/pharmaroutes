@@ -27,6 +27,8 @@ interface WeekSetupFlowProps {
   /** sugestão quando nada foi salvo: cidades dos médicos marcados na semana */
   defaultCities: (week: number) => string[];
   notifyInitial: boolean;
+  /** médicos do painel em cada semana do ciclo (mostrado na lista de semanas) */
+  weekCounts?: Record<number, number>;
   /** aplica a semana escolhida (filtra os médicos e guarda) */
   onPickWeek: (week: CycleWeek) => void;
   /** pede a confirmação "Começar um novo ciclo?"; `then` roda se ela for confirmada */
@@ -49,6 +51,7 @@ export default function WeekSetupFlow({
   savedCities,
   defaultCities,
   notifyInitial,
+  weekCounts,
   onPickWeek,
   onRequestRenew,
   onSaveAlerts,
@@ -151,7 +154,12 @@ export default function WeekSetupFlow({
                   {w}
                 </span>
                 <span className="flex-1 text-base font-semibold">{w}ª semana</span>
-                {w === suggested && !on && <span className="text-[13px] text-slate-500">sugerida</span>}
+                {w === suggested && !on && <span className="text-[11px] font-semibold text-slate-500">sugerida</span>}
+                {weekCounts && (
+                  <span className={`text-[13px] ${on ? 'text-blue-300' : 'text-slate-500'}`}>
+                    {weekCounts[w] ?? 0} médico{(weekCounts[w] ?? 0) === 1 ? '' : 's'}
+                  </span>
+                )}
                 {on && (
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600" aria-hidden="true">
                     <path d="M5 12l5 5L20 7" />

@@ -101,9 +101,12 @@ Deno.serve(async (req) => {
       skipped++;
       continue;
     }
+    // "DR. RAFAEL MOURA" -> "Dr. Rafael Moura"; horário em Brasília
+    const nice = name.toLowerCase().replace(/(^|[\s.])([a-zà-ú])/g, (_m: string, p: string, c: string) => p + c.toUpperCase());
+    const hhmm = new Date(r.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
     const payload = JSON.stringify({
-      title: `Já visitou ${name}?`,
-      body: `${LABELS[r.status_type]} terminou. Toque para responder.`,
+      title: `Já visitou o ${nice}?`,
+      body: `Você marcou “${LABELS[r.status_type]}” às ${hhmm}. Toque para responder.`,
       tag: `visit:${r.id}`,
       url: '/',
     });

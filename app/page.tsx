@@ -2619,6 +2619,7 @@ export default function HomePage() {
           savedCities={weekCityList}
           defaultCities={defaultWeekCities}
           notifyInitial={profile?.notify_enabled !== false}
+          weekCounts={Object.fromEntries(CYCLE_WEEKS.map((w) => [w, doctorsWithWeeks.filter((d) => normalizeCycleWeeks(d.cycle_weeks).includes(w)).length]))}
           onPickWeek={pickWeek}
           onRequestRenew={(then) => setRenewAsk({ then })}
           onSaveAlerts={saveWeekAlerts}
