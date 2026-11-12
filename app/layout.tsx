@@ -26,7 +26,8 @@ const APP_BG = '#0B0B12';
 const THEME_SCRIPT = `(function () {
   try {
     var t = localStorage.getItem('pharma_theme');
-    if (t !== 'marfim') t = 'onix';
+    if (t === 'auto') t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'marfim' : 'onix';
+    else if (t !== 'marfim') t = 'onix';
     document.documentElement.setAttribute('data-theme', t);
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', t === 'marfim' ? '#F7F6FB' : '#0B0B12');

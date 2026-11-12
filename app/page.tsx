@@ -69,7 +69,9 @@ import AddDoctorForm from '@/components/AddDoctorForm';
 import BottomSheet from '@/components/BottomSheet';
 import { mergeVisibleOrder } from '@/lib/routeOrder';
 import StatusOverview from '@/components/StatusOverview';
-import ProfileSettings from '@/components/ProfileSettings';
+import ProfileSheet from '@/components/ProfileSheet';
+import EditProfileSheet from '@/components/EditProfileSheet';
+import { applyTheme, readThemePref, resolveTheme, type Theme, type ThemePref } from '@/lib/theme';
 import CityFilter from '@/components/CityFilter';
 import type { ComboOption } from '@/components/ComboBox';
 
@@ -85,15 +87,12 @@ const DUPLICATE_MSG = 'Médico já cadastrado na base de dados';
 const SORT_MODE_KEY = 'pharma_sort_mode';
 const CYCLE_WEEK_KEY = 'pharma_cycle_week';
 const ACTIVE_WEEK_KEY = 'pharma_active_week';
-const THEME_KEY = 'pharma_theme';
 const BOTTOM_OPEN_KEY = 'pharma_bottom_open';
 const UNAVAILABLE_OPEN_KEY = 'pharma_unavailable_open';
 const ROUTE_CLOSED_KEY = 'pharma_route_closed';
 
 /** No estado contraído cada sub-lista de "Em atendimento" mostra só os mais recentes */
 const COLLAPSED_VISIBLE = 2;
-
-type Theme = 'onix' | 'marfim';
 
 /** Segunda-feira da semana de `d` (YYYY-MM-DD, horário local): a semana vira à 00:00 de segunda */
 function mondayOf(d: Date = new Date()): string {
@@ -460,6 +459,7 @@ export default function HomePage() {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
 
   /* PWA install */
   const install = useInstallPrompt();
@@ -498,20 +498,26 @@ export default function HomePage() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
-  /* Tema: Ônix (escuro, padrão) ou Marfim (claro). O layout já aplicou o salvo antes da pintura. */
+  /* Aparência: Escuro (Ônix), Claro (Marfim) ou Automático. O layout já aplicou o salvo antes da pintura. */
+  const [themePref, setThemePref] = useState<ThemePref>('onix');
   const [theme, setTheme] = useState<Theme>('onix');
   useEffect(() => {
-    if (document.documentElement.getAttribute('data-theme') === 'marfim') setTheme('marfim');
+    const pref = readThemePref();
+    setThemePref(pref);
+    setTheme(resolveTheme(pref));
   }, []);
-  const toggleTheme = () => {
-    const next: Theme = theme === 'onix' ? 'marfim' : 'onix';
-    setTheme(next);
-    document.documentElement.setAttribute('data-theme', next);
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'marfim' ? '#F7F6FB' : '#0B0B12');
-    try {
-      localStorage.setItem(THEME_KEY, next);
-    } catch { /* ignore */ }
+  const changeTheme = (pref: ThemePref) => {
+    setThemePref(pref);
+    setTheme(applyTheme(pref));
   };
+  // Automático: acompanha o aparelho enquanto o app está aberto
+  useEffect(() => {
+    if (themePref !== 'auto') return;
+    const mq = window.matchMedia('(prefers-color-scheme: light)');
+    const onChange = () => setTheme(applyTheme('auto'));
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [themePref]);
 
   /* App pronto: avisa o script de recuperação do layout (tela branca no iOS) */
   useEffect(() => {
@@ -957,7 +963,6 @@ export default function HomePage() {
     () => cityOptions.map((o) => ({ value: o.label, label: prettyCity(o.label), hint: String(o.count) })),
     [cityOptions],
   );
-  const cityLabels = useMemo(() => cityOptions.map((o) => o.label), [cityOptions]);
 
   /** Mantém dias_semana igual à agenda e grava a cidade na grafia oficial */
   const prepare = useCallback(
@@ -1647,6 +1652,15 @@ export default function HomePage() {
     return null;
   };
 
+  /** Interruptor "Avisos dos colegas" do perfil: usa as cidades da semana ativa */
+  const toggleNotify = async (on: boolean): Promise<string | null> => {
+    if (!activeWeek) return 'Escolha a semana de trabalho primeiro.';
+    const saved = weekCityList(activeWeek);
+    const cities = saved.length > 0 ? saved : defaultWeekCities(activeWeek);
+    if (on && cities.length === 0) return 'Escolha pelo menos uma cidade primeiro.';
+    return saveWeekAlerts(activeWeek, { notify: on, cities });
+  };
+
   /** perguntas já respondidas nesta rodada (para "1 de 2 perguntas") */
   const [answeredRound, setAnsweredRound] = useState(0);
   useEffect(() => {
@@ -1805,24 +1819,6 @@ export default function HomePage() {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
                 <path d="M12 5v14M5 12h14" />
               </svg>
-            </button>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              aria-label={theme === 'onix' ? 'Mudar para o tema claro' : 'Mudar para o tema escuro'}
-              title={theme === 'onix' ? 'Tema claro (Marfim)' : 'Tema escuro (Ônix)'}
-              className={iconBtn}
-            >
-              {theme === 'onix' ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-                </svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
-                </svg>
-              )}
             </button>
             <button type="button" onClick={() => setShowProfile(true)} data-tour="profile" aria-label="Meu perfil" className={iconBtn}>
               {profile?.avatar_url ? (
@@ -2179,31 +2175,44 @@ export default function HomePage() {
 
       {/* Perfil */}
       {showProfile && profile && userId && (
-        <ProfileSettings
-          userId={userId}
+        <ProfileSheet
+          name={profile.display_name ?? ''}
           email={session.user.email ?? ''}
-          profile={profile}
-          cities={cityLabels}
-          onSave={saveProfile}
-          onClose={() => setShowProfile(false)}
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          onLogout={handleLogout}
-          portfolioActive={portfolioActive}
-          onTogglePortfolio={() => saveProfile({ show_all: !profile.show_all })}
-          activeWeekLabel={activeWeek ? cycleWeekLabel(activeWeek) : null}
+          avatarUrl={profile.avatar_url ?? null}
+          activeWeek={activeWeek}
+          cityOptions={cityOptions}
+          weekCities={activeWeek ? weekCityList(activeWeek) : []}
+          onCitiesChange={(keys) => {
+            if (activeWeek) void weekCities.save(activeWeek, keys);
+          }}
+          cycleVisitedCount={cycleVisits.size}
+          notifyOn={profile.notify_enabled !== false}
+          themePref={themePref}
           onChangeWeek={() => {
             setShowProfile(false);
             setWeekAuto(false);
             setWeekPrompt(true);
           }}
-          cycleVisitedCount={cycleVisits.size}
           onRenewCycle={renewCycle}
+          onToggleNotify={toggleNotify}
+          onThemeChange={changeTheme}
           onOpenGuide={() => setShowGuide(true)}
           onReplayTour={() => {
             setShowProfile(false);
             setTourOpen(true);
           }}
+          onEditProfile={() => setShowEditProfile(true)}
+          onLogout={handleLogout}
+          onClose={() => setShowProfile(false)}
+        />
+      )}
+      {showEditProfile && profile && (
+        <EditProfileSheet
+          email={session.user.email ?? ''}
+          name={profile.display_name ?? ''}
+          avatarUrl={profile.avatar_url ?? null}
+          onSave={saveProfile}
+          onClose={() => setShowEditProfile(false)}
         />
       )}
 
