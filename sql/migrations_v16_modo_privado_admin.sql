@@ -1,17 +1,19 @@
 -- ============================================================
 -- v16 · Modo privado do representante + administrador
 -- O que muda:
---   1. rep_profiles.private_mode: com ele ligado, os colegas veem "Representante" (sem nome e sem foto).
+--   1. rep_profiles.private_mode: com ele ligado, os colegas veem "Rep." (sem nome e sem foto).
 --      O banco continua gravando o usuário real em tudo (created_by, actor_id, user_id...).
 --   2. app_admins: quem é administrador. Só o próprio admin enxerga a própria linha.
 --   3. is_admin(): função usada pelas regras abaixo.
 --   4. doctor_audit_logs: leitura direta SÓ para o administrador (quem editou aparece só para ele).
 --   5. doctor_history(): o histórico de edições que os representantes veem, com o nome de quem está
---      em modo privado trocado por "Representante" (o admin vê o nome real).
+--      em modo privado trocado por "Rep." (o admin vê o nome real).
 -- Pode rodar mais de uma vez.
 -- ============================================================
 
 ALTER TABLE rep_profiles ADD COLUMN IF NOT EXISTS private_mode BOOLEAN NOT NULL DEFAULT false;
+-- Quem cadastrou o médico, pelo ID (único). Os cadastros antigos ficam sem ID e seguem só pelo nome.
+ALTER TABLE doctors ADD COLUMN IF NOT EXISTS created_by_id UUID;
 
 CREATE TABLE IF NOT EXISTS app_admins (
   user_id    UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -54,7 +56,7 @@ AS $$
   SELECT l.id,
          l.action,
          CASE WHEN is_admin() OR l.actor_id = auth.uid() OR NOT COALESCE(p.private_mode, false)
-              THEN l.actor_name ELSE 'Representante' END,
+              THEN l.actor_name ELSE 'Rep.' END,
          l.created_at,
          l.changes,
          COALESCE(p.private_mode, false)

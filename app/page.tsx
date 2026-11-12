@@ -1160,7 +1160,7 @@ export default function HomePage() {
         if (Object.keys(prepared).length === 0) return true;
       }
 
-      const payload = { ...prepared, updated_by_name: actorName, change_source: 'app' };
+      const payload = { ...prepared, updated_by: session?.user.id ?? '', updated_by_name: actorName, change_source: 'app' };
 
       // 1) A tela muda na hora (o selo "Atualizado por" também)
       setDoctors((prev) =>
@@ -1218,13 +1218,14 @@ export default function HomePage() {
         updated_by: session?.user.id || '',
         updated_by_name: actorName,
         created_by_name: actorName,
+        created_by_id: session?.user.id ?? null,
         change_source: 'app',
       };
       let toInsert: Record<string, unknown> = row;
       let { data: inserted, error } = await supabase.from('doctors').insert(toInsert).select('id').single();
 
       // Migrações v6/v7 ainda não rodadas (coluna inexistente): grava sem as colunas novas
-      for (const col of ['created_by_name', 'whatsapp_medico', 'whatsapp_clinica']) {
+      for (const col of ['created_by_id', 'created_by_name', 'whatsapp_medico', 'whatsapp_clinica']) {
         if (error && isMissingColumn(error, col)) {
           const { [col]: _omit, ...rest } = toInsert;
           void _omit;

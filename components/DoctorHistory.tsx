@@ -1,6 +1,6 @@
 'use client';
 
-import { maskByName } from '@/lib/privacy';
+import { maskAuthor } from '@/lib/privacy';
 import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Doctor } from '@/types/doctor';
@@ -105,7 +105,7 @@ export default function DoctorHistory({ doc }: { doc: Doctor }) {
 
   const created =
     doc.created_via === 'APP_FIELD' && doc.created_by_name?.trim()
-      ? `Cadastrado por ${maskByName(doc.created_by_name.trim())}${doc.created_at ? ` em ${fmtDateTime(doc.created_at)}` : ''}`
+      ? `Cadastrado por ${maskAuthor(doc.created_by_id, doc.created_by_name.trim())}${doc.created_at ? ` em ${fmtDateTime(doc.created_at)}` : ''}`
       : null;
   const edited =
     doc.updated_by_name?.trim() && doc.updated_at

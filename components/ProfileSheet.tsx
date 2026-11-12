@@ -25,7 +25,7 @@ interface ProfileSheetProps {
   onRenewCycle: () => void;
   /** liga/desliga os avisos; devolve uma mensagem de erro ou null */
   onToggleNotify: (on: boolean) => Promise<string | null>;
-  /** modo privado: os colegas veem "Representante" no lugar do seu nome e da sua foto */
+  /** modo privado: os colegas veem "Rep." no lugar do seu nome e da sua foto */
   privateOn: boolean;
   onTogglePrivate: (on: boolean) => Promise<string | null>;
   /** administrador do app (vê o nome real de quem está em modo privado) */
@@ -211,7 +211,7 @@ export default function ProfileSheet(p: ProfileSheetProps) {
             >
               <span className="flex min-w-0 flex-1 flex-col gap-px">
                 <span className="text-[15px] font-semibold">Modo privado</span>
-                <span className="text-[13px] text-slate-400">Os colegas veem &quot;Representante&quot;, sem seu nome e foto</span>
+                <span className="text-[13px] text-slate-400">Os colegas veem &quot;Rep.&quot;, sem seu nome e foto</span>
               </span>
               <Switch on={p.privateOn} />
             </button>

@@ -46,6 +46,8 @@ export interface Doctor {
   rqe?: string | null;
   /** quem cadastrou o médico (auditoria) */
   created_by_name?: string | null;
+  /** id de quem cadastrou (v16): é por ele que o modo privado reconhece o autor */
+  created_by_id?: string | null;
   /* ── v7 ── */
   /** WhatsApp pessoal do médico (só dígitos ou formatado) */
   whatsapp_medico?: string | null;

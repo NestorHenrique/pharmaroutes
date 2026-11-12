@@ -32,7 +32,7 @@ import { useGeolocation, GPS_ACTIVATE_LABEL, GPS_ADDRESS_FALLBACK_LABEL } from '
 import { mergeAddress } from '@/lib/geocode';
 import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
-import { maskByName, maskRep } from '@/lib/privacy';
+import { maskAuthor } from '@/lib/privacy';
 import AgendaEditor from '@/components/AgendaEditor';
 import ComboBox from '@/components/ComboBox';
 import { VisitorStack } from '@/components/RepAvatar';
@@ -935,7 +935,7 @@ function DoctorCard({
         <div className="flex justify-between items-center pt-1.5 border-t border-slate-800 gap-2 mt-0.5 flex-wrap">
           <div>
             {(doc.updated_at || doc.updated_by_name) && (
-              <AuditBadge updatedAt={doc.updated_at} updatedByName={maskRep(doc.updated_by, maskByName(doc.updated_by_name))} />
+              <AuditBadge updatedAt={doc.updated_at} updatedByName={maskAuthor(doc.updated_by, doc.updated_by_name)} />
             )}
           </div>
 
