@@ -2652,7 +2652,16 @@ export default function HomePage() {
           weekCounts={Object.fromEntries(CYCLE_WEEKS.map((w) => [w, doctorsWithWeeks.filter((d) => normalizeCycleWeeks(d.cycle_weeks).includes(w)).length]))}
           onPickWeek={pickWeek}
           onRequestRenew={(then) => setRenewAsk({ then })}
-          onSaveAlerts={saveWeekAlerts}
+          onSaveAlerts={async (week, v) => {
+            // Avisos que não dá para ligar neste aparelho (ex.: iPhone fora da Tela de Início) NÃO travam o fluxo:
+            // semana e cidades já foram salvas, então conclui e só avisa o que faltou.
+            const err = await saveWeekAlerts(week, v);
+            if (err && v.notify) {
+              void saveProfile({ notify_enabled: false });
+              showToast(`${err} Os avisos ficaram desligados; ligue depois em Perfil.`);
+            }
+            return err && !v.notify ? err : null;
+          }}
           onClose={() => {
             setWeekPrompt(false);
             setWeekAuto(false);
