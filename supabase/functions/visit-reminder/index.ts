@@ -8,8 +8,9 @@
 // vencimento); responder no app (Sim ou Ainda não) apaga a pendência e o aviso para.
 //
 // Deploy:  npx supabase functions deploy visit-reminder --no-verify-jwt
-// Secrets: CRON_SECRET (qualquer texto longo; o mesmo do agendamento no SQL)
-//          VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (já usados pela notify-city)
+// Segredo do agendamento: fica na tabela app_secrets (nome visit_reminder_cron), criada pelo
+//          sql/migrations_v11_visit_reminders.sql; o pg_cron manda o mesmo valor no cabeçalho x-cron-secret.
+// Secrets: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (já usados pela notify-city)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY já existem por padrão.
 
 import webpush from 'npm:web-push@3.6.7';
@@ -35,16 +36,18 @@ const TTL_SECONDS = 6 * 60 * 60;
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
 
-  const CRON_SECRET = Deno.env.get('CRON_SECRET');
-  if (!CRON_SECRET || req.headers.get('x-cron-secret') !== CRON_SECRET) return json({ error: 'unauthorized' }, 401);
+  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+  // Só o agendamento do banco chama esta função: confere o segredo guardado em app_secrets
+  const { data: secret } = await admin.from('app_secrets').select('value').eq('name', 'visit_reminder_cron').maybeSingle();
+  const given = req.headers.get('x-cron-secret');
+  if (!secret?.value || !given || given !== secret.value) return json({ error: 'unauthorized' }, 401);
 
   const VAPID_PUBLIC = Deno.env.get('VAPID_PUBLIC_KEY');
   const VAPID_PRIVATE = Deno.env.get('VAPID_PRIVATE_KEY');
   const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') ?? 'mailto:admin@example.com';
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) return json({ error: 'VAPID keys not configured' }, 500);
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC.trim(), VAPID_PRIVATE.trim());
-
-  const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
   const now = Date.now();
   const { data: rows, error } = await admin
