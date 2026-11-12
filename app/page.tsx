@@ -1362,6 +1362,14 @@ export default function HomePage() {
     [panelDoctors, weeksByDoctor],
   );
 
+  /** Visitados em dia anterior (neste ciclo): não aparecem nos próximos dias de atendimento */
+  const visitedEarlier = useMemo(() => {
+    const today = new Date(now).toDateString();
+    const out = new Set<string>();
+    for (const [id, at] of myVisits) if (new Date(at).toDateString() !== today) out.add(id);
+    return out;
+  }, [myVisits, now]);
+
   const filteredDoctors = useMemo(() => {
     const q = searchQuery.trim();
     const specSet = new Set(profile?.specialties ?? []);
@@ -1377,6 +1385,9 @@ export default function HomePage() {
       }
 
       if (selectedCategory && !matchesLocation(d, selectedCategory)) return false;
+
+      // Já visitado em outro dia do ciclo: some da rota (volta se desfizer a visita ou ao renovar o ciclo)
+      if (!q && !selectedCategory && visitedEarlier.has(d.id)) return false;
 
       // Cidade: compara sem acento ("Parnaiba" = "Parnaíba")
       if (citySet.size > 0 && !citySet.has(cityKey(d.cidade))) return false;
@@ -1400,7 +1411,7 @@ export default function HomePage() {
       if (q && !matchDoctor(d, q, searchScope).matched) return false;
       return true;
     });
-  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, selectedSpecs, turnoFilter, searchQuery, searchScope, portfolioActive, profile, portfolio]);
+  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, selectedSpecs, turnoFilter, searchQuery, searchScope, portfolioActive, profile, portfolio, visitedEarlier]);
 
   /** Médicos de cada cidade no dia escolhido (para o filtro de cidades); sem dia = sem divisão */
   const cityDayCounts = useMemo(() => {
@@ -2585,18 +2596,6 @@ export default function HomePage() {
             )}
             {routeShown && routeList.map((doc) => renderCard(doc, 'middle'))}
 
-            {plantaoList.length > 0 && (
-              <CollapsibleTitle
-                title="Plantonistas hoje"
-                variant="plantao"
-                count={plantaoList.length}
-                open={plantaoShown}
-                onToggle={() => setPlantaoOpen((o) => !o)}
-                hint={plantaoShown ? 'Recolher' : 'Expandir'}
-              />
-            )}
-            {plantaoShown && plantaoList.map((doc) => renderCard(doc, 'bottom'))}
-
             {visitedList.length > 0 && (
               <CollapsibleTitle
                 title="Visitados hoje"
@@ -2608,6 +2607,18 @@ export default function HomePage() {
               />
             )}
             {bottomShown && visitedList.map((doc) => renderCard(doc, 'bottom'))}
+
+            {plantaoList.length > 0 && (
+              <CollapsibleTitle
+                title="Plantonistas hoje"
+                variant="plantao"
+                count={plantaoList.length}
+                open={plantaoShown}
+                onToggle={() => setPlantaoOpen((o) => !o)}
+                hint={plantaoShown ? 'Recolher' : 'Expandir'}
+              />
+            )}
+            {plantaoShown && plantaoList.map((doc) => renderCard(doc, 'bottom'))}
 
             {feed.unavailable.length > 0 && (
               <CollapsibleTitle
