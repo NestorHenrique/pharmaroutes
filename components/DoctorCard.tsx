@@ -97,8 +97,6 @@ interface DoctorCardProps {
 
 const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
 
-/** Prévia de "vários locais": só aparece com NEXT_PUBLIC_LOCAIS_PREVIEW=1 ou quando o médico já vem com 2+ locais. */
-const LOCAIS_PREVIEW = process.env.NEXT_PUBLIC_LOCAIS_PREVIEW === '1';
 
 type EditForm = Partial<Doctor> & { agenda: AgendaEntry[] };
 
@@ -180,7 +178,7 @@ function DoctorCard({
   /** onde o status foi marcado (para "Local errado?") */
   const [markedId, setMarkedId] = useState<string | null>(null);
   const markedLoc = multi && statuses.length > 0 ? locais.find((l) => l.id === markedId) ?? null : null;
-  const showLocais = multi || LOCAIS_PREVIEW;
+  const showLocais = true;
 
   const handleSet: typeof onSetStatus = (id, type, opts) => {
     onSetStatus(id, type, multi && selected.id !== 'principal' && !selected.principal ? { ...opts, locationId: selected.id } : opts);
