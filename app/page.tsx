@@ -620,10 +620,12 @@ export default function HomePage() {
     void saveProfile({ active_week: week, active_week_monday: week ? mondayOf() : null });
   };
 
-  /** Escolheu a semana: guarda e passa a mostrar só os médicos marcados nela */
+  /** Escolheu a semana: guarda a semana e deixa o filtro "Semana do ciclo" DESMARCADO (o rep ainda não
+   *  distribuiu os médicos pelas semanas); a lista passa a mostrar só as cidades que ele marcou para ela. */
   const pickWeek = (week: CycleWeek) => {
     changeActiveWeek(week);
-    changeWeek(week);
+    changeWeek(null);
+    setSelectedCities(weekCityList(week));
   };
 
   // Outro aparelho já respondeu "qual semana" nesta segunda-feira: segue a mesma
@@ -2680,6 +2682,7 @@ export default function HomePage() {
             // Avisos que não dá para ligar neste aparelho (ex.: iPhone fora da Tela de Início) NÃO travam o fluxo:
             // semana e cidades já foram salvas, então conclui e só avisa o que faltou.
             const err = await saveWeekAlerts(week, v);
+            setSelectedCities(v.cities);
             if (err && v.notify) {
               void saveProfile({ notify_enabled: false });
               showToast(`${err} Os avisos ficaram desligados; ligue depois em Perfil.`);

@@ -20,9 +20,9 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Rota Propagandista',
   description: 'Sistema de Roteiro de Visitas',
-  // App da Tela de Início do iPhone: barra de status translúcida sobre o cabeçalho
+  // App da Tela de Início do iPhone. 'black-translucent' deixava o topo escurecido (efeito de borda do iOS sobre o cabeçalho)
   icons: { apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }] },
-  appleWebApp: { capable: true, title: 'Rota Propagandista', statusBarStyle: 'black-translucent' },
+  appleWebApp: { capable: true, title: 'Rota Propagandista', statusBarStyle: 'default' },
 };
 
 const APP_BG = '#0B0B12';
