@@ -27,7 +27,8 @@ export default function WhatsAppFields({ medico, clinica, onChange, showErrors =
         const value = values[key] ?? '';
         const digits = value.replace(/\D/g, '');
         // Enquanto digita, só reclama quando passa de 11; o "falta" aparece ao salvar
-        const error = showErrors || digits.length > WHATSAPP_DIGITS ? whatsappError(value) : null;
+        const landline = key === 'whatsapp_clinica';
+        const error = showErrors || digits.length > WHATSAPP_DIGITS ? whatsappError(value, landline) : null;
         const id = `wa-${key}`;
         return (
           <label key={key} htmlFor={id} className="flex min-w-0 flex-col gap-1">
@@ -46,7 +47,7 @@ export default function WhatsAppFields({ medico, clinica, onChange, showErrors =
               className={`${inputCls} tabular-nums ${error ? 'border-red-500' : ''}`}
             />
             <span id={`${id}-hint`} className={`text-[11px] leading-snug ${error ? 'text-red-400' : 'text-slate-500'}`}>
-              {error ?? `DDD + número · ${digits.length}/${WHATSAPP_DIGITS}`}
+              {error ?? (landline ? `Opcional · celular (11) ou fixo (10) · ${digits.length}` : `DDD + número · ${digits.length}/${WHATSAPP_DIGITS}`)}
             </span>
           </label>
         );
@@ -67,7 +68,7 @@ export function whatsappFormError(
   const digits = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '');
   const m = initial && digits(medico) === digits(initial.medico) ? null : whatsappError(medico);
   if (m) return `WhatsApp Médico: ${m}`;
-  const c = initial && digits(clinica) === digits(initial.clinica) ? null : whatsappError(clinica);
+  const c = initial && digits(clinica) === digits(initial.clinica) ? null : whatsappError(clinica, true);
   if (c) return `WhatsApp Clínica: ${c}`;
   return null;
 }
