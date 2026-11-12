@@ -995,7 +995,7 @@ export default function HomePage() {
         return;
       }
 
-      if (PINNED_STATUSES.includes(type)) notifyCity(doctorId, type);
+      if (PINNED_STATUSES.includes(type)) notifyCity(doctorId, type, { locationId: opts?.locationId ?? null });
     },
     [session, actorName, statusMap],
   );
@@ -1014,9 +1014,15 @@ export default function HomePage() {
         .update({ location_id: locationId })
         .eq('doctor_id', doctorId)
         .eq('created_by', session.user.id);
-      if (error) console.error('Erro ao corrigir o local do status:', error.message);
+      if (error) {
+        console.error('Erro ao corrigir o local do status:', error.message);
+        return;
+      }
+      // Avisa quem observa a cidade que o local mudou
+      const lead = (statusMap[doctorId] || []).find((s) => s.created_by === session.user.id && PINNED_STATUSES.includes(s.status_type));
+      if (lead) notifyCity(doctorId, lead.status_type, { locationId, fix: true });
     },
-    [session],
+    [session, statusMap],
   );
 
   const clearDoctorStatus = useCallback(

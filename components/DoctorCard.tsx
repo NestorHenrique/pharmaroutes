@@ -672,13 +672,9 @@ function DoctorCard({
             ))}
           </div>
 
-          {(doc.crm || doc.especialidade) && (
+          {doc.crm && (
             <div className="text-[11px] text-slate-500 mt-1">
-              {doc.crm && (
-                <span>{formatCrm(doc.crm, doc.uf)}</span>
-              )}
-              {doc.crm && doc.especialidade && <span> · </span>}
-              {doc.especialidade && <span>{doc.especialidade}</span>}
+              <span>{formatCrm(doc.crm, doc.uf)}</span>
             </div>
           )}
         </div>
