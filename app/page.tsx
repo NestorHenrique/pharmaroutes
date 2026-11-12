@@ -55,6 +55,8 @@ import Tour from '@/components/Tour';
 import StatusGuide from '@/components/StatusGuide';
 import { useWeekCities } from '@/hooks/useWeekCities';
 import { getFlag, setFlag } from '@/lib/repFlags';
+import { shouldSignOutOnReopen } from '@/lib/auth';
+import NewPasswordScreen from '@/components/NewPasswordScreen';
 import { alreadyVisited, roundLabel, type VisitPrompt } from '@/lib/visitPrompts';
 import { presenceItems, visitorsOf, visitorsSummary } from '@/lib/visits';
 import { matchDoctor, SEARCH_SCOPES } from '@/lib/search';
@@ -411,6 +413,8 @@ export default function HomePage() {
   /* Auth */
   const [session, setSession] = useState<{ access_token?: string; user: { id: string; email?: string } } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  /** abriu o link do e-mail "Esqueci a senha": falta definir a senha nova */
+  const [recovery, setRecovery] = useState(false);
 
   /* Data */
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -491,10 +495,20 @@ export default function HomePage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+      // "Manter conectado" desmarcado: ao fechar e abrir o app de novo, pede o login (menos no link de recuperação)
+      const fromLink = /type=recovery|access_token/.test(window.location.hash);
+      if (data.session && shouldSignOutOnReopen() && !fromLink) {
+        void supabase.auth.signOut();
+        setSession(null);
+      } else {
+        setSession(data.session);
+      }
       setAuthLoading(false);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_ev, s) => setSession(s));
+    const { data: listener } = supabase.auth.onAuthStateChange((ev, s) => {
+      if (ev === 'PASSWORD_RECOVERY') setRecovery(true);
+      setSession(s);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
 
@@ -1770,6 +1784,17 @@ export default function HomePage() {
 
   if (!session) {
     return <LoginScreen />;
+  }
+
+  if (recovery) {
+    return (
+      <NewPasswordScreen
+        onDone={() => {
+          setRecovery(false);
+          window.history.replaceState(null, '', window.location.pathname);
+        }}
+      />
+    );
   }
 
   return (
