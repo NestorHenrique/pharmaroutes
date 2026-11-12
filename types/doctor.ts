@@ -135,7 +135,26 @@ export interface RepProfile {
   show_all: boolean;
   /** foto de perfil (data URL pequena); null = iniciais */
   avatar_url?: string | null;
+  /* ── v12 (ausentes antes da migração) ── */
+  /** o representante confirmou como os colegas o chamam */
+  name_confirmed_at?: string | null;
+  /** tutorial da tela inicial já visto */
+  tour_seen_at?: string | null;
+  /** recebe avisos dos colegas (Último paciente / Rep. no consultório) */
+  notify_enabled?: boolean;
+  /** semana do ciclo em que está nesta semana (vale só na segunda-feira de active_week_monday) */
+  active_week?: number | null;
+  active_week_monday?: string | null;
 }
+
+/** Campos de rep_profiles criados na migração v12 */
+export const REP_PROFILE_V12_KEYS = [
+  'name_confirmed_at',
+  'tour_seen_at',
+  'notify_enabled',
+  'active_week',
+  'active_week_monday',
+] as const;
 
 /** Visita do ciclo: uma por médico e por representante (tabela doctor_visits) */
 export interface DoctorVisit {
