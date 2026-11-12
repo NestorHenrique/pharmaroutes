@@ -73,6 +73,10 @@ Excluir médico = **"Excluir do meu painel"** (só some do painel do rep; contin
 - Visitados ficam numa **linha verde recolhida** ("Visitados hoje" + contador + seta); abre ao tocar.
 - Novo médico aparece com a etiqueta **NOVO** (verde) na linha de local.
 
+## Ícone do app
+Maleta branca com cruz índigo e selo verde de "visita feita" (visto) no canto, sobre degradê índigo (#6366F1 → #3730A3). Sem pino.
+Arquivos: `app/icon.svg`, `app/apple-icon.png`, `app/favicon.ico`, `public/icons/*`. Fonte do desenho: quadro "Ícone" do canvas (E3).
+
 ## Textos
 - Frases curtas, sem jargão. "Rep." para representante só quando faltar espaço.
 - Botão diz a ação: "Salvar", "Renovar ciclo", "Sim, já visitei", "Adicionar ao meu painel".
