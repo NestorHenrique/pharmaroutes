@@ -54,6 +54,8 @@ import ConfirmSheet from '@/components/ConfirmSheet';
 import Tour from '@/components/Tour';
 import StatusGuide from '@/components/StatusGuide';
 import { useWeekCities } from '@/hooks/useWeekCities';
+import { useNotifications } from '@/hooks/useNotifications';
+import NotificationsSheet, { type NoticeItem } from '@/components/NotificationsSheet';
 import { getFlag, setFlag } from '@/lib/repFlags';
 import { shouldSignOutOnReopen } from '@/lib/auth';
 import NewPasswordScreen from '@/components/NewPasswordScreen';
@@ -474,6 +476,9 @@ export default function HomePage() {
   const actorName = profile?.display_name?.trim() || session?.user.email?.split('@')[0] || 'App';
   /** cidades de cada semana (avisos); não escondem médicos */
   const weekCities = useWeekCities(userId);
+  /** sino: avisos dos colegas (últimos 2 dias) */
+  const notif = useNotifications(userId);
+  const [showNotices, setShowNotices] = useState(false);
 
   /* Primeiro acesso: "Confirme como os colegas te chamam". Fechar sem confirmar = pergunta de novo na próxima abertura. */
   const [nameLater, setNameLater] = useState(false);
@@ -1619,6 +1624,41 @@ export default function HomePage() {
     }
   }, [rawPrompts, doctors, myVisits, visitsReady, resolvePrompt]);
 
+  /* ═══════════════════ Sino: avisos dos colegas ═══════════════════
+   * Só das cidades da semana (sem cidades escolhidas, mostra todas). Médico que saiu do painel não aparece.
+   */
+  const noticeItems = useMemo<NoticeItem[]>(() => {
+    const byId = new Map(doctors.map((d) => [d.id, d]));
+    const picked = activeWeek ? weekCities.byWeek[activeWeek] ?? [] : [];
+    const set = picked.length > 0 ? new Set(picked) : null;
+    const readMs = notif.readAt ? new Date(notif.readAt).getTime() : Number.POSITIVE_INFINITY;
+    return notif.rows.flatMap((r): NoticeItem[] => {
+      const d = byId.get(r.doctor_id);
+      if (!d) return [];
+      if (set && !set.has(cityKey(d.cidade))) return [];
+      const rep = repProfiles[r.created_by ?? '']?.display_name?.trim() || r.rep_name?.trim() || '';
+      return [
+        {
+          id: r.id,
+          doctorId: d.id,
+          type: r.status_type,
+          at: r.event_at,
+          doctorName: d.descricao,
+          place: [d.complemento || 'Consultório próprio', d.cidade].filter(Boolean).join(' · '),
+          repName: rep,
+          unread: new Date(r.event_at).getTime() > readMs,
+        },
+      ];
+    });
+  }, [notif.rows, notif.readAt, doctors, activeWeek, weekCities.byWeek, repProfiles]);
+  const unreadNotices = noticeItems.filter((n) => n.unread).length;
+
+  // Ao abrir o sino, busca de novo para não mostrar a lista de um minuto atrás
+  const refetchNotices = notif.refetch;
+  useEffect(() => {
+    if (showNotices) void refetchNotices();
+  }, [showNotices, refetchNotices]);
+
   /* ═══════════════════ Tutorial (primeiro acesso) ═══════════════════
    * Abre depois de tudo que é pergunta (nome, semana e avisos, "Já visitou?"), uma vez por usuário.
    */
@@ -1844,6 +1884,33 @@ export default function HomePage() {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
                 <path d="M12 5v14M5 12h14" />
               </svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowGuide(true)}
+              data-tour="help"
+              aria-label="Guia de cores e status"
+              title="Guia de cores e status"
+              className={`${iconBtn} text-base font-bold`}
+            >
+              ?
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNotices(true)}
+              data-tour="bell"
+              aria-label={unreadNotices > 0 ? `Avisos dos colegas, ${unreadNotices} não lidos` : 'Avisos dos colegas'}
+              className={`${iconBtn} relative`}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 8 3 8H3s3-1 3-8" />
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+              </svg>
+              {unreadNotices > 0 && (
+                <span className="absolute -right-1 -top-1 flex min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-[18px] text-white">
+                  {unreadNotices > 9 ? '9+' : unreadNotices}
+                </span>
+              )}
             </button>
             <button type="button" onClick={() => setShowProfile(true)} data-tour="profile" aria-label="Meu perfil" className={iconBtn}>
               {profile?.avatar_url ? (
@@ -2534,6 +2601,18 @@ export default function HomePage() {
             void deleteDoctor(sheetDoc);
           }}
           onClose={closeSheet}
+        />
+      )}
+
+      {/* Sino: avisos dos colegas */}
+      {showNotices && (
+        <NotificationsSheet
+          items={noticeItems}
+          now={now}
+          allCities={!(activeWeek && weekCityList(activeWeek).length > 0)}
+          onOpenDoctor={(id) => setSheetId(id)}
+          onMarkAllRead={notif.markAllRead}
+          onClose={() => setShowNotices(false)}
         />
       )}
 
