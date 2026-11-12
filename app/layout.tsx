@@ -18,6 +18,8 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Rota Propagandista',
   description: 'Sistema de Roteiro de Visitas',
+  applicationName: 'Rota Propagandista',
+  appleWebApp: { capable: true, title: 'Rota Propagandista', statusBarStyle: 'black-translucent' },
 };
 
 const APP_BG = '#0B0B12';
