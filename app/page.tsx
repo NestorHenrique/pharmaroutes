@@ -48,6 +48,8 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useVisits } from '@/hooks/useVisits';
 import { useVisitPrompts } from '@/hooks/useVisitPrompts';
 import VisitPromptModal from '@/components/VisitPromptModal';
+import NameConfirmSheet, { suggestName } from '@/components/NameConfirmSheet';
+import { getFlag, setFlag } from '@/lib/repFlags';
 import { alreadyVisited, roundLabel, type VisitPrompt } from '@/lib/visitPrompts';
 import { presenceItems, visitorsOf, visitorsSummary } from '@/lib/visits';
 import { matchDoctor, SEARCH_SCOPES } from '@/lib/search';
@@ -449,6 +451,20 @@ export default function HomePage() {
   const userId = session?.user.id ?? null;
   const { profile, portfolio, saveProfile, linkDoctor, routeOrder, saveRouteOrder } = useRepProfile(userId);
   const actorName = profile?.display_name?.trim() || session?.user.email?.split('@')[0] || 'App';
+
+  /* Primeiro acesso: "Confirme como os colegas te chamam". Fechar sem confirmar = pergunta de novo na próxima abertura. */
+  const [nameLater, setNameLater] = useState(false);
+  const [nameSaving, setNameSaving] = useState(false);
+  const nameConfirmed = Boolean(profile?.name_confirmed_at) || (userId ? getFlag(userId, 'name-confirmed') === '1' : false);
+  const needName = Boolean(userId && profile && !nameConfirmed && !nameLater);
+  const confirmName = async (fullName: string) => {
+    if (!userId) return;
+    setNameSaving(true);
+    setFlag(userId, 'name-confirmed', '1'); // reserva: sem a coluna v12 a pergunta não pode repetir
+    const ok = await saveProfile({ display_name: fullName, name_confirmed_at: new Date().toISOString() });
+    if (!ok) setFlag(userId, 'name-confirmed', null);
+    setNameSaving(false);
+  };
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -2257,7 +2273,7 @@ export default function HomePage() {
       )}
 
       {/* Pergunta da semana: abre no começo de cada semana (segunda-feira) */}
-      {weekPrompt && (
+      {weekPrompt && !needName && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 animate-[fade-in_.18s_ease-out]">
           <div
             role="dialog"
@@ -2348,6 +2364,22 @@ export default function HomePage() {
             void deleteDoctor(sheetDoc);
           }}
           onClose={closeSheet}
+        />
+      )}
+
+      {/* Primeiro acesso: como os colegas te chamam */}
+      {needName && session && (
+        <NameConfirmSheet
+          suggested={suggestName(
+            profile?.display_name,
+            (session.user as { user_metadata?: { full_name?: string; name?: string } }).user_metadata?.full_name ??
+              (session.user as { user_metadata?: { name?: string } }).user_metadata?.name,
+            session.user.email,
+          )}
+          avatarUrl={profile?.avatar_url}
+          saving={nameSaving}
+          onConfirm={(n) => void confirmName(n)}
+          onLater={() => setNameLater(true)}
         />
       )}
 

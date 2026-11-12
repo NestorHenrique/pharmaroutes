@@ -7,7 +7,7 @@ import { STATUS_META } from '@/types/status';
 import BottomSheet from '@/components/BottomSheet';
 import { RepAvatar } from '@/components/RepAvatar';
 import type { PublicProfile } from '@/lib/visits';
-import { firstName } from '@/lib/visits';
+import { shortName } from '@/lib/visits';
 import { dayTime, eventRepName, fetchStatusEventsSince, type StatusEventRow } from '@/lib/statusHistory';
 import { FILTROS_PLANTAO, FILTROS_TURNO } from '@/constants';
 import { cityKey, getAgenda, matchesLocation, shiftCovers } from '@/utils';
@@ -286,7 +286,7 @@ export default function StatusOverview({ doctors, statusMap, profiles, myId, onO
                         <span className="flex items-center gap-1.5 text-xs text-slate-400">
                           <RepAvatar name={m.repName} src={m.userId ? profiles[m.userId]?.avatar_url : null} me={m.userId === myId} size={18} />
                           <span className="truncate">
-                            {firstName(m.repName)} {dayTime(m.at)}
+                            {shortName(m.repName)} {dayTime(m.at)}
                             {m.returnDate && ` · volta ${new Date(`${m.returnDate}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`}
                           </span>
                         </span>
