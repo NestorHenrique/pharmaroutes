@@ -10,7 +10,7 @@ import type { PublicProfile, VisitMap } from '@/lib/visits';
 import { shortName } from '@/lib/visits';
 import { dayTime, eventRepName, fetchStatusEventsSince, type StatusEventRow } from '@/lib/statusHistory';
 import { ESPECIALIDADES, FILTROS_PLANTAO, FILTROS_TURNO } from '@/constants';
-import { cityKey, getAgenda, matchesLocation, shiftCovers, specialtyCode } from '@/utils';
+import { cityKey, getAgenda, matchesLocation, prettyCity, shiftCovers, specialtyCode } from '@/utils';
 
 /* ── Tela geral de Status: todos os médicos que algum representante marcou, agrupados pelo status atual ── */
 
@@ -87,6 +87,8 @@ export default function StatusOverview({ doctors, visitMap, statusMap, profiles,
   const [specialty, setSpecialty] = useState<string | null>(null);
   const [local, setLocal] = useState<string | null>(null);
   const [turno, setTurno] = useState<Shift | null>(null);
+  /** grupos abertos/fechados; sem escolha, só o primeiro grupo fica aberto */
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   // Recarrega ao trocar o período e quando um status novo chega pelo tempo real
   const liveStamp = useMemo(
@@ -173,21 +175,25 @@ export default function StatusOverview({ doctors, visitMap, statusMap, profiles,
   );
 
   // Opções dos filtros saem só dos médicos marcados
+  // Todas as cidades da base (não só as dos médicos marcados), com a grafia certa ("Parnaíba", não "parnaiba")
   const cities = useMemo(() => {
     const m = new Map<string, string>();
-    for (const d of marked) if (d.cidade?.trim()) m.set(cityKey(d.cidade), d.cidade.trim());
+    for (const d of doctors) if (d.cidade?.trim()) m.set(cityKey(d.cidade), prettyCity(d.cidade));
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR'));
-  }, [marked]);
+  }, [doctors]);
   // Todas as especialidades cadastradas no sistema (lista oficial + as que existem nos médicos),
   // não só as dos médicos marcados no período
   const specialties = useMemo(
-    () =>
-      [
-        ...new Set([
-          ...ESPECIALIDADES.map((e) => e.label),
-          ...doctors.map((d) => d.especialidade?.trim()),
-        ].filter((s): s is string => Boolean(s))),
-      ].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    () => {
+      // sem repetir por maiúscula/minúscula; a grafia da lista oficial vale primeiro
+      const m = new Map<string, string>();
+      for (const e of ESPECIALIDADES) m.set(e.label.toLowerCase(), e.label);
+      for (const d of doctors) {
+        const s = d.especialidade?.trim();
+        if (s && !m.has(s.toLowerCase()) && !specialtyCode(s)) m.set(s.toLowerCase(), s.charAt(0).toUpperCase() + s.slice(1).toLowerCase());
+      }
+      return [...m.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    },
     [doctors],
   );
 
@@ -264,14 +270,20 @@ export default function StatusOverview({ doctors, visitMap, statusMap, profiles,
             </button>
           ))}
         </div>
-        {cities.length > 1 && (
-          <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Cidade">
+        {cities.length > 0 && (
+          <select
+            aria-label="Cidade"
+            value={city ?? ''}
+            onChange={(e) => setCity(e.target.value || null)}
+            className="h-10 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 text-base sm:text-sm text-slate-200"
+          >
+            <option value="">Todas as cidades</option>
             {cities.map(([key, name]) => (
-              <button key={key} type="button" aria-pressed={city === key} onClick={() => setCity(city === key ? null : key)} className={chip(city === key)}>
+              <option key={key} value={key}>
                 {name}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
         )}
         {specialties.length > 0 && (
           <select
@@ -298,13 +310,37 @@ export default function StatusOverview({ doctors, visitMap, statusMap, profiles,
           {failed ? 'Não foi possível carregar o histórico. Mostrando só os status ativos.' : 'Nenhum médico marcado neste período.'}
         </span>
       ) : (
-        groups.map((g) => (
+        groups.map((g, gi) => {
+          const isOpen = openGroups[g.type] ?? gi === 0;
+          return (
           <section key={g.type} className="flex flex-col gap-1.5">
-            <h3 className="m-0 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.1em] text-slate-300">
-              <span className={`size-2 rounded-full ${g.dot}`} aria-hidden="true" />
-              {g.label}
-              <span className="text-slate-500">· {g.docs.length}</span>
-            </h3>
+            <button
+              type="button"
+              aria-expanded={isOpen}
+              onClick={() => setOpenGroups((o) => ({ ...o, [g.type]: !isOpen }))}
+              className="flex min-h-[52px] w-full items-center gap-2.5 rounded-2xl border border-slate-700 bg-slate-900 px-3.5 text-left"
+            >
+              <span className={`size-2.5 shrink-0 rounded-full ${g.dot}`} aria-hidden="true" />
+              <span className="flex-1 text-sm font-semibold text-slate-100">{g.label}</span>
+              <span className="grid h-[26px] min-w-[26px] place-items-center rounded-full bg-slate-800 px-2 text-[13px] font-bold text-slate-300">
+                {g.docs.length}
+              </span>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                aria-hidden="true"
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            {isOpen && (
             <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
               {g.docs.map((d) => {
                 const m = latest.get(d.id)!;
@@ -325,7 +361,7 @@ export default function StatusOverview({ doctors, visitMap, statusMap, profiles,
                           </span>
                         </span>
                         <span className="truncate text-[11px] uppercase text-slate-500">
-                          {[d.complemento || 'Consultório próprio', d.cidade].filter(Boolean).join(' · ')}
+                          {[d.complemento || 'Consultório próprio', prettyCity(d.cidade)].filter(Boolean).join(' · ')}
                         </span>
                       </span>
                       {m.active && (
@@ -338,8 +374,10 @@ export default function StatusOverview({ doctors, visitMap, statusMap, profiles,
                 );
               })}
             </ul>
+            )}
           </section>
-        ))
+          );
+        })
       )}
     </BottomSheet>
   );
