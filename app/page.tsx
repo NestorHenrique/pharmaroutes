@@ -23,6 +23,7 @@ import {
   canonicalCity,
   cityKey,
   formatMinutes,
+  formatTime,
   formatVisitAudit,
   getAgenda,
   getTodayDayCode,
@@ -45,6 +46,9 @@ import { useRepProfile } from '@/hooks/useRepProfile';
 import { useDoctorFilters } from '@/hooks/useDoctorFilters';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useVisits } from '@/hooks/useVisits';
+import { useVisitPrompts } from '@/hooks/useVisitPrompts';
+import VisitPromptModal from '@/components/VisitPromptModal';
+import { alreadyVisited, roundLabel, type VisitPrompt } from '@/lib/visitPrompts';
 import { presenceItems, visitorsOf, visitorsSummary } from '@/lib/visits';
 import { matchDoctor, SEARCH_SCOPES } from '@/lib/search';
 import type { SearchScope } from '@/lib/search';
@@ -753,11 +757,13 @@ export default function HomePage() {
   /* ═══════════════════ Modo offline: fila + sincronização ═══════════════════ */
 
   /* Visitas do ciclo: cada representante tem as suas */
-  const { visitMap, profiles: repProfiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits } = useVisits(
+  const { ready: visitsReady, visitMap, profiles: repProfiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits } = useVisits(
     userId,
     accessToken,
     actorName,
   );
+  /* "Já visitou?": status meu que venceu e ainda não respondi */
+  const { pending: rawPrompts, resolve: resolvePrompt } = useVisitPrompts(userId);
 
   const offline = useOfflineQueue(
     userId,
@@ -1120,12 +1126,12 @@ export default function HomePage() {
 
   /** Marca/desfaz "Visitado". Com semana ativa, o médico entra nela e fica na sequência da visita. */
   const toggleCycleVisit = useCallback(
-    (doctorId: string, visited: boolean) => {
+    (doctorId: string, visited: boolean, visitedAt?: string) => {
       if (!visited) {
         void undoVisited(doctorId);
         return;
       }
-      void markVisited(doctorId);
+      void markVisited(doctorId, visitedAt);
       clearAttendanceStatuses(doctorId);
 
       if (activeWeek) {
@@ -1508,6 +1514,48 @@ export default function HomePage() {
   };
   const openTargetStatus = () => {
     if (targetDoc) setSheetId(targetDoc.id);
+  };
+
+  /* ═══════════════════ "Já visitou?" (status vencido) ═══════════════════
+   * Fila de perguntas: uma de cada vez, e a janela bloqueia o app até responder.
+   * Saem da fila sem perguntar: médico que não existe mais no painel e quem já visitou depois de marcar.
+   */
+  const promptQueue = useMemo<VisitPrompt[]>(() => {
+    if (doctors.length === 0 || !visitsReady) return []; // espera médicos e visitas carregarem
+    const byId = new Set(doctors.map((d) => d.id));
+    return rawPrompts.filter((p) => byId.has(p.doctor_id) && !alreadyVisited(p, myVisits));
+  }, [rawPrompts, doctors, myVisits, visitsReady]);
+
+  useEffect(() => {
+    if (doctors.length === 0 || !visitsReady) return;
+    const byId = new Set(doctors.map((d) => d.id));
+    for (const p of rawPrompts) {
+      if (!byId.has(p.doctor_id) || alreadyVisited(p, myVisits)) void resolvePrompt(p);
+    }
+  }, [rawPrompts, doctors, myVisits, visitsReady, resolvePrompt]);
+
+  /** perguntas já respondidas nesta rodada (para "1 de 2 perguntas") */
+  const [answeredRound, setAnsweredRound] = useState(0);
+  useEffect(() => {
+    if (promptQueue.length === 0) setAnsweredRound(0);
+  }, [promptQueue.length]);
+
+  const answerVisited = (p: VisitPrompt) => {
+    const doc = doctors.find((d) => d.id === p.doctor_id);
+    setAnsweredRound((n) => n + 1);
+    if (doc && (['psm', 'samu', 'hospital'] as const).some((c) => matchesLocation(doc, c))) {
+      // PSM/SAMU/Hospital: a visita é do dia (plantão), como no botão Visitado desses locais
+      void setDoctorStatus(doc.id, 'visitado_hoje');
+      clearAttendanceStatuses(doc.id);
+    } else if (doc) {
+      // visita do ciclo, com a hora em que o representante marcou que estava lá
+      toggleCycleVisit(doc.id, true, p.created_at);
+    }
+    void resolvePrompt(p);
+  };
+  const answerNotYet = (p: VisitPrompt) => {
+    setAnsweredRound((n) => n + 1);
+    void resolvePrompt(p);
   };
 
   const activeFilterCount =
@@ -2300,6 +2348,20 @@ export default function HomePage() {
             void deleteDoctor(sheetDoc);
           }}
           onClose={closeSheet}
+        />
+      )}
+
+      {/* "Já visitou?": bloqueia o uso até responder; uma pergunta de cada vez */}
+      {promptQueue[0] && (
+        <VisitPromptModal
+          key={promptQueue[0].id}
+          doctorName={doctors.find((d) => d.id === promptQueue[0].doctor_id)?.descricao ?? ''}
+          statusLabel={STATUS_META[promptQueue[0].status_type].label}
+          startedAt={formatTime(promptQueue[0].created_at)}
+          endedAt={formatTime(promptQueue[0].expires_at)}
+          counter={roundLabel(answeredRound, promptQueue.length)}
+          onYes={() => answerVisited(promptQueue[0])}
+          onNo={() => answerNotYet(promptQueue[0])}
         />
       )}
 

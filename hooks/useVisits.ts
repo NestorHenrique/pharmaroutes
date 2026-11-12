@@ -35,6 +35,8 @@ function overlayPendingVisits(map: VisitMap, owner: string): VisitMap {
 export function useVisits(userId: string | null, accessToken: string | null, actorName: string) {
   const [visitMap, setVisitMap] = useState<VisitMap>({});
   const [profiles, setProfiles] = useState<Record<string, PublicProfile>>({});
+  /** a primeira busca de visitas já terminou (com ou sem erro) */
+  const [ready, setReady] = useState(false);
   const userRef = useRef(userId);
   userRef.current = userId;
 
@@ -45,6 +47,7 @@ export function useVisits(userId: string | null, accessToken: string | null, act
       supabase.from('rep_profiles').select('user_id, display_name, avatar_url'),
     ]);
     if (userRef.current !== userId) return;
+    setReady(true);
 
     if (error) {
       // migração v7 ainda não rodou ou sem rede: mantém o que já está na tela
@@ -68,6 +71,7 @@ export function useVisits(userId: string | null, accessToken: string | null, act
   useEffect(() => {
     setVisitMap({});
     setProfiles({});
+    setReady(false);
   }, [userId]);
 
   // Carga + reserva a cada 60 s + ao voltar para o app
@@ -122,13 +126,14 @@ export function useVisits(userId: string | null, accessToken: string | null, act
   const myVisits = useMemo(() => myVisitDates(visitMap, userId), [visitMap, userId]);
 
   const markVisited = useCallback(
-    async (doctorId: string) => {
+    /** `visitedAt`: hora da visita (padrão: agora). A pergunta "Já visitou?" usa a hora em que o status foi marcado. */
+    async (doctorId: string, visitedAt?: string) => {
       if (!userId) return;
       const record: DoctorVisit = {
         doctor_id: doctorId,
         user_id: userId,
         rep_name: actorName || null,
-        visited_at: new Date().toISOString(),
+        visited_at: visitedAt ?? new Date().toISOString(),
       };
       const previous = visitMap[doctorId]?.find((v) => v.user_id === userId);
       setVisitMap((prev) => upsertVisit(prev, record));
@@ -203,5 +208,5 @@ export function useVisits(userId: string | null, accessToken: string | null, act
     return true;
   }, [userId, visitMap]);
 
-  return { visitMap, profiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits: fetchVisits };
+  return { ready, visitMap, profiles, myVisits, markVisited, undoVisited, renewMine, refetchVisits: fetchVisits };
 }
