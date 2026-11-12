@@ -73,6 +73,13 @@ Excluir médico = **"Excluir do meu painel"** (só some do painel do rep; contin
 - Visitados ficam numa **linha verde recolhida** ("Visitados hoje" + contador + seta); abre ao tocar.
 - Novo médico aparece com a etiqueta **NOVO** (verde) na linha de local.
 
+## Médico com mais de um local (visual pronto; banco em outra etapa)
+- Só aparece com 2+ locais (`doc.locais`) ou com `NEXT_PUBLIC_LOCAIS_PREVIEW=1` na edição. Um local só = card igual ao de antes.
+- Card aberto: `components/LocationPills.tsx`. Duas pílulas lado a lado (56px, `rounded-[14px]`): a de hoje `border-2 border-blue-600 bg-blue-900 text-blue-200` com "Local de hoje"; a outra com "Quinta · Tarde". Embaixo: endereço do local, "Atende em N locais. Toque no outro para trocar hoje." e GPS 44px.
+- Status: a folha mostra "Rep. no consultório · Cajubá"; depois de marcar, faixa "Marcado no Cajubá. Local errado?" (troca em 1 toque).
+- Edição: seção "Locais" (`LocationsEditor`: Local 1 principal, Local 2…, lápis 44px, botão tracejado "Adicionar local") e folha `LocationSheet` (campos 52px, GPS, `AgendaEditor`, "Excluir este local" só nos extras).
+- Presença e histórico: `PresenceItem.locationName` e `StatusEventRow.location_name` acrescentam " · Clínica Cajubá" ao fim, só com 2+ locais. Helpers em `lib/locations.ts`.
+
 ## Ícone do app
 Maleta branca com cruz índigo e selo verde de "visita feita" (visto) no canto, sobre degradê índigo (#6366F1 → #3730A3). Sem pino.
 Arquivos: `app/icon.svg`, `app/apple-icon.png`, `app/favicon.ico`, `public/icons/*`. Fonte do desenho: quadro "Ícone" do canvas (E3).

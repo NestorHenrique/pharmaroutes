@@ -127,6 +127,8 @@ export interface PresenceItem {
   isMe?: boolean;
   /** foto do representante (null = iniciais) */
   avatarUrl?: string | null;
+  /** local onde foi marcado; só entra quando o médico tem mais de um local */
+  locationName?: string | null;
 }
 
 /** "16:55" hoje; "10/11 16:55" em outro dia (visita do ciclo pode ser de dias atrás) */
@@ -140,8 +142,9 @@ export function shortWhen(iso: string, nowMs: number = Date.now()): string {
 
 /** "Arthur no consultório 16:50" / "Nestor visitou 10/11 16:55" */
 export function presenceText(item: PresenceItem, nowMs?: number): string {
-  if (item.kind === 'office') return `${item.isMe ? 'Você' : item.name} · ${shortWhen(item.at, nowMs)}`;
-  return `${item.isMe ? 'Você' : item.name} visitou ${shortWhen(item.at, nowMs)}`;
+  const where = item.locationName ? ` · ${item.locationName}` : '';
+  if (item.kind === 'office') return `${item.isMe ? 'Você' : item.name} · ${shortWhen(item.at, nowMs)}${where}`;
+  return `${item.isMe ? 'Você' : item.name} visitou ${shortWhen(item.at, nowMs)}${where}`;
 }
 
 /**

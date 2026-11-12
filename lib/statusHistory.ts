@@ -17,6 +17,8 @@ export interface StatusEventRow {
   rep_name?: string | null;
   /** v9 — Licença/Viagem */
   return_date?: string | null;
+  /** nome do local onde foi marcado (médico com mais de um local; ainda não vem do banco) */
+  location_name?: string | null;
 }
 
 /** Nome de quem marcou: perfil atual, depois o nome gravado no evento */

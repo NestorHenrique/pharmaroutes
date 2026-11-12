@@ -59,6 +59,8 @@ interface StatusSheetProps {
   /** liga/desliga a visita; sem ela, "Já visitei" não aparece */
   onToggleVisited?: (visited: boolean) => void;
   doctorId: string;
+  /** médico com mais de um local: o local escolhido aparece junto do status */
+  locationName?: string;
   onClose: () => void;
 }
 
@@ -71,6 +73,7 @@ export default function StatusSheet({
   onSet,
   onClear,
   onToggleVisited,
+  locationName,
   onClose,
 }: StatusSheetProps) {
   const active = new Map(statuses.map((s) => [s.status_type, s]));
@@ -170,7 +173,7 @@ export default function StatusSheet({
           {o.icon}
         </span>
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className={`${compact ? 'text-[13px] leading-tight' : 'text-[15px]'} font-semibold`}>{o.label}</span>
+          <span className={`${compact ? 'text-[13px] leading-tight' : 'text-[15px]'} font-semibold`}>{o.label}{locationName && o.key !== 'finalizou_atendimento' && o.key !== 'nao_veio_hoje' ? ` · ${locationName}` : ''}</span>
           {!compact && (
             <span className="text-xs text-slate-400">
               {on && current

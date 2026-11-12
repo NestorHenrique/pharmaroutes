@@ -1,0 +1,50 @@
+import type { Doctor, DoctorLocation } from '@/types/doctor';
+import { SHIFT_LABEL, getAgenda } from '@/utils';
+
+const DAY_CODES = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'];
+const DAY_FULL: Record<string, string> = {
+  seg: 'Segunda', ter: 'Terça', qua: 'Quarta', qui: 'Quinta', sex: 'Sexta', sab: 'Sábado', dom: 'Domingo',
+};
+
+/** Locais do médico. Sem `locais`, vale o endereço do cadastro (um local só: tudo igual a antes). */
+export function getLocations(doc: Doctor): DoctorLocation[] {
+  if (doc.locais && doc.locais.length > 0) return doc.locais;
+  return [
+    {
+      id: 'principal',
+      nome: doc.complemento || 'Consultório próprio',
+      endereco: doc.endereco || '',
+      numero: doc.numero || '',
+      bairro: doc.bairro || '',
+      cidade: doc.cidade || '',
+      map_link: doc.map_link || '',
+      agenda: getAgenda(doc),
+      principal: true,
+    },
+  ];
+}
+
+/** Local de hoje: o que atende hoje; se nenhum atende, o primeiro. */
+export function todayLocation(locs: readonly DoctorLocation[], date: Date = new Date()): DoctorLocation {
+  const code = DAY_CODES[date.getDay()];
+  return locs.find((l) => l.agenda.some((e) => e.day === code)) ?? locs[0];
+}
+
+/** "Quinta · Tarde" (primeiro dia da agenda do local) */
+export function locationWhen(loc: DoctorLocation): string {
+  const e = loc.agenda[0];
+  if (!e) return 'Sem dia definido';
+  const extra = loc.agenda.length > 1 ? ` +${loc.agenda.length - 1}` : '';
+  return `${DAY_FULL[e.day] ?? e.day} · ${SHIFT_LABEL[e.shift]}${extra}`;
+}
+
+/** "Av. Brasil, 120 · Centro" */
+export function locationAddress(loc: DoctorLocation): string {
+  const street = [loc.endereco, loc.numero].filter(Boolean).join(', ');
+  return [street, loc.bairro].filter(Boolean).join(' · ') || 'Sem endereço';
+}
+
+/** Primeira palavra útil do nome do local: "Clínica Cajubá" → usada inteira se curta */
+export function locationShort(loc: DoctorLocation): string {
+  return loc.nome.replace(/^(cl[ií]nica|hospital|consult[oó]rio)\s+/i, '').trim() || loc.nome;
+}

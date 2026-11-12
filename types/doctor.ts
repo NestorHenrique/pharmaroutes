@@ -8,7 +8,27 @@ export interface AgendaEntry {
   shift: Shift;
 }
 
+/**
+ * Local de atendimento. Médico com 2 ou mais locais tem `locais`; sem ele vale o endereço do próprio cadastro.
+ * Por enquanto só visual: ainda não existe no banco (outra etapa).
+ */
+export interface DoctorLocation {
+  id: string;
+  /** nome do local (hoje o campo "complemento": clínica, hospital...) */
+  nome: string;
+  endereco: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  map_link: string;
+  agenda: AgendaEntry[];
+  /** Local 1: não pode ser excluído */
+  principal?: boolean;
+}
+
 export interface Doctor {
+  /** locais extras (só visual por enquanto) */
+  locais?: DoctorLocation[] | null;
   id: string;
   crm: string;
   descricao: string;

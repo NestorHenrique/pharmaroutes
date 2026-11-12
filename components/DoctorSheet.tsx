@@ -360,7 +360,7 @@ export default function DoctorSheet({
               </section>
 
               {/* Últimos status (quem marcou e quando) e últimas edições */}
-              <StatusHistory doctorId={doc.id} statuses={statuses} profiles={profiles ?? NO_PROFILES} />
+              <StatusHistory doctorId={doc.id} statuses={statuses} profiles={profiles ?? NO_PROFILES} showLocation={(doc.locais?.length ?? 0) > 1} />
               <div className="flex flex-col gap-2">
                 <span className={label}>Últimas edições</span>
                 <DoctorHistory doc={doc} />

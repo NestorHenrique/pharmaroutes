@@ -22,6 +22,8 @@ interface StatusSelectorProps {
   visited: boolean;
   /** liga/desliga a visita; sem ela a opção "Já visitei" não aparece */
   onToggleVisited?: (visited: boolean) => void;
+  /** médico com mais de um local: nome curto do local escolhido ("Cajubá") */
+  locationName?: string;
 }
 
 export default function StatusSelector({
@@ -33,6 +35,7 @@ export default function StatusSelector({
   onClear,
   visited,
   onToggleVisited,
+  locationName,
 }: StatusSelectorProps) {
   const [open, setOpen] = useState(false);
   const hasActiveStatus = statuses.length > 0;
@@ -64,6 +67,7 @@ export default function StatusSelector({
           onSet={onSet}
           onClear={onClear}
           onToggleVisited={onToggleVisited}
+          locationName={locationName}
           onClose={() => setOpen(false)}
         />
       )}

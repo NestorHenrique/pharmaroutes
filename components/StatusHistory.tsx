@@ -13,13 +13,15 @@ interface StatusHistoryProps {
   profiles: Readonly<Record<string, PublicProfile>>;
   /** quantas linhas mostrar antes de "Ver mais" */
   initial?: number;
+  /** o médico tem mais de um local: mostra onde cada status foi marcado */
+  showLocation?: boolean;
 }
 
 /**
  * "Últimos status" da ficha: quem marcou No consultório, Último paciente etc., com data e hora.
  * Mesmo que o representante esqueça de marcar Visitado, o registro não se perde quando o status expira.
  */
-export default function StatusHistory({ doctorId, statuses, profiles, initial = 4 }: StatusHistoryProps) {
+export default function StatusHistory({ doctorId, statuses, profiles, initial = 4, showLocation = false }: StatusHistoryProps) {
   const [rows, setRows] = useState<StatusEventRow[] | null>(null);
   const [all, setAll] = useState(false);
   const stamp = statuses.map((s) => `${s.status_type}@${s.created_at}`).join('|');
@@ -50,6 +52,7 @@ export default function StatusHistory({ doctorId, statuses, profiles, initial = 
               </span>
               <span className="shrink-0 text-slate-300">{shortName(eventRepName(e, profiles))}</span>
               <span className="shrink-0 tabular-nums text-slate-500">{dayTime(e.event_at)}</span>
+              {showLocation && e.location_name && <span className="max-w-[28%] shrink-0 truncate text-slate-400">· {e.location_name}</span>}
             </li>
           );
         })}

@@ -1,7 +1,7 @@
 'use client';
 
-import { memo, useState, useEffect } from 'react';
-import type { AgendaEntry, Doctor, ExpectedVisit, RouteTier } from '@/types/doctor';
+import { memo, useState, useEffect, useMemo } from 'react';
+import type { AgendaEntry, Doctor, DoctorLocation, ExpectedVisit, RouteTier } from '@/types/doctor';
 import { CYCLE_WEEKS, TOP_PRIORITY_STATUSES, cycleWeekLabel, normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import { STATUS_META, UNAVAILABLE_STATUSES } from '@/types/status';
@@ -34,6 +34,9 @@ import StatusSelector from '@/components/StatusSelector';
 import AuditBadge from '@/components/AuditBadge';
 import { maskAuthor } from '@/lib/privacy';
 import AgendaEditor from '@/components/AgendaEditor';
+import LocationPills from '@/components/LocationPills';
+import LocationsEditor from '@/components/LocationsEditor';
+import { getLocations, locationShort, todayLocation } from '@/lib/locations';
 import ComboBox from '@/components/ComboBox';
 import { VisitorStack } from '@/components/RepAvatar';
 import { shortName, visitorsSummary } from '@/lib/visits';
@@ -89,6 +92,9 @@ interface DoctorCardProps {
 }
 
 const SPECIALTY_OPTIONS: ComboOption[] = SPECIALTY_LIST;
+
+/** Prévia de "vários locais": só aparece com NEXT_PUBLIC_LOCAIS_PREVIEW=1 ou quando o médico já vem com 2+ locais. */
+const LOCAIS_PREVIEW = process.env.NEXT_PUBLIC_LOCAIS_PREVIEW === '1';
 
 type EditForm = Partial<Doctor> & { agenda: AgendaEntry[] };
 
@@ -152,6 +158,29 @@ function DoctorCard({
   const [formError, setFormError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const gps = useGeolocation();
+
+  /* ── Vários locais (só visual): Local 1 vem do cadastro; extras ficam só na tela por enquanto ── */
+  const base = useMemo(() => getLocations(doc), [doc]);
+  const [extras, setExtras] = useState<DoctorLocation[]>(() => base.slice(1));
+  const locais = useMemo(() => [base[0], ...extras], [base, extras]);
+  const multi = locais.length > 1;
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const selected = locais.find((l) => l.id === pickedId) ?? todayLocation(locais);
+  /** onde o status foi marcado (para "Local errado?") */
+  const [markedId, setMarkedId] = useState<string | null>(null);
+  const markedLoc = multi && statuses.length > 0 ? locais.find((l) => l.id === markedId) ?? null : null;
+  const showLocais = multi || LOCAIS_PREVIEW;
+
+  const handleSet: typeof onSetStatus = (id, type, opts) => {
+    onSetStatus(id, type, opts);
+    if (multi) setMarkedId(selected.id);
+  };
+  const wrongPlace = () => {
+    if (!markedLoc) return;
+    const next = locais[(locais.indexOf(markedLoc) + 1) % locais.length];
+    setMarkedId(next.id);
+    setPickedId(next.id);
+  };
 
   const isNew = isNewDoctor(doc);
   const agenda = getAgenda(doc);
@@ -274,14 +303,15 @@ function DoctorCard({
     }
   };
 
-  const openNavigation = () => {
-    const link = doc.map_link?.trim();
+  const openNavigation = (loc?: DoctorLocation) => {
+    const src = loc ?? doc;
+    const link = src.map_link?.trim();
     if (link) {
       openExternal(link);
       return;
     }
-    if (!doc.endereco) return;
-    const address = [[doc.endereco, doc.numero || 'SN'].join(', '), doc.bairro, doc.cidade]
+    if (!src.endereco) return;
+    const address = [[src.endereco, src.numero || 'SN'].join(', '), src.bairro, src.cidade]
       .filter(Boolean)
       .join(', ');
     openExternal(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`);
@@ -466,7 +496,8 @@ function DoctorCard({
               doctorName={doc.descricao}
               doctorSubtitle={[specCode, doc.bairro].filter(Boolean).join(' · ')}
               statuses={statuses}
-              onSet={onSetStatus}
+              onSet={handleSet}
+              locationName={multi ? locationShort(selected) : undefined}
               onClear={onClearStatus}
               visited={categoryMode ? Boolean(visited) : Boolean(cycleVisitedAt)}
               onToggleVisited={
@@ -547,6 +578,18 @@ function DoctorCard({
           </div>
         );
       })}
+
+      {/* ── Onde o status foi marcado (médico com mais de um local) ── */}
+      {markedLoc && !muted && (
+        <div className="flex min-h-11 items-center gap-2 rounded-xl border border-blue-800 bg-blue-950 pl-3 pr-1 text-xs text-blue-200">
+          <span className="min-w-0 flex-1">
+            Marcado no <strong>{locationShort(markedLoc)}</strong>.
+          </span>
+          <button type="button" onClick={wrongPlace} className="h-11 shrink-0 border-0 bg-transparent px-3 text-xs font-bold text-blue-600 underline">
+            Local errado?
+          </button>
+        </div>
+      )}
 
       {/* ── Cabeçalho ── */}
       <div className="flex justify-between items-start gap-2">
@@ -638,7 +681,8 @@ function DoctorCard({
             doctorName={doc.descricao}
             doctorSubtitle={[specCode, doc.bairro].filter(Boolean).join(' · ')}
             statuses={statuses}
-            onSet={onSetStatus}
+            onSet={handleSet}
+            locationName={multi ? locationShort(selected) : undefined}
             onClear={onClearStatus}
             visited={categoryMode ? Boolean(visited) : Boolean(cycleVisitedAt)}
             onToggleVisited={
@@ -735,6 +779,36 @@ function DoctorCard({
       {/* ── Edição / Visualização ── */}
       {isEditing ? (
         <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-col gap-2.5">
+          {showLocais && (
+            <LocationsEditor
+              principal={{
+                id: base[0].id,
+                nome: editForm.complemento || 'Consultório próprio',
+                endereco: editForm.endereco ?? '',
+                numero: editForm.numero ?? '',
+                bairro: editForm.bairro ?? '',
+                cidade: editForm.cidade ?? '',
+                map_link: editForm.map_link ?? '',
+                agenda: editForm.agenda,
+                principal: true,
+              }}
+              onPrincipalChange={(l) =>
+                setEditForm((prev) => ({
+                  ...prev,
+                  complemento: l.nome,
+                  endereco: l.endereco,
+                  numero: l.numero,
+                  bairro: l.bairro,
+                  cidade: l.cidade,
+                  map_link: l.map_link,
+                  agenda: l.agenda,
+                }))
+              }
+              extras={extras}
+              onExtrasChange={setExtras}
+              cityOptions={cityOptions}
+            />
+          )}
           <AgendaEditor value={editForm.agenda} onChange={(a) => setField('agenda', a)} />
 
           <div>
@@ -878,6 +952,8 @@ function DoctorCard({
             </button>
           </div>
         </div>
+      ) : multi ? (
+        <LocationPills locais={locais} selectedId={selected.id} onSelect={setPickedId} onNavigate={openNavigation} muted={muted} />
       ) : (
         <div className="text-xs text-slate-300 flex flex-col gap-0.5">
           <div className={`${muted ? 'text-slate-500' : 'text-sky-400'} font-semibold text-[11px] uppercase`}>
@@ -940,8 +1016,9 @@ function DoctorCard({
           </div>
 
           <div className="flex gap-1 ml-auto">
+            {!multi && (
             <button
-              onClick={openNavigation}
+              onClick={() => openNavigation()}
               disabled={!canNavigate || muted}
               className={`px-[9px] py-1 border-none rounded text-[11px] font-semibold ${
                 muted
@@ -953,6 +1030,7 @@ function DoctorCard({
             >
               {doc.map_link ? 'GPS Fixo' : 'GPS'}
             </button>
+            )}
 
             {([['WhatsApp médico', whats.medico], ['WhatsApp clínica', whats.clinica]] as const).map(
               ([text, url]) =>
