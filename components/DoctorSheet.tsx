@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Doctor, DoctorLocation, ExpectedVisit } from '@/types/doctor';
+import LocationPills from '@/components/LocationPills';
+import { getLocations, locationMapsUrl, todayLocation } from '@/lib/locations';
 import { normalizeCycleWeeks } from '@/types/doctor';
 import type { DoctorStatus, DoctorStatusType } from '@/types/status';
 import type { ComboOption } from '@/components/ComboBox';
@@ -176,6 +178,21 @@ export default function DoctorSheet({
   const [statusOpen, setStatusOpen] = useState(false);
   const [whatsOpen, setWhatsOpen] = useState(false);
   const [mode, setMode] = useState<'status' | 'edit'>('status');
+  const locais = getLocations(doc);
+  const multi = locais.length > 1;
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const selected = locais.find((l) => l.id === pickedId) ?? todayLocation(locais);
+  const openPlace = (loc: DoctorLocation) => {
+    const url = locationMapsUrl(loc);
+    if (!url) return;
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   // Fecha com Esc e trava o scroll da página por trás
   useEffect(() => {
@@ -332,7 +349,11 @@ export default function DoctorSheet({
                 <Tile primary onClick={() => setStatusOpen(true)} text="Status">
                   {ico(<path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />, 2)}
                 </Tile>
-                <Tile disabled={!onNavigate} onClick={() => onNavigate?.()} text="Rota">
+                <Tile
+                  disabled={multi ? !locationMapsUrl(selected) : !onNavigate}
+                  onClick={() => (multi ? openPlace(selected) : onNavigate?.())}
+                  text="Rota"
+                >
                   {ico(<><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" /><circle cx="12" cy="9" r="2.5" /></>)}
                 </Tile>
                 <Tile disabled={!whats.medico && !whats.clinica} onClick={() => setWhatsOpen(true)} text="WhatsApp">
@@ -346,11 +367,17 @@ export default function DoctorSheet({
                 <span className="-mt-1.5 text-center text-xs text-slate-500">O visitado entra na {activeWeekLabel}</span>
               )}
 
+              {/* Vários locais: pílulas, endereço do escolhido e GPS */}
+              {multi && (
+                <section className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5">
+                  <LocationPills locais={locais} selectedId={selected.id} onSelect={setPickedId} onNavigate={openPlace} />
+                </section>
+              )}
+
               {/* Local, endereço, horário médio e observação */}
-              <section className="flex flex-col rounded-2xl border border-slate-800 bg-slate-900 px-3.5 py-1">
+              <section className={`flex flex-col rounded-2xl border border-slate-800 bg-slate-900 px-3.5 py-1 ${multi && !expected && !doc.observacoes ? 'hidden' : ''}`}>
                 {[
-                  ['Local', doc.complemento || 'Consultório próprio'],
-                  ['Endereço', address],
+                  ...(multi ? [] : [['Local', doc.complemento || 'Consultório próprio'], ['Endereço', address]]),
                   ['Horário médio', expected ? `${formatMinutes(expected.startMinutes)}${expected.endMinutes !== null ? ` – ${formatMinutes(expected.endMinutes)}` : ''}` : ''],
                   ['Obs.', doc.observacoes ?? ''],
                 ]

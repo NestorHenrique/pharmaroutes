@@ -459,6 +459,9 @@ function DoctorCard({
           {subline === place && placeLines.line2 && (
             <span className="text-xs uppercase truncate text-slate-500">{placeLines.line2}</span>
           )}
+          {multi && (
+            <span className="mt-0.5 self-start rounded-md bg-blue-950 px-1.5 py-0.5 text-[10px] font-bold text-blue-300">{locais.length} locais</span>
+          )}
           {presence && presence.length > 0 && <PresenceTags items={presence} className="mt-1" />}
         </button>
 

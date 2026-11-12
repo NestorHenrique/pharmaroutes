@@ -74,3 +74,12 @@ export function agendaAllLocations(doc: Doctor): DoctorLocation['agenda'] {
   const add = extras.flatMap((l) => l.agenda).filter((e) => !have.has(e.day) && have.add(e.day));
   return [...main, ...add];
 }
+
+/** Link para abrir o local no mapa: o GPS fixo, ou a rota até o endereço */
+export function locationMapsUrl(loc: DoctorLocation): string | null {
+  const link = loc.map_link?.trim();
+  if (link) return link;
+  if (!loc.endereco) return null;
+  const address = [[loc.endereco, loc.numero || 'SN'].join(', '), loc.bairro, loc.cidade].filter(Boolean).join(', ');
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+}
