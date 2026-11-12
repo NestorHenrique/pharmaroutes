@@ -43,3 +43,6 @@ next-env.d.ts
 # Segredos locais — nunca versionar
 Senha Supabase.txt
 *.env.local
+
+# segredos locais
+Senha*.txt
