@@ -1294,8 +1294,14 @@ export default function HomePage() {
 
   /* ═══════════════════ Ciclo: visitas (doctor_statuses) ═══════════════════ */
 
-  /** Médicos que ESTE representante marcou visitado no ciclo: doctor_id -> visited_at */
-  const cycleVisits = myVisits;
+  /** Médicos que ESTE representante marcou visitado HOJE: doctor_id -> visited_at.
+   *  Visita de outro dia não entra em "Visitados hoje": o médico volta para a rota como pendente. */
+  const cycleVisits = useMemo(() => {
+    const today = new Date(now).toDateString();
+    const out = new Map<string, string>();
+    for (const [id, at] of myVisits) if (new Date(at).toDateString() === today) out.set(id, at);
+    return out;
+  }, [myVisits, now]);
 
   /** Marca/desfaz "Visitado". Com semana ativa, o médico entra nela e fica na sequência da visita. */
   const toggleCycleVisit = useCallback(
