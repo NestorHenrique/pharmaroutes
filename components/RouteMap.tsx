@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
+import dynamic from 'next/dynamic';
 
 export interface MapStop {
   id: string;
@@ -30,7 +31,15 @@ function project(lat: number, lng: number, z: number) {
  * Mapa da rota do dia, sem biblioteca: imagens de rua do OpenStreetMap + pinos numerados por cima.
  * Verde = visitado, violeta cheio = próximo, contorno = falta. Tocar no pino abre a ficha.
  */
-export default function RouteMap({ stops, onOpen }: { stops: MapStop[]; onOpen: (id: string) => void }) {
+const RouteMapGL = dynamic(() => import('@/components/RouteMapGL'), { ssr: false });
+
+/** Com a chave do MapTiler usa o mapa vetorial (RouteMapGL); sem ela, o mapa simples abaixo. */
+export default function RouteMap(props: { stops: MapStop[]; onOpen: (id: string) => void }) {
+  if (process.env.NEXT_PUBLIC_MAPTILER_KEY && props.stops.length > 0) return <RouteMapGL {...props} />;
+  return <RouteMapRaster {...props} />;
+}
+
+function RouteMapRaster({ stops, onOpen }: { stops: MapStop[]; onOpen: (id: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(358);
   const [dz, setDz] = useState(0);

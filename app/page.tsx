@@ -2170,13 +2170,27 @@ export default function HomePage() {
   // Mapa: visitados de hoje (verde) + quem falta, na ordem da rota. Só entra quem tem coordenada no GPS.
   const mapTodo = myOfficeDoc ? [myOfficeDoc, ...routeList] : routeList;
   const mapTotal = visitedList.length + mapTodo.length;
+  // A numeração conta só quem aparece no mapa (tem GPS): o primeiro que falta é o 1, sem contar quem não tem coordenada.
   const mapStops: MapStop[] = [
-    ...visitedList.map((d) => ({ d, state: 'done' as const, n: undefined as number | undefined })),
-    ...mapTodo.map((d, i) => ({ d, state: i === 0 ? ('next' as const) : ('todo' as const), n: i + 1 })),
-  ].flatMap(({ d, state, n }) => {
-    const c = parseLatLng(d.map_link);
-    return c ? [{ id: d.id, name: d.descricao, lat: c.lat, lng: c.lng, state, n }] : [];
-  });
+    ...visitedList.map((d) => ({ d, done: true })),
+    ...mapTodo.map((d) => ({ d, done: false })),
+  ]
+    .flatMap(({ d, done }) => {
+      const c = parseLatLng(d.map_link);
+      return c ? [{ id: d.id, name: d.descricao, lat: c.lat, lng: c.lng, done }] : [];
+    })
+    .map((s, _i, all) => {
+      const pending = all.filter((x) => !x.done);
+      const idx = pending.findIndex((x) => x.id === s.id);
+      return {
+        id: s.id,
+        name: s.name,
+        lat: s.lat,
+        lng: s.lng,
+        state: s.done ? ('done' as const) : idx === 0 ? ('next' as const) : ('todo' as const),
+        n: s.done ? undefined : idx + 1,
+      };
+    });
 
   // Médicos: a base inteira do painel, com busca e filtro
   const medBase = searchQuery.trim().length >= 2 ? suggestions.map((x) => x.doc) : doctorsWithWeeks;
