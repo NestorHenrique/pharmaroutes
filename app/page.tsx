@@ -68,6 +68,7 @@ import Toast, { type ToastData } from '@/components/Toast';
 import ConnectionBanner from '@/components/ConnectionBanner';
 import EmptyState from '@/components/EmptyState';
 import NextDoctorCard from '@/components/NextDoctorCard';
+import StatusSheet from '@/components/StatusSheet';
 import LiveStrip from '@/components/LiveStrip';
 import BottomNav, { type MainTab } from '@/components/BottomNav';
 import ProgressRing from '@/components/ProgressRing';
@@ -1849,6 +1850,8 @@ export default function HomePage() {
   const [showTop, setShowTop] = useState(false);
   // Telas extra: IA e Ciclo
   const [showIA, setShowIA] = useState(false);
+  /** folha "Marcar status" aberta pelo "Outro status" do card Próximo */
+  const [heroStatusOpen, setHeroStatusOpen] = useState(false);
   const [showCiclo, setShowCiclo] = useState(false);
   // Abas da barra de baixo e filtro da aba Médicos
   const [mainTab, setMainTab] = useState<MainTab>('hoje');
@@ -2174,6 +2177,7 @@ export default function HomePage() {
       inOffice={Boolean(myOfficeDoc)}
       onGo={heroNav ? () => openExternal(heroNav) : null}
       onOpen={() => openSheet(heroDoc.id)}
+      onStatus={() => setHeroStatusOpen(true)}
       onArrive={() =>
         myOfficeDoc ? void clearDoctorStatus(heroDoc.id, 'representante_no_consultorio') : void setDoctorStatus(heroDoc.id, 'representante_no_consultorio')
       }
@@ -3084,6 +3088,22 @@ export default function HomePage() {
         >
           {ghost.name}
         </div>
+      )}
+
+      {heroStatusOpen && heroDoc && (
+        <StatusSheet
+          doctorId={heroDoc.id}
+          doctorName={heroDoc.descricao}
+          doctorSubtitle={[specCodeOf(heroDoc.especialidade), heroDoc.bairro].filter(Boolean).join(' · ')}
+          statuses={liveStatusMap[heroDoc.id] || []}
+          visited={Boolean(visitedAtOf(heroDoc.id))}
+          onSet={setDoctorStatus}
+          onClear={clearDoctorStatus}
+          onToggleVisited={(v) => {
+            if (v !== Boolean(visitedAtOf(heroDoc.id))) toggleVisited(heroDoc.id);
+          }}
+          onClose={() => setHeroStatusOpen(false)}
+        />
       )}
 
       {showCiclo && (

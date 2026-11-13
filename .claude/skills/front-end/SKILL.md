@@ -72,6 +72,9 @@ Estados: carregando sem cache = cinco cards em esqueleto; vazio = `EmptyState` c
 - **Avisos:** cartão por aviso com ponto colorido de halo, título, "NOME · local. Fulano avisou." e a hora à direita.
 - **Organizar rota do ciclo:** cada médico tem ↑ (sobe na rota da semana) e ⇄ (mover para outra semana ou tirar da semana). O dia vem da agenda do médico.
 
+## Marcar status (bandeira e "Outro status")
+Folha em **grade de 2 colunas** (`components/StatusSheet.tsx`): cada status é um bloco de 72px, raio 18px, ponto colorido no canto e o nome embaixo. Rep. no consultório (azul), Aguardando médico (amarelo) e Último paciente (vermelho) têm fundo tingido; Finalizou, Não veio hoje, Licença/Afastado e Férias/Viagem são tracejados e cinza; **Já visitei** é um bloco verde cheio. Marcado = borda de 2px, visto e quem marcou com a hora. Licença e Férias abrem "Volta quando?": Amanhã, próxima segunda, em 15 dias, em 30 dias ou "Escolher data". "Outro status" no card Próximo abre essa mesma folha; tocar no nome do médico abre a ficha.
+
 ## Padrões de tela
 **Folha que sobe de baixo** (filtros, novo médico, status, semana, cidades, retorno, editar): alça cinza no topo,
 cantos de cima `rounded-t-[24px]`, título, conteúdo, rodapé fixo com **Cancelar** (esquerda) e **Salvar** (direita).

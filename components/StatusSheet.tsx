@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 import BottomSheet from '@/components/BottomSheet';
 import ReturnDatePicker from '@/components/ReturnDatePicker';
 import StatusGuide from '@/components/StatusGuide';
@@ -9,42 +9,47 @@ import { PROLONGED_STATUSES, STATUS_META } from '@/types/status';
 import { formatTime } from '@/utils';
 import { shortName } from '@/lib/visits';
 
-/* ── Folha "Marcar status": acesso rápido. Bandeira + 1 toque no status = pronto (2 toques) ── */
+/* ── Folha "Marcar status" (protótipo copiloto): grade de 2 colunas, um toque no status = pronto ── */
 
 type Key = DoctorStatusType | 'visited';
 
-interface Option {
-  key: Key;
+interface Tile {
+  key: DoctorStatusType;
   label: string;
-  hint: string;
-  /** borda e fundo quando marcado */
+  /** cor do ponto e da borda (classes completas, para o Tailwind enxergar) */
+  dot: string;
+  idle: string;
   on: string;
-  /** cor do círculo e do visto */
-  circle: string;
-  check: string;
-  icon: ReactNode;
+  /** pede data de retorno */
+  absence?: boolean;
 }
 
-const svg = (d: ReactNode, w = 2.2) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={w} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {d}
-  </svg>
-);
+const OFF_IDLE = 'border-[1.5px] border-dashed border-slate-500 bg-slate-800';
+const OFF_ON = 'border-2 border-slate-300 bg-slate-700';
 
-/** Ordem da tela. "Já visitei" não é um status do banco: chama a visita do ciclo. */
-const OPTIONS: Option[] = [
-  { key: 'representante_no_consultorio', label: 'Rep. no consultório', hint: 'Cheguei agora', on: 'border-sky-500 bg-sky-500/10', circle: 'bg-sky-500', check: 'text-sky-500', icon: svg(<><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></>) },
-  { key: 'aguardando_medico', label: 'Aguardando médico', hint: 'Contador de 30 min', on: 'border-amber-500 bg-amber-500/10', circle: 'bg-amber-500', check: 'text-amber-500', icon: svg(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>) },
-  { key: 'ultimo_paciente', label: 'Último paciente', hint: 'Avisa os reps da cidade', on: 'border-red-500 bg-red-500/10', circle: 'bg-red-500', check: 'text-red-500', icon: svg(<path d="M12 6v7M12 17.5v.5" />, 2.4) },
-  { key: 'visited', label: 'Já visitei', hint: 'Registra nome e hora', on: 'border-emerald-500 bg-emerald-500/10', circle: 'bg-emerald-500', check: 'text-emerald-500', icon: svg(<path d="M5 12l5 5L20 7" />, 3) },
-  { key: 'finalizou_atendimento', label: 'Finalizou o atendimento', hint: '', on: 'border-slate-500 bg-slate-500/10', circle: 'bg-slate-600', check: 'text-slate-300', icon: svg(<path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />) },
-  { key: 'nao_veio_hoje', label: 'Não veio hoje', hint: '', on: 'border-slate-500 bg-slate-500/10', circle: 'bg-slate-600', check: 'text-slate-300', icon: svg(<path d="M6 6l12 12M18 6L6 18" />, 2.4) },
+const TILES: Tile[] = [
+  { key: 'representante_no_consultorio', label: 'Rep. no consultório', dot: 'bg-sky-500', idle: 'border-[1.5px] border-sky-500/55 bg-sky-500/10', on: 'border-2 border-sky-500 bg-sky-500/20' },
+  { key: 'aguardando_medico', label: 'Aguardando médico', dot: 'bg-amber-400', idle: 'border-[1.5px] border-amber-400/55 bg-amber-400/10', on: 'border-2 border-amber-400 bg-amber-400/20' },
+  { key: 'ultimo_paciente', label: 'Último paciente', dot: 'bg-red-500', idle: 'border-[1.5px] border-red-500/55 bg-red-500/10', on: 'border-2 border-red-500 bg-red-500/20' },
+  { key: 'finalizou_atendimento', label: 'Finalizou o atendimento', dot: 'bg-slate-500', idle: OFF_IDLE, on: OFF_ON },
+  { key: 'nao_veio_hoje', label: 'Não veio hoje', dot: 'bg-slate-500', idle: OFF_IDLE, on: OFF_ON },
+  ...PROLONGED_STATUSES.map<Tile>((t) => ({ key: t, label: STATUS_META[t].label, dot: 'bg-slate-500', idle: OFF_IDLE, on: OFF_ON, absence: true })),
 ];
 
-const ATTENDANCE: DoctorStatusType[] = OPTIONS.filter((o) => o.key !== 'visited').map((o) => o.key as DoctorStatusType);
+const ATTENDANCE: DoctorStatusType[] = ['representante_no_consultorio', 'aguardando_medico', 'ultimo_paciente', 'finalizou_atendimento', 'nao_veio_hoje'];
 
-function shortDate(iso: string): string {
-  return new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (n: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d;
+};
+/** Próxima segunda-feira (se hoje é segunda, a da semana seguinte) */
+const nextMonday = () => addDays(((8 - new Date().getDay()) % 7) || 7);
+const short = (d: Date) => d.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '');
+
+function shortDate(isoDate: string): string {
+  return new Date(`${isoDate}T12:00:00`).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 }
 
 interface StatusSheetProps {
@@ -81,6 +86,7 @@ export default function StatusSheet({
   const [step, setStep] = useState<'main' | 'until'>('main');
   const [untilType, setUntilType] = useState<DoctorStatusType | null>(null);
   const [untilDate, setUntilDate] = useState('');
+  const [custom, setCustom] = useState(false);
   const [guide, setGuide] = useState(false);
 
   /** Um toque: marca (ou tira, se já estava marcado) e fecha a folha */
@@ -109,19 +115,27 @@ export default function StatusSheet({
     }
     setUntilType(type);
     setUntilDate('');
+    setCustom(false);
     setStep('until');
   };
 
-  const confirmUntil = () => {
-    if (!untilType || !untilDate) return;
-    onSet(doctorId, untilType, { returnDate: untilDate });
+  const confirmWith = (date: string) => {
+    if (!untilType || !date) return;
+    onSet(doctorId, untilType, { returnDate: date });
     onClose();
   };
 
   if (step === 'until' && untilType) {
+    const monday = nextMonday();
+    const quick: [string, Date][] = [
+      ['Amanhã', addDays(1)],
+      [`Segunda, ${short(monday)}`, monday],
+      ['Em 15 dias', addDays(15)],
+      ['Em 30 dias', addDays(30)],
+    ];
     return (
       <BottomSheet
-        title="Até quando?"
+        title="Volta quando?"
         onClose={() => setStep('main')}
         dismissOnBackdrop={false}
         footer={
@@ -129,69 +143,59 @@ export default function StatusSheet({
             <button
               type="button"
               onClick={() => setStep('main')}
-              className="h-12 shrink-0 rounded-xl border border-slate-700 bg-transparent px-5 text-sm font-medium text-slate-300 hover:text-white"
+              className="h-[52px] shrink-0 rounded-[14px] border border-slate-700 bg-transparent px-5 text-base font-medium text-slate-300 hover:text-white"
             >
               Voltar
             </button>
-            <button
-              type="button"
-              disabled={!untilDate}
-              onClick={confirmUntil}
-              className="h-12 min-w-0 flex-1 rounded-xl border-0 bg-blue-600 text-sm font-bold text-white hover:bg-blue-500 disabled:opacity-40"
-            >
-              Confirmar
-            </button>
+            {custom && (
+              <button
+                type="button"
+                disabled={!untilDate}
+                onClick={() => confirmWith(untilDate)}
+                className="h-[52px] min-w-0 flex-1 rounded-[14px] border-0 bg-blue-600 text-base font-bold text-white hover:bg-blue-500 disabled:opacity-40"
+              >
+                Confirmar
+              </button>
+            )}
           </>
         }
       >
-        <p className="m-0 text-sm text-slate-300">
-          {doctorName} · <strong className="text-amber-400">{STATUS_META[untilType].label}</strong>
+        <span className="-mt-2 truncate text-[13px] uppercase text-slate-400">{doctorName}</span>
+        <p className="m-0 text-[13px] text-slate-400">
+          <strong className="text-amber-400">{STATUS_META[untilType].label}</strong>. O médico sai da rota até o dia antes da volta.
         </p>
-        <ReturnDatePicker value={untilDate} onChange={setUntilDate} />
+        {custom ? (
+          <ReturnDatePicker value={untilDate} onChange={setUntilDate} />
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2.5">
+              {quick.map(([label, d]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => confirmWith(iso(d))}
+                  className={`h-[72px] rounded-[18px] px-3 text-left text-[13.5px] font-bold text-slate-100 ${OFF_IDLE}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setCustom(true)}
+              className="flex h-14 items-center justify-center gap-2 rounded-[18px] border border-slate-700 bg-slate-800 text-[15px] font-bold text-slate-100"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2" />
+                <path d="M3 10h18M8 3v4M16 3v4" />
+              </svg>
+              Escolher data
+            </button>
+          </>
+        )}
       </BottomSheet>
     );
   }
-
-  const visible = OPTIONS.filter((o) => o.key !== 'visited' || onToggleVisited);
-  const full = visible.slice(0, 4).filter((o) => o.key !== 'finalizou_atendimento' && o.key !== 'nao_veio_hoje');
-  const half = visible.filter((o) => o.key === 'finalizou_atendimento' || o.key === 'nao_veio_hoje');
-
-  const row = (o: Option, compact: boolean) => {
-    const on = o.key === 'visited' ? visited : active.has(o.key);
-    const current = o.key === 'visited' ? null : active.get(o.key);
-    return (
-      <button
-        key={o.key}
-        type="button"
-        aria-pressed={on}
-        onClick={() => choose(o.key)}
-        className={`flex min-h-14 items-center text-left ${compact ? 'gap-2.5 px-3' : 'gap-3 px-3.5'} rounded-[14px] ${
-          on ? `border-2 ${o.on}` : 'border border-slate-800 bg-slate-950'
-        } text-slate-100`}
-      >
-        <span className={`flex shrink-0 items-center justify-center rounded-full text-slate-950 ${o.circle} ${compact ? 'size-[30px]' : 'size-[34px]'} ${o.circle === 'bg-slate-600' ? 'text-slate-100' : ''}`}>
-          {o.icon}
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className={`${compact ? 'text-[13px] leading-tight' : 'text-[15px]'} font-semibold`}>{o.label}{locationName && o.key !== 'finalizou_atendimento' && o.key !== 'nao_veio_hoje' ? ` · ${locationName}` : ''}</span>
-          {!compact && (
-            <span className="text-xs text-slate-400">
-              {on && current
-                ? `${current.rep_name ? `${shortName(current.rep_name)} ` : ''}${formatTime(current.created_at)} · toque p/ remover`
-                : on
-                  ? 'toque p/ remover'
-                  : o.hint}
-            </span>
-          )}
-        </span>
-        {on && !compact && (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${o.check}`} aria-hidden="true">
-            <path d="M5 12l5 5L20 7" />
-          </svg>
-        )}
-      </button>
-    );
-  };
 
   return (
     <>
@@ -199,7 +203,7 @@ export default function StatusSheet({
         <div className="-mt-2 flex flex-col gap-1">
           <span className="truncate text-[13px] uppercase text-slate-400">
             {doctorName}
-            {doctorSubtitle ? ` · ${doctorSubtitle}` : ''}
+            {locationName ? ` · ${locationName}` : doctorSubtitle ? ` · ${doctorSubtitle}` : ''}
           </span>
           <button
             type="button"
@@ -211,37 +215,53 @@ export default function StatusSheet({
           </button>
         </div>
 
-        <div className="flex flex-col gap-2" role="group" aria-label="Status">
-          {full.map((o) => row(o, false))}
-          <div className="grid grid-cols-2 gap-2">{half.map((o) => row(o, true))}</div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <span className="mt-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Ausência prolongada</span>
-          <div className="grid grid-cols-2 gap-2" role="group" aria-label="Ausência prolongada">
-            {PROLONGED_STATUSES.map((t) => {
-              const cur = active.get(t);
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  aria-pressed={Boolean(cur)}
-                  onClick={() => chooseAbsence(t)}
-                  className={`flex min-h-12 flex-col items-center justify-center rounded-[14px] px-2 text-center text-sm font-semibold text-amber-400 ${
-                    cur ? 'border-2 border-amber-500 bg-amber-500/10' : 'border border-slate-800 bg-slate-950'
-                  }`}
-                >
-                  {STATUS_META[t].label}
-                  {cur && (
-                    <span className="text-[11px] font-medium opacity-80">
-                      {cur.return_date ? `volta ${shortDate(cur.return_date)} · ` : ''}toque p/ remover
+        <div className="grid grid-cols-2 gap-2.5" role="group" aria-label="Status">
+          {TILES.map((t) => {
+            const cur = active.get(t.key);
+            const on = Boolean(cur);
+            return (
+              <button
+                key={t.key}
+                type="button"
+                aria-pressed={on}
+                onClick={() => (t.absence ? chooseAbsence(t.key) : choose(t.key))}
+                className={`flex h-[72px] flex-col justify-between rounded-[18px] p-3 text-left text-slate-100 ${on ? t.on : t.idle}`}
+              >
+                <span className="flex items-center justify-between">
+                  <span className={`size-3 rounded-full ${t.dot}`} aria-hidden="true" />
+                  {on && (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                  )}
+                </span>
+                <span className="flex flex-col">
+                  <span className="text-[13.5px] font-bold leading-tight">{t.label}</span>
+                  {on && cur && (
+                    <span className="text-[11px] font-medium text-slate-400">
+                      {cur.return_date ? `volta ${shortDate(cur.return_date)}` : `${cur.rep_name ? `${shortName(cur.rep_name)} ` : ''}${formatTime(cur.created_at)}`}
                     </span>
                   )}
-                </button>
-              );
-            })}
-          </div>
-          <span className="text-xs text-slate-500">Ao escolher, pede a data de retorno.</span>
+                </span>
+              </button>
+            );
+          })}
+          {onToggleVisited && (
+            <button
+              type="button"
+              aria-pressed={visited}
+              onClick={() => choose('visited')}
+              className="flex h-[72px] flex-col justify-between rounded-[18px] border-0 bg-emerald-500 p-3 text-left text-slate-950"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 12l5 5L20 7" />
+              </svg>
+              <span className="flex flex-col">
+                <span className="text-[13.5px] font-bold leading-tight">Já visitei</span>
+                {visited && <span className="text-[11px] font-semibold opacity-80">toque p/ desfazer</span>}
+              </span>
+            </button>
+          )}
         </div>
       </BottomSheet>
       {guide && <StatusGuide onClose={() => setGuide(false)} />}

@@ -13,6 +13,8 @@ interface NextDoctorCardProps {
   /** abre o Maps; ausente = médico sem GPS nem endereço */
   onGo?: (() => void) | null;
   onOpen: () => void;
+  /** abre a folha "Marcar status" (grade de status) */
+  onStatus: () => void;
   onArrive: () => void;
   onVisit: () => void;
 }
@@ -24,7 +26,7 @@ const icon = (d: string, w = 2) => (
 );
 
 /** Card grande do topo da rota: diz para onde ir agora e resolve a visita em um toque. */
-export default function NextDoctorCard({ doc, expected, inOffice, onGo, onOpen, onArrive, onVisit }: NextDoctorCardProps) {
+export default function NextDoctorCard({ doc, expected, inOffice, onGo, onOpen, onStatus, onArrive, onVisit }: NextDoctorCardProps) {
   const place = formatPlaceLines(doc);
   const locais = getLocations(doc);
   const hoje = locais.length > 1 ? todayLocation(locais) : null;
@@ -40,7 +42,7 @@ export default function NextDoctorCard({ doc, expected, inOffice, onGo, onOpen, 
       </div>
 
       <button type="button" onClick={onOpen} className="flex min-h-11 flex-col items-start gap-1 border-0 bg-transparent p-0 text-left">
-        <span className="font-display text-[22px] font-extrabold uppercase leading-[1.15] tracking-tight text-white">{doc.descricao}</span>
+        <span className="font-display text-[22px] font-extrabold uppercase leading-[1.15] tracking-tight text-white">{doc.descricao} ›</span>
         <span className="text-[13px] uppercase text-slate-400">{place.line1}</span>
         {place.line2 && <span className="text-[13px] uppercase text-slate-400">{place.line2}</span>}
       </button>
@@ -94,8 +96,9 @@ export default function NextDoctorCard({ doc, expected, inOffice, onGo, onOpen, 
         </button>
       </div>
 
-      <button type="button" onClick={onOpen} className="h-11 self-center border-0 bg-transparent px-3 text-[13px] font-semibold text-blue-400">
-        Outro status ou ficha
+      <button type="button" onClick={onStatus} className="flex h-11 items-center gap-1.5 self-center border-0 bg-transparent px-3 text-[13px] font-semibold text-blue-400">
+        {icon('M5 21V4M5 4h11l-2.5 4L16 12H5', 2)}
+        Outro status
       </button>
     </section>
   );
