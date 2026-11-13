@@ -1651,6 +1651,16 @@ export default function HomePage() {
     [manualOrder, manualKey, saveRouteOrder, showToast],
   );
 
+  /** Ordena a rota do dia pelos horários médios (quem não tem horário fica no fim, na ordem atual) */
+  const orderByTimes = useCallback(() => {
+    const key = (d: Doctor) => feed.expected.get(d.id)?.startMinutes ?? 100000;
+    if (feed.middle.filter((d) => feed.expected.has(d.id)).length < 2) {
+      showToast('Ainda não há horários médios suficientes para ordenar.');
+      return;
+    }
+    applyMiddleOrder([...feed.middle].sort((a, b) => key(a) - key(b)).map((d) => d.id));
+  }, [feed.middle, feed.expected, applyMiddleOrder, showToast]);
+
   /* Arrastar e soltar (só no bloco do meio, modo manual) */
   const dragId = useRef<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
@@ -2877,7 +2887,6 @@ export default function HomePage() {
 
         {mainTab === 'mapa' && (
           <>
-            <RouteMap stops={mapStops} onOpen={openSheet} />
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
               <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-blue-600" aria-hidden="true" /> Próximo</span>
               <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full border-2 border-blue-600" aria-hidden="true" /> Falta</span>
@@ -2888,7 +2897,23 @@ export default function HomePage() {
                 {mapTotal - mapStops.length} {mapTotal - mapStops.length === 1 ? 'médico de hoje não tem' : 'médicos de hoje não têm'} GPS e não {mapTotal - mapStops.length === 1 ? 'aparece' : 'aparecem'} no mapa. Grave o GPS na ficha, em Editar.
               </p>
             )}
-            <div className="relative -mt-4 rounded-[28px] shadow-2xl shadow-black/40">{heroCard}</div>
+            <RouteMap stops={mapStops} onOpen={openSheet} />
+            <div className="relative z-10 -mt-7 flex flex-col gap-2.5">
+              <div className="rounded-[28px] shadow-2xl shadow-black/40">{heroCard}</div>
+              {heroDoc && (
+                <button
+                  type="button"
+                  onClick={orderByTimes}
+                  className="flex h-14 items-center justify-center gap-2 rounded-[18px] border border-slate-700 bg-slate-800 text-sm font-bold text-blue-400"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+                    <path d="M19 16v4M17 18h4" />
+                  </svg>
+                  Ordenar a rota pelos horários médios
+                </button>
+              )}
+            </div>
           </>
         )}
 
