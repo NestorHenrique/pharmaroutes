@@ -48,6 +48,20 @@ Cor nunca é a única pista: todo status tem texto ou ícone junto.
 - Título de tela ou folha: 20px, negrito. Título de seção: 11px, maiúsculas, `tracking-[0.08em]`, `text-slate-400`.
 - Nomes de médico em **MAIÚSCULAS**.
 
+## Abas do app (modelo copiloto)
+O app tem abas de verdade, trocadas pela barra flutuante de baixo (`components/BottomNav.tsx`, 68px, cantos 26px, vidro fosco): **Hoje**, **Mapa**, botão violeta **+** (Novo médico), **Avisos** (abre a tela de avisos) e **Eu**. A aba ativa fica com fundo `bg-blue-950` e texto violeta. Conteúdo com `pb-32`; toast e "Voltar ao topo" ficam acima da barra.
+
+Título de aba: linha pequena de contexto (12px, `text-slate-400`) e embaixo o título em **26px, extrabold**.
+
+- **Hoje:** contexto "Quinta · 12 nov · 1ª semana" (abre a semana), título = cidade da semana (ou "Rota de hoje" / "Rota de sexta"), botão "?" e o **anel de progresso** (`ProgressRing`, 56px, "4/11"). Embaixo: dias (pontinho no dia de hoje), busca (um botão que abre a aba Médicos) e filtros (48px). Turno e Novos saíram do cabeçalho: turno fica na folha de Filtros, Novos na aba Médicos.
+  - **Ao vivo** (`LiveStrip`): uma ficha de 44px por status (ponto colorido, nome, contador, "há N min"). Tocar abre a folha com os médicos; tocar no médico abre a ficha.
+  - **Próximo** (`NextDoctorCard`): card grande violeta com o primeiro médico da rota e botões de 52px: Ir (Maps), **Cheguei** (marca Rep. no consultório) e **Visitei**. Depois de "Cheguei": etiqueta "Você está aqui" (azul) e "Visitei" verde cheio. Só na aba de hoje, sem filtro de local. Com ele, "Roteiro padrão" vira **"Depois"** e a lista começa no 2.
+- **Mapa** (`RouteMap`, sem biblioteca): ruas do OpenStreetMap (escurecidas no tema escuro pela classe `map-tiles`), pinos de 44px de toque: violeta cheio = próximo, contorno violeta = falta (com o número da rota), verde com visto = visitado. Linha pontilhada violeta liga quem falta. Só entra médico com coordenada no link de GPS (`lib/coords.ts`); embaixo, aviso de quantos ficaram de fora e o card Próximo.
+- **Médicos:** seta de voltar, "Sua base · N médicos", busca de 48px (com foco automático), chips Todos / Falta visitar no ciclo / Novos, e linhas de 64px com iniciais, nome, `ESP · clínica · cidade` e etiqueta (Visitado verde, Novo, ou "1ª sem").
+- **Eu** (`MeTab`): foto e nome, cartão com anel de 88px e "% do ciclo", três números (visitas na semana, média por dia, cidades), barras de visitas por dia (hoje em violeta cheio) e atalhos de 60px: Semana e cidades, Status geral, Guia, Perfil e ajustes.
+
+Estados: carregando sem cache = cinco cards em esqueleto; vazio = `EmptyState` com ícone de traço (`busca`, `medico`, `agenda`), nunca emoji. Todo botão afunda de leve ao toque (`scale(0.97)`).
+
 ## Padrões de tela
 **Folha que sobe de baixo** (filtros, novo médico, status, semana, cidades, retorno, editar): alça cinza no topo,
 cantos de cima `rounded-t-[24px]`, título, conteúdo, rodapé fixo com **Cancelar** (esquerda) e **Salvar** (direita).
@@ -100,5 +114,5 @@ Arquivos: `app/icon.svg`, `app/apple-icon.png`, `app/favicon.ico`, `public/icons
 ## Ao terminar
 1. `npx tsc --noEmit`: não pode ganhar erro novo (os erros antigos em `app/components/*` e `app/hooks/useDoctors.ts` são código morto).
 2. `npm run build` com `NEXT_PUBLIC_SUPABASE_URL` e `NEXT_PUBLIC_SUPABASE_ANON_KEY` de teste deve passar.
-3. Confira os dois temas e a largura de 390px.
+3. Confira os dois temas e a largura de 390px (roteiro na skill `mapa-do-app`).
 4. Se a mudança alterar o design, descreva o que mudou. Não mexa no banco sem autorização: escreva migrações em `sql/`.

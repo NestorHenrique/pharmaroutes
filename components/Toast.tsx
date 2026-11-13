@@ -23,7 +23,7 @@ export default function Toast({ toast, onDismiss }: { toast: ToastData; onDismis
       role="status"
       aria-live="polite"
       className="fixed inset-x-4 z-[65] mx-auto flex max-w-md items-center gap-3 min-h-[52px] rounded-[14px] border border-slate-700 bg-slate-800 py-1 pl-4 pr-1.5 shadow-2xl shadow-black/60 animate-[fade-in_.18s_ease-out]"
-      style={{ bottom: 'max(env(safe-area-inset-bottom), 16px)' }}
+      style={{ bottom: 'calc(max(env(safe-area-inset-bottom), 16px) + 84px)' }}
     >
       <span className="min-w-0 flex-1 text-sm leading-snug text-slate-50">{toast.text}</span>
       {toast.undo && (

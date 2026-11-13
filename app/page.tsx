@@ -67,7 +67,17 @@ import { GUARDED_FIELDS, changeLines, hoursLeft, type ProposalChanges } from '@/
 import Toast, { type ToastData } from '@/components/Toast';
 import ConnectionBanner from '@/components/ConnectionBanner';
 import EmptyState from '@/components/EmptyState';
+import NextDoctorCard from '@/components/NextDoctorCard';
+import LiveStrip from '@/components/LiveStrip';
+import BottomNav, { type MainTab } from '@/components/BottomNav';
+import ProgressRing from '@/components/ProgressRing';
+import RouteMap, { type MapStop } from '@/components/RouteMap';
+import MeTab from '@/components/MeTab';
+import { parseLatLng } from '@/lib/coords';
+import { specialtyCode as specCodeOf } from '@/utils';
 import NotificationsSheet, { type ApprovalItem, type NoticeItem } from '@/components/NotificationsSheet';
+import CicloSheet from '@/components/CicloSheet';
+import IASheet from '@/components/IASheet';
 import { getFlag, setFlag } from '@/lib/repFlags';
 import { shouldSignOutOnReopen } from '@/lib/auth';
 import NewPasswordScreen from '@/components/NewPasswordScreen';
@@ -1820,6 +1830,21 @@ export default function HomePage() {
 
   /* "Tudo enviado": aparece por alguns segundos quando a fila offline esvazia */
   const [syncedFlash, setSyncedFlash] = useState(false);
+
+  // Botão "voltar ao topo" aparece depois de rolar a lista
+  const [showTop, setShowTop] = useState(false);
+  // Telas extra: IA e Ciclo
+  const [showIA, setShowIA] = useState(false);
+  const [showCiclo, setShowCiclo] = useState(false);
+  // Abas da barra de baixo e filtro da aba Médicos
+  const [mainTab, setMainTab] = useState<MainTab>('hoje');
+  const [medFilter, setMedFilter] = useState<'todos' | 'falta' | 'novos'>('todos');
+  const [medLimit, setMedLimit] = useState(60);
+  useEffect(() => {
+    const onScroll = () => setShowTop(window.scrollY > 700);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
   const prevPending = useRef(0);
   useEffect(() => {
     if (prevPending.current > 0 && offline.pending === 0 && offline.online) {
@@ -2078,277 +2103,296 @@ export default function HomePage() {
     );
   }
 
+  const todayCode = getTodayDayCode();
+  // Card "Próximo": onde eu já estou (marquei Rep. no consultório) ou o primeiro da rota de hoje
+  const heroAllowed = routeDay === todayCode && selectedTab !== 'novos' && !isCategoryMode && searchQuery.trim() === '';
+  const myOfficeDoc = heroAllowed
+    ? feed.top.find((d) => (liveStatusMap[d.id] || []).some((st) => st.status_type === 'representante_no_consultorio' && st.created_by === sessionUserId)) ?? null
+    : null;
+  const heroDoc = heroAllowed ? myOfficeDoc ?? routeList[0] ?? null : null;
+  const routeRest = heroDoc && !myOfficeDoc ? routeList.slice(1) : routeList;
+  const heroNav = heroDoc ? navigationUrl(heroDoc) : null;
+  const agoOf = (iso: string | undefined): string => {
+    if (!iso) return '';
+    const min = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60000));
+    return min < 1 ? 'agora' : min < 60 ? `há ${min} min` : `há ${Math.floor(min / 60)} h`;
+  };
+  const liveGroups = attendanceGroups.map((g) => ({
+    type: g.type,
+    title: STATUS_META[g.type].label,
+    docs: g.docs.map((d) => ({
+      id: d.id,
+      name: d.descricao,
+      place: [d.complemento, d.cidade].filter(Boolean).join(' · '),
+      ago: agoOf((liveStatusMap[d.id] || []).find((st) => st.status_type === g.type)?.created_at),
+    })),
+  }));
+  const dayPct = sortedDoctors.length > 0 ? Math.min(100, Math.round((visitedList.length / sortedDoctors.length) * 100)) : 0;
+  const dayDone = sortedDoctors.length > 0 && visitedList.length >= sortedDoctors.length;
+  const cityLabel =
+    selectedCities.length === 1
+      ? `${cityOptions.find((o) => o.value === selectedCities[0])?.label ?? selectedCities[0]} · `
+      : selectedCities.length > 1
+        ? `${selectedCities.length} cidades · `
+        : '';
+
+  const goTab = (t: MainTab) => {
+    if (t !== 'medicos') {
+      setSearchQuery('');
+      setSearchScope('tudo');
+    }
+    setMainTab(t);
+    window.scrollTo({ top: 0 });
+  };
+  const wkCities = activeWeek ? weekCityList(activeWeek).map((k) => cityLabelOf(k)) : [];
+  const hojeTitle =
+    routeDay !== todayCode
+      ? `Rota de ${DAY_LONG[routeDay] ?? 'outro dia'}`
+      : selectedCities.length === 1
+        ? cityLabelOf(selectedCities[0])
+        : wkCities.length === 1
+          ? wkCities[0]
+          : 'Rota de hoje';
+  const heroCard = heroDoc ? (
+    <NextDoctorCard
+      doc={heroDoc}
+      expected={feed.expected.get(heroDoc.id) ?? null}
+      inOffice={Boolean(myOfficeDoc)}
+      onGo={heroNav ? () => openExternal(heroNav) : null}
+      onOpen={() => openSheet(heroDoc.id)}
+      onArrive={() =>
+        myOfficeDoc ? void clearDoctorStatus(heroDoc.id, 'representante_no_consultorio') : void setDoctorStatus(heroDoc.id, 'representante_no_consultorio')
+      }
+      onVisit={() => toggleVisited(heroDoc.id)}
+    />
+  ) : null;
+
+  // Mapa: visitados de hoje (verde) + quem falta, na ordem da rota. Só entra quem tem coordenada no GPS.
+  const mapTodo = myOfficeDoc ? [myOfficeDoc, ...routeList] : routeList;
+  const mapTotal = visitedList.length + mapTodo.length;
+  const mapStops: MapStop[] = [
+    ...visitedList.map((d) => ({ d, state: 'done' as const, n: undefined as number | undefined })),
+    ...mapTodo.map((d, i) => ({ d, state: i === 0 ? ('next' as const) : ('todo' as const), n: i + 1 })),
+  ].flatMap(({ d, state, n }) => {
+    const c = parseLatLng(d.map_link);
+    return c ? [{ id: d.id, name: d.descricao, lat: c.lat, lng: c.lng, state, n }] : [];
+  });
+
+  // Médicos: a base inteira do painel, com busca e filtro
+  const medBase = searchQuery.trim().length >= 2 ? suggestions.map((x) => x.doc) : doctorsWithWeeks;
+  const medList = medBase.filter((d) => (medFilter === 'falta' ? !myVisits.has(d.id) : medFilter === 'novos' ? isNewDoctor(d) : true));
+
+  // Eu: números da semana e do ciclo (a partir das visitas deste rep)
+  const weekStartMs = new Date(`${mondayOf()}T00:00:00`).getTime();
+  const weekVisitList = [...myVisits.entries()].filter(([, at]) => new Date(at).getTime() >= weekStartMs);
+  const perDay = [1, 2, 3, 4, 5].map((dow) => weekVisitList.filter(([, at]) => new Date(at).getDay() === dow).length);
+  const todayDow = new Date(now).getDay();
+  const daysSoFar = Math.min(5, Math.max(1, todayDow === 0 ? 5 : todayDow));
+  const panelIds = new Set(panelDoctors.map((d) => d.id));
+  const cycleDone = [...myVisits.keys()].filter((id) => panelIds.has(id)).length;
+  const weekCitiesVisited = new Set(weekVisitList.map(([id]) => cityKey(doctors.find((d) => d.id === id)?.cidade)).filter(Boolean)).size;
+
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-100">
       {/* Cabeçalho: título, busca, filtros recolhidos e dias */}
-      <header className="sticky top-0 z-20 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 px-4 pb-3 flex flex-col gap-3" style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
-        <div className="flex items-center gap-2">
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <button
-              type="button"
-              data-tour="week"
-              aria-label="Trocar semana de trabalho"
-              onClick={() => {
-                setWeekAuto(false);
-                setWeekPrompt(true);
-              }}
-              className="inline-flex items-center gap-1 self-start truncate border-0 bg-transparent p-0 text-xs font-medium text-slate-400 hover:text-slate-200"
-            >
-              {todayLabel(now)} ·{' '}
-              <span className="font-semibold text-blue-400">{activeWeek ? `${activeWeek}ª semana` : 'Escolher semana'}</span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400" aria-hidden="true">
-                <path d="M6 9l6 6 6-6" />
-              </svg>
-            </button>
-            <h1 className="m-0 flex items-center gap-2 text-xl font-bold tracking-tight text-white">
-              Rota Propagandista
-              <span
-                title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 8 s)'}
-                className={`size-2 rounded-full ${realtimeOn ? 'bg-emerald-500' : 'bg-slate-600'}`}
-              />
-            </h1>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowGuide(true)}
-            data-tour="help"
-            aria-label="Guia de status e cores"
-            className="flex size-11 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-base font-bold text-slate-300 hover:text-white"
-          >
-            ?
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowNotices(true)}
-            data-tour="bell"
-            aria-label={unreadNotices > 0 ? `Avisos dos colegas, ${unreadNotices} não lidos` : 'Avisos dos colegas'}
-            className="relative flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-100"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-              <path d="M10 21a2 2 0 0 0 4 0" />
-            </svg>
-            {unreadNotices > 0 && <span className="absolute right-2.5 top-2 size-2 rounded-full bg-blue-600" aria-hidden="true" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowProfile(true)}
-            data-tour="profile"
-            aria-label="Meu perfil"
-            className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full border border-blue-800 bg-blue-950 p-0 text-[15px] font-bold text-blue-600"
-          >
-            {profile?.avatar_url ? <RepAvatar name={actorName} src={profile.avatar_url} size={42} /> : initialsOf(actorName)}
-          </button>
-        </div>
-
-        {/* Dias (clicar de novo no dia ativo limpa o filtro) */}
-        <nav data-tour="days" aria-label="Dias da semana" className="grid grid-cols-5 gap-1.5">
-          {TABS_NAVEGACAO.filter((tab) => tab.value !== 'novos').map((tab) => {
-            const on = selectedTab === tab.value;
-            return (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => setSelectedTab(on ? null : tab.value)}
-                aria-pressed={on}
-                className={`h-11 rounded-xl text-[13px] ${
-                  on ? 'border border-blue-600 bg-blue-600 font-bold text-white' : 'border border-slate-800 bg-slate-900 font-semibold text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Busca + botão de filtros */}
-        <div className="flex gap-2">
-          <label data-tour="search" className="flex-1 min-w-0 flex items-center gap-2 h-11 px-3.5 rounded-xl border border-slate-800 bg-slate-900">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-slate-400" aria-hidden="true">
-              <circle cx="11" cy="11" r="7" />
-              <path d="m20 20-3.5-3.5" />
-            </svg>
-            <input
-              type="search"
-              aria-label="Buscar"
-              placeholder="Médico, especialidade, CRM..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setSearchFocus(true)}
-              onBlur={() => setTimeout(() => setSearchFocus(false), 200)}
-              className="flex-1 min-w-0 border-0 bg-transparent text-base sm:text-sm text-slate-100 outline-hidden placeholder:text-slate-500 [&::-webkit-search-cancel-button]:hidden"
-            />
-            {searchQuery && (
+      <header className={`sticky top-0 z-20 bg-slate-950/90 backdrop-blur-md px-4 flex flex-col gap-3 ${mainTab === 'eu' ? 'pb-0' : 'border-b border-slate-800/80 pb-3'}`} style={{ paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
+        {mainTab === 'hoje' && (
+          <>
+            <div className="flex items-center gap-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <button
+                  type="button"
+                  data-tour="week"
+                  aria-label="Trocar semana de trabalho"
+                  onClick={() => {
+                    setWeekAuto(false);
+                    setWeekPrompt(true);
+                  }}
+                  className="inline-flex min-h-6 items-center gap-1 self-start truncate border-0 bg-transparent p-0 text-xs font-medium text-slate-400 hover:text-slate-200"
+                >
+                  {todayLabel(now)} ·{' '}
+                  <span className="font-semibold text-blue-400">{activeWeek ? `${activeWeek}ª semana` : 'Escolher semana'}</span>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400" aria-hidden="true">
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
+                <h1 className="m-0 flex items-center gap-2 text-[26px] font-extrabold leading-tight tracking-tight text-white">
+                  <span className="truncate">{hojeTitle}</span>
+                  <span
+                    title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 8 s)'}
+                    className={`size-2 shrink-0 rounded-full ${realtimeOn ? 'bg-emerald-500' : 'bg-slate-600'}`}
+                  />
+                </h1>
+              </div>
               <button
                 type="button"
-                aria-label="Limpar busca"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setSearchQuery('');
-                  setSearchScope('tudo');
-                }}
-                className="size-6 shrink-0 rounded-full border-0 bg-slate-700 text-slate-200 flex items-center justify-center"
+                onClick={() => setShowIA(true)}
+                aria-label="Assistente da rota"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-300 hover:text-white"
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-                  <path d="M6 6l12 12M18 6L6 18" />
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+                  <path d="M19 16v4M17 18h4" />
                 </svg>
               </button>
-            )}
-          </label>
-          <button
-            type="button"
-            onClick={() => setShowStatusOverview(true)}
-            aria-label="Status geral: médicos marcados pelos representantes"
-            title="Status geral"
-            className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-100"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M4 6h2M4 12h2M4 18h2M9 6h11M9 12h11M9 18h11" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              filtersSnap.current = { cities: selectedCities, week: selectedWeek, cat: selectedCategory, turno: turnoFilter, specs: selectedSpecs, sort: sortMode };
-              setShowFilters((v) => !v);
-            }}
-            data-tour="filters"
-            aria-label={activeFilterCount > 0 ? `Filtros, ${activeFilterCount} ativos` : 'Filtros'}
-            aria-expanded={showFilters}
-            className={`relative flex size-11 shrink-0 items-center justify-center rounded-xl border bg-slate-900 text-slate-100 ${
-              showFilters || activeFilterCount > 0 ? 'border-blue-600' : 'border-slate-800'
-            }`}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M4 6h16M7 12h10M10 18h4" />
-            </svg>
-            {activeFilterCount > 0 && (
-              <span className="absolute -right-1 -top-1 flex min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold leading-[18px] text-white">
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowAddForm((p) => !p)}
-            data-tour="add"
-            aria-label="Novo médico"
-            className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-blue-600 text-white hover:bg-blue-500"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Onde procurar (aparece enquanto busca) */}
-        {(searchFocus || searchQuery.trim() !== '') && (
-          <div className="flex gap-1.5 overflow-x-auto no-scrollbar" role="group" aria-label="Onde procurar">
-            {SEARCH_SCOPES.map((sc) => (
               <button
-                key={sc.value}
                 type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setSearchScope(sc.value)}
-                aria-pressed={searchScope === sc.value}
-                className={`h-8 px-3 rounded-full text-xs whitespace-nowrap shrink-0 ${
-                  searchScope === sc.value
-                    ? 'border-0 bg-slate-100 text-slate-950 font-semibold'
-                    : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200'
+                onClick={() => setShowGuide(true)}
+                data-tour="help"
+                aria-label="Guia de status e cores"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-base font-bold text-slate-300 hover:text-white"
+              >
+                ?
+              </button>
+              <ProgressRing value={visitedList.length} total={sortedDoctors.length} size={56} />
+            </div>
+
+            <nav data-tour="days" aria-label="Dias da semana" className="grid grid-cols-5 gap-1.5">
+              {TABS_NAVEGACAO.filter((tab) => tab.value !== 'novos').map((tab) => {
+                const on = selectedTab === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    onClick={() => setSelectedTab(on ? null : tab.value)}
+                    aria-pressed={on}
+                    aria-label={tab.value === todayCode ? `${tab.label}, hoje` : undefined}
+                    className={`relative h-11 rounded-[14px] text-[13px] ${
+                      on ? 'border border-blue-600 bg-blue-600 font-bold text-white' : 'border border-slate-800 bg-slate-900 font-semibold text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {tab.label}
+                    {tab.value === todayCode && <span className="absolute bottom-1.5 left-1/2 size-1 -translate-x-1/2 rounded-full bg-current" aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-tour="search"
+                onClick={() => goTab('medicos')}
+                className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-2xl border border-slate-800 bg-slate-900 px-3.5 text-left text-[15px] text-slate-500"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-slate-400" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.5-3.5" />
+                </svg>
+                <span className="truncate">Médico, especialidade, CRM…</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  filtersSnap.current = { cities: selectedCities, week: selectedWeek, cat: selectedCategory, turno: turnoFilter, specs: selectedSpecs, sort: sortMode };
+                  setShowFilters((v) => !v);
+                }}
+                data-tour="filters"
+                aria-label={activeFilterCount > 0 ? `Filtros, ${activeFilterCount} ativos` : 'Filtros'}
+                aria-expanded={showFilters}
+                className={`relative flex size-12 shrink-0 items-center justify-center rounded-2xl border bg-slate-900 text-slate-100 ${
+                  showFilters || activeFilterCount > 0 ? 'border-blue-600' : 'border-slate-800'
                 }`}
               >
-                {sc.label}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                  <path d="M4 6h16M7 12h10M10 18h4" />
+                </svg>
+                {activeFilterCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex min-w-[18px] items-center justify-center rounded-full bg-blue-600 px-1 text-[10px] font-bold leading-[18px] text-white">
+                    {activeFilterCount}
+                  </span>
+                )}
               </button>
-            ))}
-          </div>
+            </div>
+          </>
         )}
 
-        {/* Sugestões: toque no nome e abre a ficha do médico */}
-        {searchFocus && suggestions.length > 0 && (
-          <div
-            role="listbox"
-            aria-label="Médicos encontrados"
-            className="flex max-h-[38dvh] flex-col overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900"
-          >
-            <span className="px-3.5 pt-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-400">
-              {suggestions.length} encontrado{suggestions.length !== 1 ? 's' : ''}
+        {mainTab === 'mapa' && (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-xs font-medium text-slate-400">
+              {todayLabel(now)} · {mapStops.length} de {mapTotal} com GPS
             </span>
-            {suggestions.slice(0, 8).map(({ doc, hint }) => (
-              <button
-                key={doc.id}
-                type="button"
-                role="option"
-                aria-selected="false"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setSearchFocus(false);
-                  (document.activeElement as HTMLElement | null)?.blur?.();
-                  openSheet(doc.id);
-                }}
-                className="flex min-h-12 w-full flex-col items-start justify-center gap-0.5 border-0 border-t border-slate-800 bg-transparent px-3.5 py-2 text-left first:border-t-0 hover:bg-slate-800 active:bg-slate-800"
-              >
-                <span className="w-full truncate text-sm font-semibold uppercase text-white">{doc.descricao}</span>
-                <span className="w-full truncate text-xs uppercase text-slate-400">
-                  {[doc.especialidade, doc.complemento, doc.cidade].filter(Boolean).join(' · ')}
-                  {hint ? ` · ${hint}` : ''}
-                </span>
-              </button>
-            ))}
-            {suggestions.length > 8 && (
-              <span className="px-3.5 py-2 text-xs text-slate-500">
-                Mais {suggestions.length - 8} na lista abaixo. Continue digitando para afinar.
-              </span>
-            )}
+            <h1 className="m-0 text-[26px] font-extrabold leading-tight tracking-tight text-white">Mapa da rota</h1>
           </div>
         )}
 
-        {/* Turno + quantos médicos + quantos já visitados */}
-        <div className="flex items-center gap-2">
-          <div role="group" aria-label="Turno" className="flex rounded-[10px] border border-slate-800 bg-slate-900 p-[3px]">
-            {FILTROS_TURNO.map((t) => {
-              const on = turnoFilter === t.value;
-              return (
+        {mainTab === 'medicos' && (
+          <>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => goTab('hoje')}
+                aria-label="Voltar para Hoje"
+                className="flex size-11 shrink-0 items-center justify-center rounded-[14px] border border-slate-800 bg-slate-900 text-slate-100"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M15 6l-6 6 6 6" />
+                </svg>
+              </button>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="text-xs font-medium text-slate-400">Sua base · {panelDoctors.length} médicos</span>
+                <h1 className="m-0 text-[26px] font-extrabold leading-tight tracking-tight text-white">Médicos</h1>
+              </div>
+            </div>
+            <label className="flex h-12 min-w-0 items-center gap-2.5 rounded-2xl border border-slate-800 bg-slate-900 px-3.5 focus-within:border-blue-600">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-slate-400" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                type="search"
+                autoFocus
+                aria-label="Buscar médico"
+                placeholder="Nome, especialidade, CRM, bairro…"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setMedLimit(60);
+                }}
+                className="min-w-0 flex-1 border-0 bg-transparent text-base text-slate-100 outline-hidden placeholder:text-slate-500 [&::-webkit-search-cancel-button]:hidden"
+              />
+              {searchQuery && (
                 <button
-                  key={t.value}
                   type="button"
-                  aria-pressed={on}
-                  onClick={() => setTurnoFilter(on ? null : t.value)}
-                  className={`h-[38px] rounded-lg border-0 px-3.5 text-[13px] font-semibold ${on ? 'bg-slate-700 text-slate-100' : 'bg-transparent text-slate-400'}`}
+                  aria-label="Limpar busca"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchScope('tudo');
+                  }}
+                  className="-mr-2 flex size-11 shrink-0 items-center justify-center border-0 bg-transparent text-slate-300"
                 >
-                  {t.label}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
                 </button>
-              );
-            })}
-          </div>
-          <span className="min-w-0 truncate text-xs text-slate-400">
-            {selectedCities.length === 1
-              ? `${cityOptions.find((o) => o.value === selectedCities[0])?.label ?? selectedCities[0]} · `
-              : selectedCities.length > 1
-                ? `${selectedCities.length} cidades · `
-                : ''}
-            {sortedDoctors.length} {sortedDoctors.length === 1 ? 'médico' : 'médicos'}
-          </span>
-          <span className="ml-auto shrink-0 text-xs font-semibold tabular-nums text-blue-400" aria-label={`${visitedList.length} visitados de ${sortedDoctors.length}`}>
-            {visitedList.length}/{sortedDoctors.length}
-          </span>
-        </div>
-
-        {/* Novos médicos cadastrados (logo abaixo dos dias) */}
-        <div className="flex">
-          <button
-            type="button"
-            onClick={() => setSelectedTab(selectedTab === 'novos' ? null : 'novos')}
-            aria-pressed={selectedTab === 'novos'}
-            className={`h-9 px-4 rounded-full text-[13px] whitespace-nowrap flex items-center gap-1.5 ${
-              selectedTab === 'novos' ? 'border-0 bg-slate-100 text-slate-950 font-semibold' : 'border border-slate-800 bg-transparent text-slate-400 hover:text-slate-200 font-medium'
-            }`}
-          >
-            NOVOS MÉDICOS CADASTRADOS
-            {newCount > 0 && (
-              <span className="rounded-full bg-green-600 px-1.5 text-[10px] text-white">{newCount}</span>
-            )}
-          </button>
-        </div>
+              )}
+            </label>
+            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar" role="group" aria-label="Filtrar a lista">
+              {(
+                [
+                  ['todos', 'Todos'],
+                  ['falta', 'Falta visitar no ciclo'],
+                  ['novos', newCount > 0 ? `Novos · ${newCount}` : 'Novos'],
+                ] as const
+              ).map(([k, l]) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-pressed={medFilter === k}
+                  onClick={() => {
+                    setMedFilter(k);
+                    setMedLimit(60);
+                  }}
+                  className={`h-11 shrink-0 whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold ${
+                    medFilter === k ? 'border-blue-600 bg-blue-900 text-blue-200' : 'border-slate-800 bg-transparent text-slate-400'
+                  }`}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
 
         {/* Filtros (folha, como no desenho) */}
         {showFilters && (
@@ -2583,7 +2627,7 @@ export default function HomePage() {
       )}
 
       {/* Conteúdo */}
-      <main className="px-4 pt-3 pb-10 flex flex-col gap-2.5">
+      <main className="px-4 pt-3 pb-32 flex flex-col gap-2.5">
         {showAddForm && (
           <BottomSheet title="Novo médico" onClose={() => setShowAddForm(false)} dismissOnBackdrop={false}>
           <AddDoctorForm
@@ -2600,11 +2644,25 @@ export default function HomePage() {
         )}
 
         {/* Cards em 3 blocos */}
+        {mainTab === 'hoje' && (
         <FeedErrorBoundary resetKey={resumeTick}>
-        {sortedDoctors.length === 0 && !loading ? (
+        {sortedDoctors.length === 0 && loading ? (
+          <div role="status" aria-label="Carregando médicos" className="flex flex-col gap-2.5">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex animate-pulse items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 px-3.5 py-3">
+                <span className="h-11 w-[30px] shrink-0 rounded-lg bg-slate-800" />
+                <span className="flex min-w-0 flex-1 flex-col gap-2">
+                  <span className="h-3.5 w-3/4 rounded-full bg-slate-800" />
+                  <span className="h-3 w-1/2 rounded-full bg-slate-800" />
+                </span>
+                <span className="size-11 shrink-0 rounded-xl bg-slate-800" />
+              </div>
+            ))}
+          </div>
+        ) : sortedDoctors.length === 0 ? (
           searchQuery.trim() ? (
             <EmptyState
-              icon="🔎"
+              icon="busca"
               title={`Nenhum resultado para “${searchQuery.trim()}”`}
               text="Confira a grafia ou tente outro termo (nome, CRM, bairro, telefone)."
               action={{
@@ -2617,7 +2675,7 @@ export default function HomePage() {
             />
           ) : panelDoctors.length === 0 ? (
             <EmptyState
-              icon="🩺"
+              icon="medico"
               title="Seu painel está vazio"
               text={
                 doctors.length > 0
@@ -2628,7 +2686,7 @@ export default function HomePage() {
             />
           ) : (
             <EmptyState
-              icon="📅"
+              icon="agenda"
               title={selectedTab && selectedTab !== 'novos' ? `Nenhum médico na ${dayLongLabel}` : 'Nenhum médico para hoje'}
               text={activeFilterCount > 0 ? 'Há filtros ligados. Limpe os filtros para ver mais médicos.' : 'Veja outro dia da semana.'}
               action={activeFilterCount > 0 ? { label: 'Limpar filtros', onClick: clearFilters } : undefined}
@@ -2636,41 +2694,32 @@ export default function HomePage() {
           )
         ) : (
           <>
-            {topDoctors.length > 0 && (
-              <SectionTitle>Acontecendo agora</SectionTitle>
-            )}
-            {attendanceGroups.map((g) => {
-              // Sempre recolhida: 2 cards + botão azul "Ver todos (N)" logo abaixo do último
-              const collapsible = g.docs.length > COLLAPSED_VISIBLE;
-              const open = collapsible && Boolean(openGroups[g.type]);
-              return (
-                <div key={g.type} className="flex flex-col gap-2.5">
-                  {(open ? g.docs : g.docs.slice(0, COLLAPSED_VISIBLE)).map((doc) => renderCard(doc, 'top'))}
-                  {collapsible && (
-                    <button
-                      type="button"
-                      onClick={() => toggleGroup(g.type)}
-                      aria-expanded={open}
-                      className="h-11 w-full rounded-[14px] border border-blue-400/55 bg-blue-500/15 text-sm font-bold text-blue-300 hover:bg-blue-500/25"
-                    >
-                      {open ? 'Mostrar menos' : `Ver todos (${g.docs.length})`}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+            <LiveStrip groups={liveGroups} onOpenDoctor={openSheet} />
 
-            {routeList.length > 0 && (
+            {heroDoc && (
+              <div
+                data-drag-id={heroDoc.id}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  dropOn(heroDoc.id);
+                }}
+              >
+                {heroCard}
+              </div>
+            )}
+
+            {routeRest.length > 0 && (
               <CollapsibleTitle
-                title="Roteiro padrão"
+                title={heroDoc && !myOfficeDoc ? 'Depois' : 'Roteiro padrão'}
                 variant="route"
-                count={routeList.length}
+                count={routeRest.length}
                 open={routeShown}
                 onToggle={toggleRouteClosed}
                 hint={routeShown ? 'Recolher' : 'Expandir'}
               />
             )}
-            {routeShown && routeList.map((doc) => renderCard(doc, 'middle'))}
+            {routeShown && routeRest.map((doc) => renderCard(doc, 'middle'))}
 
             {visitedList.length > 0 && (
               <CollapsibleTitle
@@ -2710,6 +2759,94 @@ export default function HomePage() {
           </>
         )}
         </FeedErrorBoundary>
+        )}
+
+        {mainTab === 'mapa' && (
+          <>
+            <RouteMap stops={mapStops} onOpen={openSheet} />
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+              <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-blue-600" aria-hidden="true" /> Próximo</span>
+              <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full border-2 border-blue-600" aria-hidden="true" /> Falta</span>
+              <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-500" aria-hidden="true" /> Visitado</span>
+            </div>
+            {mapTotal > mapStops.length && (
+              <p className="m-0 text-[13px] leading-snug text-slate-400">
+                {mapTotal - mapStops.length} {mapTotal - mapStops.length === 1 ? 'médico de hoje não tem' : 'médicos de hoje não têm'} GPS e não {mapTotal - mapStops.length === 1 ? 'aparece' : 'aparecem'} no mapa. Grave o GPS na ficha, em Editar.
+              </p>
+            )}
+            {heroCard}
+          </>
+        )}
+
+        {mainTab === 'medicos' && (
+          <div className="flex flex-col">
+            {medList.length === 0 ? (
+              <EmptyState
+                icon="busca"
+                title={searchQuery.trim() ? `Nenhum resultado para “${searchQuery.trim()}”` : 'Nenhum médico neste filtro'}
+                text={searchQuery.trim() ? 'Confira a grafia ou tente outro termo (nome, CRM, bairro, telefone).' : 'Troque o filtro ou cadastre um médico no botão +.'}
+                action={{ label: 'Ver todos', onClick: () => { setSearchQuery(''); setMedFilter('todos'); } }}
+              />
+            ) : (
+              medList.slice(0, medLimit).map((d) => {
+                const wk = normalizeCycleWeeks(d.cycle_weeks)[0];
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => openSheet(d.id)}
+                    className="flex min-h-[64px] w-full items-center gap-3 border-0 border-b border-slate-800 bg-transparent py-2 text-left active:bg-slate-900"
+                  >
+                    <span className="grid size-[42px] shrink-0 place-items-center rounded-[14px] bg-blue-950 text-[13px] font-bold text-blue-600" aria-hidden="true">
+                      {initialsOf(d.descricao).slice(0, 2)}
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="truncate text-sm font-semibold uppercase text-white">{d.descricao}</span>
+                      <span className="truncate text-xs uppercase text-slate-400">{[specCodeOf(d.especialidade), d.complemento, d.cidade].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    {myVisits.has(d.id) ? (
+                      <span className="shrink-0 rounded-lg bg-emerald-500/15 px-2 py-1 text-[11px] font-bold text-emerald-400">Visitado</span>
+                    ) : isNewDoctor(d) ? (
+                      <span className="shrink-0 rounded-lg bg-green-500/15 px-2 py-1 text-[11px] font-bold text-green-400">Novo</span>
+                    ) : wk ? (
+                      <span className="shrink-0 rounded-lg bg-blue-950 px-2 py-1 text-[11px] font-bold text-blue-300">{wk}ª sem</span>
+                    ) : null}
+                  </button>
+                );
+              })
+            )}
+            {medList.length > medLimit && (
+              <button type="button" onClick={() => setMedLimit((l) => l + 60)} className="mt-3 h-[52px] rounded-[14px] border border-slate-700 bg-transparent text-base font-semibold text-slate-100">
+                Mostrar mais ({medList.length - medLimit})
+              </button>
+            )}
+          </div>
+        )}
+
+        {mainTab === 'eu' && (
+          <MeTab
+            name={actorName}
+            avatar={profile?.avatar_url ? <RepAvatar name={actorName} src={profile.avatar_url} size={56} /> : initialsOf(actorName).slice(0, 2)}
+            todayDone={visitedList.length}
+            todayTotal={sortedDoctors.length}
+            cycleDone={cycleDone}
+            cycleTotal={panelDoctors.length}
+            weekLabel={activeWeek ? `${activeWeek}ª semana` : null}
+            weekVisits={weekVisitList.length}
+            perDayAvg={(weekVisitList.length / daysSoFar).toFixed(1).replace('.', ',')}
+            cities={weekCitiesVisited}
+            perDay={perDay}
+            todayIndex={todayDow - 1}
+            onWeek={() => {
+              setWeekAuto(false);
+              setWeekPrompt(true);
+            }}
+            onCiclo={() => setShowCiclo(true)}
+            onStatus={() => setShowStatusOverview(true)}
+            onGuide={() => setShowGuide(true)}
+            onProfile={() => setShowProfile(true)}
+          />
+        )}
       </main>
 
 
@@ -2821,6 +2958,34 @@ export default function HomePage() {
         />
       )}
 
+      {/* Barra de baixo: Hoje, Status geral, Novo médico, Avisos e Perfil */}
+      <BottomNav
+        tab={mainTab}
+        onTab={(t) => {
+          if (t === 'hoje' && mainTab === 'hoje') setSelectedTab(initialTab());
+          goTab(t);
+        }}
+        onAdd={() => setShowAddForm(true)}
+        onNotices={() => setShowNotices(true)}
+        unread={unreadNotices}
+        avatar={profile?.avatar_url ? <RepAvatar name={actorName} src={profile.avatar_url} size={26} /> : initialsOf(actorName).slice(0, 2)}
+      />
+
+      {/* Voltar ao topo da lista */}
+      {showTop && !toast && (
+        <button
+          type="button"
+          aria-label="Voltar ao topo"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed right-4 z-10 flex size-12 items-center justify-center rounded-full border border-slate-700 bg-slate-900 text-slate-100 shadow-lg shadow-black/40 animate-[fade-in_.18s_ease-out]"
+          style={{ bottom: 'calc(max(env(safe-area-inset-bottom), 12px) + 80px)' }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
+        </button>
+      )}
+
       {/* Aviso com "Desfazer" */}
       {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
 
@@ -2891,6 +3056,22 @@ export default function HomePage() {
         >
           {ghost.name}
         </div>
+      )}
+
+      {showCiclo && (
+        <CicloSheet
+          doctors={panelDoctors}
+          onClose={() => setShowCiclo(false)}
+          onOpen={openSheet}
+        />
+      )}
+
+      {showIA && (
+        <IASheet
+          repName={actorName}
+          city={hojeTitle}
+          onClose={() => setShowIA(false)}
+        />
       )}
     </div>
   );

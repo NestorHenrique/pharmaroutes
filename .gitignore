@@ -46,3 +46,6 @@ Senha Supabase.txt
 
 # segredos locais
 Senha*.txt
+
+# Superdesign: arquivos temporarios
+.superdesign/tmp/

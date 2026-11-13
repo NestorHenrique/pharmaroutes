@@ -247,6 +247,16 @@
     cursor: pointer;
   }
 
+  /* Resposta ao toque: o botão afunda de leve */
+  @media (prefers-reduced-motion: no-preference) {
+    button {
+      transition: transform 0.1s ease;
+    }
+    button:not(:disabled):active {
+      transform: scale(0.97);
+    }
+  }
+
   /* Rede de segurança: todo elemento focável por teclado mostra um anel visível. */
   :focus-visible {
     outline: 2px solid var(--accent);
@@ -301,6 +311,10 @@
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+  .animate-ping,
+  .animate-pulse {
+    animation: none !important;
+  }
 }
 
 /* Ficha e painéis que sobem de baixo para cima */
@@ -320,4 +334,17 @@
   textarea {
     font-size: 16px !important;
   }
+}
+
+/* Faixas que rolam de lado sem mostrar a barra */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mapa: no tema escuro as ruas ficam escuras (as imagens do mapa são claras) */
+:root:not([data-theme="marfim"]) .map-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
 }
