@@ -49,7 +49,7 @@ Cor nunca é a única pista: todo status tem texto ou ícone junto.
 - Nomes de médico em **MAIÚSCULAS**.
 
 ## Abas do app (modelo copiloto)
-O app tem abas de verdade, trocadas pela barra flutuante de baixo (`components/BottomNav.tsx`, 68px, cantos 26px, vidro fosco): **Hoje**, **Mapa**, botão violeta **+** (Novo médico), **Avisos** (abre a tela de avisos) e **Eu**. A aba ativa fica com fundo `bg-blue-950` e texto violeta. Conteúdo com `pb-32`; toast e "Voltar ao topo" ficam acima da barra.
+O app tem abas de verdade, trocadas pela barra **fixa encostada embaixo** (`components/BottomNav.tsx`: de ponta a ponta, 64px + área do gesto do iPhone/Android, `bg-slate-900` com borda de cima; não flutua). Toda folha sem rodapé reserva a área do gesto embaixo (`BottomSheet`), para a última linha não ficar escondida: **Hoje**, **Mapa**, botão violeta **+** (Novo médico), **Avisos** (abre a tela de avisos) e **Eu**. A aba ativa fica com fundo `bg-blue-950` e texto violeta. Conteúdo com `pb-32`; toast e "Voltar ao topo" ficam acima da barra.
 
 Título de aba: linha pequena de contexto (12px, `text-slate-400`) e embaixo o título em **26px, extrabold**.
 
@@ -76,7 +76,7 @@ Estados: carregando sem cache = cinco cards em esqueleto; vazio = `EmptyState` c
 Folha em **grade de 2 colunas** (`components/StatusSheet.tsx`): cada status é um bloco de 72px, raio 18px, ponto colorido no canto e o nome embaixo. Rep. no consultório (azul), Aguardando médico (amarelo) e Último paciente (vermelho) têm fundo tingido; Finalizou, Não veio hoje, Licença/Afastado e Férias/Viagem são tracejados e cinza; **Já visitei** é um bloco verde cheio. Marcado = borda de 2px, visto e quem marcou com a hora. Licença e Férias abrem "Volta quando?": Amanhã, próxima segunda, em 15 dias, em 30 dias ou "Escolher data". "Outro status" no card Próximo abre essa mesma folha; tocar no nome do médico abre a ficha.
 
 ## Padrões de tela
-**Folha que sobe de baixo** (filtros, novo médico, status, semana, cidades, retorno, editar): alça cinza no topo,
+**Folha que sobe de baixo** (filtros, novo médico, status, semana, cidades, retorno, editar): alça cinza no topo (**arrastar o topo para baixo fecha**; solta antes de 90px e ela volta), `hidden` esconde sem desmontar (ex.: Organizar rota atrás da ficha), `hideClose` tira o X visível (Organizar rota: fecha arrastando, tocando fora ou Esc; o X fica só para leitor de tela),
 cantos de cima `rounded-t-[24px]`, título, conteúdo, rodapé fixo com **Cancelar** (esquerda) e **Salvar** (direita).
 Use `components/BottomSheet.tsx` e `PickerSheet.tsx`.
 

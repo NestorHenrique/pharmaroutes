@@ -1964,8 +1964,9 @@ export default function HomePage() {
       const el = mapTabRef.current;
       if (el) {
         const top = el.getBoundingClientRect().top + window.scrollY;
-        // 128px = espaço da barra de baixo (pb-32 do main)
-        setMapTabH(Math.max(360, Math.floor(window.innerHeight - top - 128)));
+        // espaço da barra de baixo (fixa, com a área do gesto) + 8px de folga
+        const nav = document.querySelector('nav[aria-label="Menu principal"]')?.getBoundingClientRect().height ?? 100;
+        setMapTabH(Math.max(360, Math.floor(window.innerHeight - top - nav - 8)));
       }
       if (mapAreaRef.current) setMapAreaH(mapAreaRef.current.clientHeight);
     };
@@ -3331,10 +3332,10 @@ export default function HomePage() {
         <VisitedSheet dayLabel={visitedDayLabel} items={visitedDayItems} onClose={() => setShowVisited(false)} onOpen={openSheet} />
       )}
 
-      {/* A organização fica montada (escondida) enquanto a ficha está aberta: ao voltar, semana, dia, cidades e rolagem continuam iguais */}
+      {/* A organização fica montada (escondida pela prop hidden, já que a folha vai para o <body>) enquanto a ficha está aberta: ao voltar, semana, dia, cidades e rolagem continuam iguais */}
       {showCiclo && (
-        <div style={{ visibility: sheetDoc ? 'hidden' : undefined }} aria-hidden={sheetDoc ? true : undefined}>
         <CicloSheet
+          hidden={Boolean(sheetDoc)}
           doctors={panelDoctors}
           weeksByDoctor={weeksByDoctor}
           orderOf={(w) => routeOrder[cycleWeekKey(w as CycleWeek)] ?? []}
@@ -3355,7 +3356,6 @@ export default function HomePage() {
           onClose={() => setShowCiclo(false)}
           onOpen={openSheet}
         />
-        </div>
       )}
 
       {showIA && (

@@ -23,11 +23,15 @@ const svg = (d: ReactNode, w = 1.9) => (
 const item = 'mx-auto flex h-14 w-full max-w-[68px] flex-col items-center justify-center gap-0.5 rounded-[18px] border-0 text-[11px] font-semibold';
 const tone = (on: boolean) => (on ? 'bg-blue-950 text-blue-400' : 'bg-transparent text-slate-400');
 
-/** Barra flutuante embaixo: Hoje, Mapa, Novo médico, Avisos e Eu, tudo no alcance do polegar. */
+/** Barra fixa encostada embaixo (de ponta a ponta, acima da área do gesto do iPhone/Android): Hoje, Mapa, Novo médico, Avisos e Eu. */
 export default function BottomNav({ tab, onTab, onAdd, onNotices, unread, avatar }: BottomNavProps) {
   return (
-    <nav aria-label="Menu principal" className="pointer-events-none fixed inset-x-0 bottom-0 z-20 px-3" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
-      <div className="pointer-events-auto mx-auto grid h-[68px] max-w-md grid-cols-5 items-center rounded-[26px] border border-slate-800 bg-slate-900/90 px-1.5 shadow-2xl shadow-black/40 backdrop-blur-xl">
+    <nav
+      aria-label="Menu principal"
+      className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-800 bg-slate-900"
+      style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 6px)' }}
+    >
+      <div className="mx-auto grid h-[64px] max-w-md grid-cols-5 items-center px-1.5">
         <button type="button" onClick={() => onTab('hoje')} aria-current={tab === 'hoje' ? 'page' : undefined} className={`${item} ${tone(tab === 'hoje')}`}>
           {svg(<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />)}
           Hoje

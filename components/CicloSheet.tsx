@@ -27,6 +27,8 @@ interface CicloSheetProps {
   onRemoveWeek: (docId: string, from: number) => void;
   onClose: () => void;
   onOpen: (id: string) => void;
+  /** a ficha de um médico está aberta por cima: a organização fica escondida (sem perder semana, dia e rolagem) */
+  hidden?: boolean;
 }
 
 const DAYS = [
@@ -92,6 +94,7 @@ export default function CicloSheet({
   onKeepOnlyDay,
   onClose,
   onOpen,
+  hidden = false,
 }: CicloSheetProps) {
   const [week, setWeek] = useState<number>(1);
   const [day, setDay] = useState<DayCode>('seg');
@@ -242,7 +245,7 @@ export default function CicloSheet({
 
   return (
     <>
-      <BottomSheet title="Organizar rota do ciclo" onClose={onClose}>
+      <BottomSheet title="Organizar rota do ciclo" onClose={onClose} hidden={hidden} hideClose>
         {/* semanas */}
         <div className="-mx-4 flex shrink-0 gap-2 overflow-x-auto px-4 no-scrollbar pb-1">
           {CYCLE_WEEKS.map((w) => (
@@ -414,7 +417,7 @@ export default function CicloSheet({
       </BottomSheet>
 
       {moving && (
-        <BottomSheet title="Mover médico" onClose={() => setMoving(null)}>
+        <BottomSheet title="Mover médico" onClose={() => setMoving(null)} hidden={hidden}>
           <span className="-mt-2 truncate text-[13px] uppercase text-slate-400">{moving.descricao}</span>
           {otherDays(moving, day).length > 0 && (
             <button
