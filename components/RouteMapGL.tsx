@@ -40,7 +40,7 @@ function pinEl(s: MapStop, onOpen: (id: string) => void): HTMLElement {
  * Mapa da rota com mapa vetorial (MapLibre + MapTiler): arrasta, pinça e gira com os dedos, texto nítido em qualquer zoom.
  * Só é usado quando existe NEXT_PUBLIC_MAPTILER_KEY; sem a chave o app mostra o mapa simples.
  */
-export default function RouteMapGL({ stops, onOpen }: { stops: MapStop[]; onOpen: (id: string) => void }) {
+export default function RouteMapGL({ stops, onOpen, onFail }: { stops: MapStop[]; onOpen: (id: string) => void; onFail?: (reason: string) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
@@ -49,6 +49,8 @@ export default function RouteMapGL({ stops, onOpen }: { stops: MapStop[]; onOpen
   const [moved, setMoved] = useState(false);
   const stopsRef = useRef(stops);
   stopsRef.current = stops;
+  const onFailRef = useRef(onFail);
+  onFailRef.current = onFail;
 
   const fit = (animate: boolean) => {
     const map = mapRef.current;
@@ -62,14 +64,29 @@ export default function RouteMapGL({ stops, onOpen }: { stops: MapStop[]; onOpen
   // Cria o mapa uma vez
   useEffect(() => {
     if (!box.current) return;
-    const map = new maplibregl.Map({
-      container: box.current,
-      style: styleUrl(),
-      attributionControl: { compact: true },
-      dragRotate: false,
-      pitchWithRotate: false,
-      touchPitch: false,
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container: box.current,
+        style: styleUrl(),
+        attributionControl: { compact: true },
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+      });
+    } catch (err) {
+      onFailRef.current?.(String((err as Error)?.message ?? err).slice(0, 80));
+      return;
+    }
+    // Se o mapa não terminar de carregar em 10 s (estilo ou blocos bloqueados), cai no mapa simples
+    let firstError = '';
+    map.on('error', (e) => {
+      if (!firstError) firstError = String((e as unknown as { error?: Error }).error?.message ?? 'erro').slice(0, 80);
     });
+    const guard = window.setTimeout(() => {
+      if (!map.loaded()) onFailRef.current?.(firstError || 'demorou demais para carregar');
+    }, 10000);
+    map.once('load', () => window.clearTimeout(guard));
     map.touchZoomRotate.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.on('dragstart', () => setMoved(true));
@@ -79,6 +96,7 @@ export default function RouteMapGL({ stops, onOpen }: { stops: MapStop[]; onOpen
     mapRef.current = map;
     fit(false);
     return () => {
+      window.clearTimeout(guard);
       markers.current.forEach((m) => m.remove());
       markers.current = [];
       map.remove();

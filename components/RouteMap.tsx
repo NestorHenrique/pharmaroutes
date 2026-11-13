@@ -35,8 +35,19 @@ const RouteMapGL = dynamic(() => import('@/components/RouteMapGL'), { ssr: false
 
 /** Com a chave do MapTiler usa o mapa vetorial (RouteMapGL); sem ela, o mapa simples abaixo. */
 export default function RouteMap(props: { stops: MapStop[]; onOpen: (id: string) => void }) {
-  if (process.env.NEXT_PUBLIC_MAPTILER_KEY && props.stops.length > 0) return <RouteMapGL {...props} />;
-  return <RouteMapRaster {...props} />;
+  // Se o mapa vetorial não iniciar (WebGL indisponível, estilo bloqueado...), cai no mapa simples e mostra o motivo
+  const [glFail, setGlFail] = useState<string | null>(null);
+  if (process.env.NEXT_PUBLIC_MAPTILER_KEY && props.stops.length > 0 && !glFail) return <RouteMapGL {...props} onFail={setGlFail} />;
+  return (
+    <>
+      {glFail && (
+        <p className="mb-2 text-[12px] text-slate-400">
+          Mapa detalhado indisponível neste aparelho ({glFail}). Mostrando o mapa simples.
+        </p>
+      )}
+      <RouteMapRaster {...props} />
+    </>
+  );
 }
 
 function RouteMapRaster({ stops, onOpen }: { stops: MapStop[]; onOpen: (id: string) => void }) {
