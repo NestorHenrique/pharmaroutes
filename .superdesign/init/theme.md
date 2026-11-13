@@ -1,0 +1,434 @@
+# Theme
+
+## Part 1 - Token summary
+
+Two themes on `<html data-theme>`: **onix** (dark, default) and **marfim** (light). Tailwind slate/blue scales are remapped, same classes in both.
+
+| Role | Class | Onix | Marfim |
+|---|---|---|---|
+| Page bg | bg-slate-950 | #0B0B12 | #F7F6FB |
+| Card / sheet | bg-slate-900 | #14141D | #FFFFFF |
+| Subtle fill | bg-slate-800 | #1E1E2B | #EEECF6 |
+| Border | border-slate-700/800 | #2A2A3A | #D9D5E8 |
+| Text | text-slate-100 | #F4F2EE | #17171A |
+| Muted text | text-slate-400 | #A8A49B | #55526B |
+| Dim text | text-slate-500 | #8E8A82 | #6B6880 |
+| Accent (violet) | bg-blue-600 | #A78BFA (text on it #0B0B12) | #5B3FD0 (text #FFFFFF) |
+| Accent soft | bg-blue-950 | #1B1638 | #F3F0FE |
+| Accent line | border-blue-800 | #4C3F8F | #C9BCF5 |
+| Accent text | text-blue-300 | #C4B5FD | #4A31C0 |
+
+Status: red (Ultimo paciente) #F87171 / #C92A2A; amber (Aguardando medico) #FBBF24 / #A8590A; sky (Rep. no consultorio) #38BDF8 / #0B6FA8; green (Visitado) #34D399 / #0B7A55; unavailable = gray dashed.
+
+Fonts: Inter (body, 400-700, letter-spacing -0.01em); prototype adds Sora 700/800 for titles and numbers. Type: tab title 26px/800; sheet title 20px/800; body 14-15px; meta 12-13px; eyebrow 11px/700 uppercase tracking .08em.
+Radius: buttons 14-18px, cards 16-28px, chips 999px, sheets 24-28px top, bottom nav 26px. Heights: primary button 52-56px, inputs 52-56px, touch targets >= 44px, bottom nav 68px floating with blur.
+Shadows: only on floating nav / map card (0 12px 30px rgb(0 0 0/.25)); cards use 1px inset border, no shadow. Breakpoint: mobile first 390px.
+Motion: sheet-up .26s, fade .18s, button press scale(.97).
+
+## Part 2 - Raw sources
+
+### `app/globals.css`
+
+```css
+@import "tailwindcss";
+
+/* ═══ Temas (gerado) ═══
+ * Ônix & Violeta = padrão (escuro) · Marfim & Violeta = claro (rua, sob o sol).
+ * <html data-theme="onix|marfim"> é definido antes da pintura em app/layout.tsx. */
+/* Escuro: neutros levemente azulados + violeta de destaque (accent #A78BFA) */
+:root,
+:root[data-theme="onix"] {
+  --color-slate-50: #FAF9F6;
+  --color-slate-100: #F4F2EE;
+  --color-slate-200: #E3DFD6;
+  --color-slate-300: #C9C5BC;
+  --color-slate-400: #A8A49B;
+  --color-slate-500: #8E8A82;
+  --color-slate-600: #4A4A51;
+  --color-slate-700: #2A2A3A;
+  --color-slate-800: #1E1E2B;
+  --color-slate-900: #14141D;
+  --color-slate-950: #0B0B12;
+  --color-blue-50: #F5F3FF;
+  --color-blue-100: #EDE9FE;
+  --color-blue-200: #DDD6FE;
+  --color-blue-300: #C4B5FD;
+  --color-blue-400: #B8A5FC;
+  --color-blue-500: #AE94FB;
+  --color-blue-600: #A78BFA;
+  --color-blue-700: #8B6CEF;
+  --color-blue-800: #4C3F8F;
+  --color-blue-900: #2A2150;
+  --color-blue-950: #1B1638;
+  --color-white: #F7F5F0;
+  --background: #0B0B12;
+  --foreground: #F4F2EE;
+  --accent: #A78BFA;
+  --on-accent: #0B0B12;
+  color-scheme: dark;
+}
+/* Claro: fundo branco-lilás, cards brancos, texto quase preto, violeta forte (accent #5B3FD0) */
+:root[data-theme="marfim"] {
+  --color-slate-50: #0E0E14;
+  --color-slate-100: #17171A;
+  --color-slate-200: #2A2838;
+  --color-slate-300: #3F3C52;
+  --color-slate-400: #55526B;
+  --color-slate-500: #6B6880;
+  --color-slate-600: #A9A3C0;
+  --color-slate-700: #D5D2E3;
+  --color-slate-800: #D9D5E8;
+  --color-slate-900: #FFFFFF;
+  --color-slate-950: #F7F6FB;
+  --color-blue-50: #1E1163;
+  --color-blue-100: #261778;
+  --color-blue-200: #3A24A0;
+  --color-blue-300: #4A31C0;
+  --color-blue-400: #5B3FD0;
+  --color-blue-500: #6B4FE0;
+  --color-blue-600: #5B3FD0;
+  --color-blue-700: #4A31B0;
+  --color-blue-800: #C9BCF5;
+  --color-blue-900: #EEE9FF;
+  --color-blue-950: #F3F0FE;
+  --color-white: #17171A;
+  --color-black: #6B6880;
+  --background: #F7F6FB;
+  --foreground: #17171A;
+  --accent: #5B3FD0;
+  --on-accent: #FFFFFF;
+  color-scheme: light;
+  --color-red-950: oklch(97.1% 0.013 17.38);
+  --color-red-900: oklch(93.6% 0.032 17.717);
+  --color-red-800: oklch(88.5% 0.062 18.334);
+  --color-red-400: oklch(50.5% 0.213 27.518);
+  --color-red-300: oklch(44.4% 0.177 26.899);
+  --color-red-200: oklch(39.6% 0.141 25.723);
+  --color-red-100: oklch(25.8% 0.092 26.042);
+  --color-orange-950: oklch(98% 0.016 73.684);
+  --color-orange-900: oklch(95.4% 0.038 75.164);
+  --color-orange-800: oklch(90.1% 0.076 70.697);
+  --color-orange-400: oklch(55.3% 0.195 38.402);
+  --color-orange-300: oklch(47% 0.157 37.304);
+  --color-orange-200: oklch(40.8% 0.123 38.172);
+  --color-orange-100: oklch(26.6% 0.079 36.259);
+  --color-amber-950: oklch(98.7% 0.022 95.277);
+  --color-amber-900: oklch(96.2% 0.059 95.617);
+  --color-amber-800: oklch(92.4% 0.12 95.746);
+  --color-amber-400: oklch(55.5% 0.163 48.998);
+  --color-amber-300: oklch(47.3% 0.137 46.201);
+  --color-amber-200: oklch(41.4% 0.112 45.904);
+  --color-amber-100: oklch(27.9% 0.077 45.635);
+  --color-yellow-950: oklch(98.7% 0.026 102.212);
+  --color-yellow-900: oklch(97.3% 0.071 103.193);
+  --color-yellow-800: oklch(94.5% 0.129 101.54);
+  --color-yellow-400: oklch(55.4% 0.135 66.442);
+  --color-yellow-300: oklch(47.6% 0.114 61.907);
+  --color-yellow-200: oklch(42.1% 0.095 57.708);
+  --color-yellow-100: oklch(28.6% 0.066 53.813);
+  --color-lime-950: oklch(98.6% 0.031 120.757);
+  --color-lime-900: oklch(96.7% 0.067 122.328);
+  --color-lime-800: oklch(93.8% 0.127 124.321);
+  --color-lime-400: oklch(53.2% 0.157 131.589);
+  --color-lime-300: oklch(45.3% 0.124 130.933);
+  --color-lime-200: oklch(40.5% 0.101 131.063);
+  --color-lime-100: oklch(27.4% 0.072 132.109);
+  --color-green-950: oklch(98.2% 0.018 155.826);
+  --color-green-900: oklch(96.2% 0.044 156.743);
+  --color-green-800: oklch(92.5% 0.084 155.995);
+  --color-green-400: oklch(52.7% 0.154 150.069);
+  --color-green-300: oklch(44.8% 0.119 151.328);
+  --color-green-200: oklch(39.3% 0.095 152.535);
+  --color-green-100: oklch(26.6% 0.065 152.934);
+  --color-emerald-950: oklch(97.9% 0.021 166.113);
+  --color-emerald-900: oklch(95% 0.052 163.051);
+  --color-emerald-800: oklch(90.5% 0.093 164.15);
+  --color-emerald-400: oklch(50.8% 0.118 165.612);
+  --color-emerald-300: oklch(43.2% 0.095 166.913);
+  --color-emerald-200: oklch(37.8% 0.077 168.94);
+  --color-emerald-100: oklch(26.2% 0.051 172.552);
+  --color-teal-950: oklch(98.4% 0.014 180.72);
+  --color-teal-900: oklch(95.3% 0.051 180.801);
+  --color-teal-800: oklch(91% 0.096 180.426);
+  --color-teal-400: oklch(51.1% 0.096 186.391);
+  --color-teal-300: oklch(43.7% 0.078 188.216);
+  --color-teal-200: oklch(38.6% 0.063 188.416);
+  --color-teal-100: oklch(27.7% 0.046 192.524);
+  --color-cyan-950: oklch(98.4% 0.019 200.873);
+  --color-cyan-900: oklch(95.6% 0.045 203.388);
+  --color-cyan-800: oklch(91.7% 0.08 205.041);
+  --color-cyan-400: oklch(52% 0.105 223.128);
+  --color-cyan-300: oklch(45% 0.085 224.283);
+  --color-cyan-200: oklch(39.8% 0.07 227.392);
+  --color-cyan-100: oklch(30.2% 0.056 229.695);
+  --color-sky-950: oklch(97.7% 0.013 236.62);
+  --color-sky-900: oklch(95.1% 0.026 236.824);
+  --color-sky-800: oklch(90.1% 0.058 230.902);
+  --color-sky-400: oklch(50% 0.134 242.749);
+  --color-sky-300: oklch(44.3% 0.11 240.79);
+  --color-sky-200: oklch(39.1% 0.09 240.876);
+  --color-sky-100: oklch(29.3% 0.066 243.157);
+  --color-indigo-950: oklch(96.2% 0.018 272.314);
+  --color-indigo-900: oklch(93% 0.034 272.788);
+  --color-indigo-800: oklch(87% 0.065 274.039);
+  --color-indigo-400: oklch(45.7% 0.24 277.023);
+  --color-indigo-300: oklch(39.8% 0.195 277.366);
+  --color-indigo-200: oklch(35.9% 0.144 278.697);
+  --color-indigo-100: oklch(25.7% 0.09 281.288);
+  --color-violet-950: oklch(96.9% 0.016 293.756);
+  --color-violet-900: oklch(94.3% 0.029 294.588);
+  --color-violet-800: oklch(89.4% 0.057 293.283);
+  --color-violet-400: oklch(49.1% 0.27 292.581);
+  --color-violet-300: oklch(43.2% 0.232 292.759);
+  --color-violet-200: oklch(38% 0.189 293.745);
+  --color-violet-100: oklch(28.3% 0.141 291.089);
+  --color-purple-950: oklch(97.7% 0.014 308.299);
+  --color-purple-900: oklch(94.6% 0.033 307.174);
+  --color-purple-800: oklch(90.2% 0.063 306.703);
+  --color-purple-400: oklch(49.6% 0.265 301.924);
+  --color-purple-300: oklch(43.8% 0.218 303.724);
+  --color-purple-200: oklch(38.1% 0.176 304.987);
+  --color-purple-100: oklch(29.1% 0.149 302.717);
+  --color-fuchsia-950: oklch(97.7% 0.017 320.058);
+  --color-fuchsia-900: oklch(95.2% 0.037 318.852);
+  --color-fuchsia-800: oklch(90.3% 0.076 319.62);
+  --color-fuchsia-400: oklch(51.8% 0.253 323.949);
+  --color-fuchsia-300: oklch(45.2% 0.211 324.591);
+  --color-fuchsia-200: oklch(40.1% 0.17 325.612);
+  --color-fuchsia-100: oklch(29.3% 0.136 325.661);
+  --color-pink-950: oklch(97.1% 0.014 343.198);
+  --color-pink-900: oklch(94.8% 0.028 342.258);
+  --color-pink-800: oklch(89.9% 0.061 343.231);
+  --color-pink-400: oklch(52.5% 0.223 3.958);
+  --color-pink-300: oklch(45.9% 0.187 3.815);
+  --color-pink-200: oklch(40.8% 0.153 2.432);
+  --color-pink-100: oklch(28.4% 0.109 3.907);
+  --color-rose-950: oklch(96.9% 0.015 12.422);
+  --color-rose-900: oklch(94.1% 0.03 12.58);
+  --color-rose-800: oklch(89.2% 0.058 10.001);
+  --color-rose-400: oklch(51.4% 0.222 16.935);
+  --color-rose-300: oklch(45.5% 0.188 13.697);
+  --color-rose-200: oklch(41% 0.159 10.272);
+  --color-rose-100: oklch(27.1% 0.105 12.094);
+}
+
+/* Ônix: texto escuro sobre o champanhe (contraste) */
+:root:not([data-theme="marfim"]) .text-white:is(.bg-blue-500, .bg-blue-600, .bg-blue-700) {
+  color: var(--on-accent);
+}
+
+/* Marfim: "text-white" vira tinta; sobre botões cheios volta a ser branco */
+:root[data-theme="marfim"] .text-white:is(
+  [class*="bg-blue-5"], [class*="bg-blue-6"], [class*="bg-blue-7"],
+  [class*="bg-green-5"], [class*="bg-green-6"], [class*="bg-green-7"],
+  [class*="bg-emerald-5"], [class*="bg-emerald-6"], [class*="bg-emerald-7"],
+  [class*="bg-red-5"], [class*="bg-red-6"], [class*="bg-red-7"],
+  [class*="bg-sky-5"], [class*="bg-sky-6"], [class*="bg-sky-7"],
+  [class*="bg-violet-5"], [class*="bg-violet-6"], [class*="bg-violet-7"],
+  [class*="bg-purple-5"], [class*="bg-purple-6"], [class*="bg-purple-7"],
+  [class*="bg-rose-5"], [class*="bg-rose-6"], [class*="bg-rose-7"],
+  [class*="bg-amber-5"], [class*="bg-amber-6"], [class*="bg-amber-7"],
+  [class*="bg-orange-5"], [class*="bg-orange-6"], [class*="bg-orange-7"]
+) {
+  color: #FFFFFF;
+}
+
+/* Marfim: sombras escuras ficam suaves */
+:root[data-theme="marfim"] [class*="shadow-black"] {
+  --tw-shadow-color: rgb(23 23 26 / 0.10);
+}
+/* ═══ fim dos temas ═══ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  html {
+    min-height: 100%;
+    background: var(--background);
+  }
+
+  body {
+    min-height: 100dvh;
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Tailwind v4 usa cursor padrão em botões; restauramos o ponteiro. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+
+  /* Resposta ao toque: o botão afunda de leve */
+  @media (prefers-reduced-motion: no-preference) {
+    button {
+      transition: transform 0.1s ease;
+    }
+    button:not(:disabled):active {
+      transform: scale(0.97);
+    }
+  }
+
+  /* Rede de segurança: todo elemento focável por teclado mostra um anel visível. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * Classes usadas pelo LoginForm (components/auth/LoginForm.tsx).
+ * Os nomes foram mantidos; só o visual passou para o padrão slate/blue.
+ */
+.login-page {
+  @apply grid min-h-dvh place-items-center bg-slate-950 p-4 sm:p-6;
+}
+
+.login-card {
+  @apply flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-slate-800/80 bg-slate-900/80 p-6 shadow-2xl shadow-black/40 backdrop-blur-xl sm:p-8;
+}
+
+.login-heading {
+  @apply mb-1 flex flex-col items-center text-center;
+}
+
+.login-mark {
+  @apply mb-4 grid size-12 place-items-center rounded-2xl border border-blue-500/30 bg-blue-600/15 text-xl font-semibold text-blue-400;
+}
+
+.login-heading h1 {
+  @apply my-1 text-2xl font-semibold tracking-tight text-slate-100;
+}
+
+.login-heading p {
+  @apply mt-1 text-sm text-slate-400;
+}
+
+.login-field {
+  @apply flex flex-col gap-2 text-xs font-medium text-slate-300;
+}
+
+.login-field input {
+  @apply w-full rounded-xl border border-slate-800 bg-slate-950/70 px-3.5 py-3 text-base text-slate-100 placeholder:text-slate-500 transition-colors hover:border-slate-700 focus-visible:border-blue-500 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-500/40 sm:text-sm;
+}
+
+.login-submit {
+  @apply mt-1 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500 active:bg-blue-700 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:cursor-wait disabled:opacity-60;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+  .animate-ping,
+  .animate-pulse {
+    animation: none !important;
+  }
+}
+
+/* Ficha e painéis que sobem de baixo para cima */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* iOS dá zoom em qualquer campo com fonte menor que 16px: no celular todos ficam com 16px */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Faixas que rolam de lado sem mostrar a barra */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mapa: no tema escuro as ruas ficam escuras (as imagens do mapa são claras) */
+:root:not([data-theme="marfim"]) .map-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
+}
+
+```
+
+### `postcss.config.mjs`
+
+```js
+export default {
+  plugins: {
+    '@tailwindcss/postcss': {},
+  },
+};
+
+```
+
+### `styles.ts`
+
+```ts
+import type { CSSProperties } from 'react';
+
+// Input padrão (formulário de cadastro)
+export const inputStyle: CSSProperties = {
+  width: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
+  padding: '8px',
+  borderRadius: '6px',
+  border: '1px solid #27272a',
+  backgroundColor: '#09090b',
+  color: '#fff',
+  fontSize: '12px',
+};
+
+// Input compacto (edição dentro do card)
+export const inputSmStyle: CSSProperties = {
+  ...inputStyle,
+  padding: '6px',
+  borderRadius: '4px',
+  backgroundColor: '#18181b',
+  fontSize: '11px',
+};
+
+export const primaryButton: CSSProperties = {
+  backgroundColor: '#2563eb',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '6px',
+  fontSize: '12px',
+  fontWeight: 600,
+  cursor: 'pointer',
+};
+
+```

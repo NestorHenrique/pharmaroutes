@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 
 export interface MapStop {
   id: string;
@@ -33,6 +34,12 @@ export default function RouteMap({ stops, onOpen }: { stops: MapStop[]; onOpen: 
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(358);
   const [dz, setDz] = useState(0);
+  /** centro arrastado pelo usuário (0..1 no mapa-múndi); null = centro da rota */
+  const [center, setCenter] = useState<{ x: number; y: number } | null>(null);
+  const fingers = useRef(new Map<number, { x: number; y: number }>());
+  const pinch = useRef<number | null>(null);
+  const dragged = useRef(false);
+  const start = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     const el = ref.current;
@@ -66,7 +73,10 @@ export default function RouteMap({ stops, onOpen }: { stops: MapStop[]; onOpen: 
   const z = Math.max(3, Math.min(18, fit + dz));
   const a = project(box.n, box.w, z);
   const b = project(box.s, box.e, z);
-  const origin = { x: (a.x + b.x) / 2 - w / 2, y: (a.y + b.y) / 2 - H / 2 };
+  const scale = TILE * 2 ** z;
+  const cx = center?.x ?? (a.x + b.x) / 2 / scale;
+  const cy = center?.y ?? (a.y + b.y) / 2 / scale;
+  const origin = { x: cx * scale - w / 2, y: cy * scale - H / 2 };
   const max = 2 ** z;
   const tiles: { key: string; src: string; left: number; top: number }[] = [];
   for (let tx = Math.floor(origin.x / TILE); tx <= Math.floor((origin.x + w) / TILE); tx++) {
@@ -82,8 +92,66 @@ export default function RouteMap({ stops, onOpen }: { stops: MapStop[]; onOpen: 
   });
   const zoomBtn = 'flex size-11 items-center justify-center border-0 bg-slate-900 text-xl font-bold text-slate-100 disabled:opacity-40';
 
+  const zoomBy = (delta: number) => setDz((d) => Math.max(3, Math.min(18, fit + d + delta)) - fit);
+
+  /* Um dedo arrasta o mapa; dois dedos fazem pinça (aproxima/afasta). O toque curto continua abrindo o pino. */
+  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    start.current = { x: e.clientX, y: e.clientY };
+    dragged.current = false;
+    if (fingers.current.size === 2) {
+      const [p1, p2] = [...fingers.current.values()];
+      pinch.current = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    }
+  };
+  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const prev = fingers.current.get(e.pointerId);
+    if (!prev) return;
+    fingers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (fingers.current.size >= 2 && pinch.current) {
+      const [p1, p2] = [...fingers.current.values()];
+      const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      dragged.current = true;
+      if (dist / pinch.current > 1.4) {
+        zoomBy(1);
+        pinch.current = dist;
+      } else if (dist / pinch.current < 0.71) {
+        zoomBy(-1);
+        pinch.current = dist;
+      }
+      return;
+    }
+    if (!dragged.current && Math.hypot(e.clientX - start.current.x, e.clientY - start.current.y) < 6) return;
+    if (!dragged.current) e.currentTarget.setPointerCapture(e.pointerId);
+    dragged.current = true;
+    const nx = cx - (e.clientX - prev.x) / scale;
+    const ny = cy - (e.clientY - prev.y) / scale;
+    setCenter({ x: nx, y: Math.max(0, Math.min(1, ny)) });
+  };
+  const onPointerEnd = (e: ReactPointerEvent<HTMLDivElement>) => {
+    fingers.current.delete(e.pointerId);
+    if (fingers.current.size < 2) pinch.current = null;
+  };
+  const moved = center !== null || dz !== 0;
+
   return (
-    <div ref={ref} className="relative -mx-4 overflow-hidden bg-slate-800 sm:mx-0 sm:rounded-3xl" style={{ height: H }}>
+    <div
+      ref={ref}
+      className="relative -mx-4 overflow-hidden bg-slate-800 sm:mx-0 sm:rounded-3xl"
+      style={{ height: H, touchAction: 'none' }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+      onClickCapture={(e) => {
+        // Depois de arrastar, o dedo ao soltar não pode abrir a ficha do pino que estava embaixo
+        if (dragged.current) {
+          e.stopPropagation();
+          e.preventDefault();
+          dragged.current = false;
+        }
+      }}
+    >
       <div className="map-tiles absolute inset-0" aria-hidden="true">
         {tiles.map((t) => (
           // eslint-disable-next-line @next/next/no-img-element
@@ -116,13 +184,25 @@ export default function RouteMap({ stops, onOpen }: { stops: MapStop[]; onOpen: 
         </button>
       ))}
       <div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-xl border border-slate-700 shadow-lg shadow-black/40">
-        <button type="button" aria-label="Aproximar" onClick={() => setDz((d) => d + 1)} disabled={z >= 18} className={zoomBtn}>
+        <button type="button" aria-label="Aproximar" onClick={() => zoomBy(1)} disabled={z >= 18} className={zoomBtn}>
           +
         </button>
-        <button type="button" aria-label="Afastar" onClick={() => setDz((d) => d - 1)} disabled={z <= 3} className={`${zoomBtn} border-t border-slate-700`}>
+        <button type="button" aria-label="Afastar" onClick={() => zoomBy(-1)} disabled={z <= 3} className={`${zoomBtn} border-t border-slate-700`}>
           −
         </button>
       </div>
+      {moved && (
+        <button
+          type="button"
+          onClick={() => {
+            setCenter(null);
+            setDz(0);
+          }}
+          className="absolute bottom-3 left-3 h-11 rounded-xl border border-slate-700 bg-slate-900 px-4 text-[13px] font-semibold text-slate-100 shadow-lg shadow-black/40"
+        >
+          Centralizar rota
+        </button>
+      )}
       <span className="absolute bottom-1 right-2 rounded bg-slate-950/70 px-1.5 text-[10px] text-slate-300">© OpenStreetMap</span>
     </div>
   );

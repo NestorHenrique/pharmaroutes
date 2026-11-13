@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "hoje": {
+      "targetKind": "new-target",
+      "projectId": "9a94e0a0-cae0-4d42-be61-72766266d4b5",
+      "activeDraftId": "9e827e1a-1c61-40fd-9e45-65ecef403259",
+      "designSystemPath": ".superdesign/design-system.md",
+      "contextFiles": [
+        ".superdesign/design-system.md",
+        ".superdesign/prototipo-copiloto.html",
+        "app/globals.css",
+        "components/BottomNav.tsx",
+        "components/NextDoctorCard.tsx",
+        "components/LiveStrip.tsx",
+        "components/ProgressRing.tsx"
+      ],
+      "fingerprints": {
+        ".superdesign/design-system.md": "ca9c5c6fb1d5022ee05d373be12bfcdf79b80be8f353d349bd994e215e0b0725",
+        ".superdesign/prototipo-copiloto.html": "b215e13a523ed802934a5399beda3174b50e2dc77ba443369598cfa4848e4609",
+        "app/globals.css": "a3ab5c4b938d20c35824c38b6b4ca9a2a835c9e95320a63898d77fe0cfcbb60c",
+        "components/BottomNav.tsx": "526d132162120826e75be6b2d8f5824182a39a92bb044afb13e50dd5e138cc01",
+        "components/NextDoctorCard.tsx": "729870fabdce381a4211d47246d9ab1c5ccbee4cb0b83ea696cc3f82ed15c1bb",
+        "components/LiveStrip.tsx": "e5a516b9b6c81866be27596bf1d1a498cc3c3647c7e37a46c8759919ffbc3a5a",
+        "components/ProgressRing.tsx": "0dfc4dae6b2aa471455f3520b478b3ce0bc472cba2f3b8e8039e37acc2c7a50e"
+      },
+      "components": [],
+      "drafts": {
+        "9e827e1a-1c61-40fd-9e45-65ecef403259": {
+          "title": "PharmaRoutes — Hoje",
+          "visualDirection": "Copiloto, tema Ônix, fiel ao protótipo (claude.ai/artifact/RMJhJ3rHDeMcVrNpFVEMuN)",
+          "currentVersion": 2
+        }
+      },
+      "updatedAt": "2026-11-12T00:00:00Z"
+    }
+  }
+}
