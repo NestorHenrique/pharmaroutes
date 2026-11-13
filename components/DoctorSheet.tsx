@@ -20,6 +20,7 @@ import {
   formatAgendaBadge,
   formatMinutes,
   formatCrm,
+  dayLabel,
   getAgenda,
   isNewDoctor,
   specialtyCode,
@@ -83,32 +84,6 @@ const dayHhmm = (iso: string) => {
 };
 
 /** Botão de WhatsApp da escolha; sem número fica desligado */
-function WhatsOption({ href, title, sub }: { href: string | null; title: string; sub: string }) {
-  const body = (
-    <>
-      <span className="flex size-[38px] shrink-0 items-center justify-center rounded-full bg-emerald-500 text-slate-950">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z" />
-        </svg>
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="text-[15px] font-semibold text-slate-100">{title}</span>
-        <span className="text-[13px] text-slate-400">{href ? sub : 'Número não cadastrado'}</span>
-      </span>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0 text-slate-500" aria-hidden="true">
-        <path d="M9 6l6 6-6 6" />
-      </svg>
-    </>
-  );
-  const cls = 'flex min-h-16 items-center gap-3 rounded-[14px] border border-slate-800 bg-slate-950 px-3.5 text-left no-underline';
-  return href ? (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={cls}>
-      {body}
-    </a>
-  ) : (
-    <div className={`${cls} opacity-50`}>{body}</div>
-  );
-}
 
 /** Um dos 4 botões grandes da ficha */
 function Tile({
@@ -176,7 +151,6 @@ export default function DoctorSheet({
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
-  const [whatsOpen, setWhatsOpen] = useState(false);
   const [mode, setMode] = useState<'status' | 'edit'>('status');
   const locais = getLocations(doc);
   const multi = locais.length > 1;
@@ -251,13 +225,6 @@ export default function DoctorSheet({
           </span>
           {mode === 'status' && (
             <>
-              <button
-                type="button"
-                onClick={() => setMode('edit')}
-                className="h-11 rounded-xl border border-slate-800 bg-slate-900 px-3.5 text-sm font-semibold text-slate-100"
-              >
-                Editar
-              </button>
               <div className="relative">
                 <button
                   type="button"
@@ -296,10 +263,10 @@ export default function DoctorSheet({
           )}
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4 pb-8" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 32px)' }}>
+        <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-4" style={{ paddingBottom: mode === 'status' ? 'calc(max(env(safe-area-inset-bottom), 12px) + 96px)' : 'max(env(safe-area-inset-bottom), 32px)' }}>
           {/* Nome, especialidade/CRM e chips */}
           <div className="flex flex-col gap-2">
-            <h1 className="m-0 text-2xl font-bold uppercase tracking-tight text-white">
+            <h1 className="font-display m-0 text-[22px] font-extrabold uppercase leading-tight tracking-tight text-white">
               {doc.descricao}
               {isNewDoctor(doc) && <span className="ml-2 align-middle text-[10px] font-bold text-green-400">NOVO</span>}
             </h1>
@@ -344,20 +311,10 @@ export default function DoctorSheet({
                 </section>
               )}
 
-              {/* 4 ações */}
-              <div className="grid grid-cols-4 gap-2">
+              {/* Status e ligar */}
+              <div className="grid grid-cols-2 gap-2">
                 <Tile primary onClick={() => setStatusOpen(true)} text="Status">
                   {ico(<path d="M5 21V4M5 4h11l-2.5 4L16 12H5" />, 2)}
-                </Tile>
-                <Tile
-                  disabled={multi ? !locationMapsUrl(selected) : !onNavigate}
-                  onClick={() => (multi ? openPlace(selected) : onNavigate?.())}
-                  text="Rota"
-                >
-                  {ico(<><path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" /><circle cx="12" cy="9" r="2.5" /></>)}
-                </Tile>
-                <Tile disabled={!whats.medico && !whats.clinica} onClick={() => setWhatsOpen(true)} text="WhatsApp">
-                  {ico(<path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z" />)}
                 </Tile>
                 <Tile disabled={!call} href={call} text="Ligar">
                   {ico(<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2" />)}
@@ -367,28 +324,67 @@ export default function DoctorSheet({
                 <span className="-mt-1.5 text-center text-xs text-slate-500">O visitado entra na {activeWeekLabel}</span>
               )}
 
-              {/* Vários locais: pílulas, endereço do escolhido e GPS */}
-              {multi && (
-                <section className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5">
+              {/* Local: com 2+ locais, pílulas + endereço do escolhido + GPS; com um só, o painel de endereço */}
+              {multi ? (
+                <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
                   <LocationPills locais={locais} selectedId={selected.id} onSelect={setPickedId} onNavigate={openPlace} />
+                </section>
+              ) : (
+                <section className="flex flex-col gap-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
+                  <span className={label}>Endereço</span>
+                  <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span className="text-[15px] font-bold text-slate-100">{doc.complemento || 'Consultório próprio'}</span>
+                      <span className="text-[13px] text-slate-400">{address || 'Sem endereço'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Abrir a rota no mapa"
+                      disabled={!onNavigate}
+                      onClick={() => onNavigate?.()}
+                      className="flex size-[52px] shrink-0 items-center justify-center rounded-[18px] border-0 bg-blue-600 text-white disabled:opacity-40"
+                    >
+                      {ico(<path d="M3 11l18-8-8 18-2-8z" />, 2)}
+                    </button>
+                  </div>
                 </section>
               )}
 
-              {/* Local, endereço, horário médio e observação */}
-              <section className={`flex flex-col rounded-2xl border border-slate-800 bg-slate-900 px-3.5 py-1 ${multi && !expected && !doc.observacoes ? 'hidden' : ''}`}>
+              {/* Horário médio, dias e semana do ciclo */}
+              <div className="grid grid-cols-3 gap-2">
                 {[
-                  ...(multi ? [] : [['Local', doc.complemento || 'Consultório próprio'], ['Endereço', address]]),
-                  ['Horário médio', expected ? `${formatMinutes(expected.startMinutes)}${expected.endMinutes !== null ? ` – ${formatMinutes(expected.endMinutes)}` : ''}` : ''],
-                  ['Obs.', doc.observacoes ?? ''],
-                ]
-                  .filter(([, v]) => Boolean(v))
-                  .map(([k, v], i, arr) => (
-                    <div key={k} className={`flex gap-3 py-2.5 ${i < arr.length - 1 ? 'border-b border-slate-800' : ''}`}>
-                      <span className="w-[76px] shrink-0 text-[13px] text-slate-500">{k}</span>
-                      <span className="flex-1 text-[13px] text-slate-100">{v}</span>
-                    </div>
-                  ))}
-              </section>
+                  [expected ? formatMinutes(expected.startMinutes) : '—', 'média de horário'],
+                  [agenda.length ? agenda.map((e) => dayLabel(e.day)).join(' ') : '—', 'dias de atendimento'],
+                  [weeks.length ? weeks.map((w) => `${w}ª`).join(' ') : '—', 'semana do ciclo'],
+                ].map(([v, l]) => (
+                  <div key={l} className="flex flex-col rounded-[18px] border border-slate-800 bg-slate-900 p-3">
+                    <span className="font-display truncate text-[22px] font-extrabold leading-tight tabular-nums text-white">{v}</span>
+                    <span className="text-[11px] text-slate-400">{l}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* WhatsApp do médico e da clínica */}
+              <div className="grid grid-cols-2 gap-2">
+                {([['WhatsApp médico', whats.medico], ['WhatsApp clínica', whats.clinica]] as const).map(([text, url]) =>
+                  url ? (
+                    <a key={text} href={url} target="_blank" rel="noopener noreferrer" className="flex h-14 items-center justify-center rounded-[18px] border border-slate-700 bg-slate-800 text-sm font-bold text-slate-100 no-underline">
+                      {text}
+                    </a>
+                  ) : (
+                    <span key={text} className="flex h-14 items-center justify-center rounded-[18px] border border-slate-800 bg-slate-900 text-sm font-bold text-slate-500 opacity-60">
+                      {text}
+                    </span>
+                  ),
+                )}
+              </div>
+
+              {doc.observacoes && (
+                <section className="flex flex-col gap-1.5 rounded-3xl border border-slate-800 bg-slate-900 p-4">
+                  <span className={label}>Observações</span>
+                  <span className="text-[14px] text-slate-100">{doc.observacoes}</span>
+                </section>
+              )}
 
               {/* Últimos status (quem marcou e quando) e últimas edições */}
               <StatusHistory doctorId={doc.id} statuses={statuses} profiles={profiles ?? NO_PROFILES} showLocation={(doc.locais?.length ?? 0) > 1} />
@@ -401,16 +397,23 @@ export default function DoctorSheet({
         </div>
       </div>
 
-      {whatsOpen && (
-        <BottomSheet title="Abrir WhatsApp de quem?" onClose={() => setWhatsOpen(false)}>
-          <div className="grid grid-cols-1 gap-2">
-            <WhatsOption href={whats.medico} title="WhatsApp do médico" sub={doc.whatsapp_medico ?? ''} />
-            <WhatsOption href={whats.clinica} title="WhatsApp da clínica" sub={doc.whatsapp_clinica || doc.telefone || ''} />
+      {mode === 'status' && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-10 px-3" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}>
+          <div className="pointer-events-auto mx-auto grid h-[68px] max-w-md grid-cols-2 items-center gap-2 rounded-[26px] border border-slate-800 bg-slate-900/90 px-2 shadow-2xl shadow-black/40 backdrop-blur-xl">
+            <button type="button" onClick={() => setMode('edit')} className="h-[52px] rounded-2xl border border-slate-700 bg-slate-800 text-[15px] font-bold text-slate-100">
+              Editar cadastro
+            </button>
+            <button
+              type="button"
+              disabled={multi ? !locationMapsUrl(selected) : !onNavigate}
+              onClick={() => (multi ? openPlace(selected) : onNavigate?.())}
+              className="flex h-[52px] items-center justify-center gap-2 rounded-2xl border-0 bg-blue-600 text-[15px] font-bold text-white disabled:opacity-40"
+            >
+              {ico(<path d="M3 11l18-8-8 18-2-8z" />, 2)}
+              Ir até lá
+            </button>
           </div>
-          {(!whats.medico || !whats.clinica) && (
-            <p className="m-0 text-xs text-slate-500">O número que falta pode ser cadastrado em Editar dados.</p>
-          )}
-        </BottomSheet>
+        </div>
       )}
 
       {statusOpen && (

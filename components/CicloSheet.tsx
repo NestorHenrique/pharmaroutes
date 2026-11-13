@@ -10,6 +10,11 @@ interface CicloSheetProps {
   doctors: Doctor[];
   /** semanas do ciclo de cada médico (vêm de rep_route_order, por representante) */
   weeksByDoctor: ReadonlyMap<string, readonly number[]>;
+  /** ordem da rota de uma semana (ids dos médicos) */
+  orderOf: (week: number) => readonly string[];
+  onMoveUp: (week: number, docId: string, prevId: string) => void;
+  onMoveWeek: (docId: string, from: number, to: number) => void;
+  onRemoveWeek: (docId: string, from: number) => void;
   onClose: () => void;
   onOpen: (id: string) => void;
 }
@@ -29,24 +34,33 @@ function getDoctorsForWeekDay(
   weeksByDoctor: ReadonlyMap<string, readonly number[]>,
   week: number,
   day: DayCode,
+  order: readonly string[] = [],
 ): Doctor[] {
-  return doctors.filter((d) => {
+  const pos = (id: string) => {
+    const i = order.indexOf(id);
+    return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return doctors
+    .filter((d) => {
     if (!(weeksByDoctor.get(d.id) ?? []).includes(week)) return false;
     // atende no dia em qualquer um dos locais
     if (getAgenda(d).some((e) => e.day === day)) return true;
     return (d.locais ?? []).some((l) => l.agenda.some((e) => e.day === day));
-  });
+    })
+    .sort((a, b) => pos(a.id) - pos(b.id));
 }
 
 /** Tela de organização do ciclo: semana × dia → lista ordenada de médicos. */
-export default function CicloSheet({ doctors, weeksByDoctor, onClose, onOpen }: CicloSheetProps) {
+export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, onMoveWeek, onRemoveWeek, onClose, onOpen }: CicloSheetProps) {
   const [week, setWeek] = useState<number>(1);
   const [day, setDay] = useState<DayCode>('seg');
 
-  const list = getDoctorsForWeekDay(doctors, weeksByDoctor, week, day);
+  const [moving, setMoving] = useState<Doctor | null>(null);
+  const list = getDoctorsForWeekDay(doctors, weeksByDoctor, week, day, orderOf(week));
   const dayCounts = DAYS.map((d) => getDoctorsForWeekDay(doctors, weeksByDoctor, week, d.code).length);
 
   return (
+    <>
     <BottomSheet title="Organizar rota do ciclo" onClose={onClose}>
       {/* semanas */}
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar pb-1">
@@ -110,31 +124,79 @@ export default function CicloSheet({ doctors, weeksByDoctor, onClose, onOpen }: 
             </span>
             <span className="text-[11px] text-slate-500">Toque para abrir a ficha</span>
           </div>
-          <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-800">
+          <div className="flex flex-col gap-2">
             {list.map((doc, i) => (
-              <button
-                key={doc.id}
-                type="button"
-                onClick={() => { onClose(); onOpen(doc.id); }}
-                className="flex min-h-[60px] w-full items-center gap-3 border-0 border-t border-slate-800 bg-slate-900 px-4 py-2 text-left first:border-t-0 active:bg-slate-800"
-              >
-                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-800 text-[12px] font-bold text-slate-400 tabular-nums">
+              <div key={doc.id} className="flex min-h-[60px] items-center gap-2.5 rounded-2xl border border-slate-800 bg-slate-900 py-1.5 pl-3.5 pr-2">
+                <span className="font-display grid size-9 shrink-0 place-items-center rounded-full border-[1.5px] border-slate-700 text-[13px] font-bold tabular-nums text-slate-100">
                   {i + 1}
                 </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="truncate text-sm font-semibold uppercase text-white">{doc.descricao}</span>
-                  <span className="truncate text-xs uppercase text-slate-400">
+                <button
+                  type="button"
+                  onClick={() => { onClose(); onOpen(doc.id); }}
+                  className="flex min-h-11 min-w-0 flex-1 flex-col items-start gap-0.5 border-0 bg-transparent p-0 text-left"
+                >
+                  <span className="w-full truncate text-sm font-bold uppercase text-white">{doc.descricao}</span>
+                  <span className="w-full truncate text-xs uppercase text-slate-400">
                     {[specialtyCode(doc.especialidade), doc.complemento, doc.cidade].filter(Boolean).join(' · ')}
                   </span>
-                </span>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-slate-500" aria-hidden="true">
-                  <path d="M9 6l6 6-6 6" />
-                </svg>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Subir na rota"
+                  disabled={i === 0}
+                  onClick={() => onMoveUp(week, doc.id, list[i - 1].id)}
+                  className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-slate-800 text-base text-slate-100 disabled:opacity-30"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  aria-label="Mover para outra semana"
+                  onClick={() => setMoving(doc)}
+                  className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-slate-800 text-base text-slate-100"
+                >
+                  ⇄
+                </button>
+              </div>
             ))}
           </div>
         </div>
       )}
     </BottomSheet>
+
+      {moving && (
+        <BottomSheet title="Mover médico" onClose={() => setMoving(null)}>
+          <span className="-mt-2 truncate text-[13px] uppercase text-slate-400">{moving.descricao}</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Outra semana do ciclo</span>
+          <div className="grid grid-cols-5 gap-1.5">
+            {CYCLE_WEEKS.map((w) => (
+              <button
+                key={w}
+                type="button"
+                disabled={w === week}
+                onClick={() => {
+                  onMoveWeek(moving.id, week, w);
+                  setMoving(null);
+                }}
+                className="h-14 rounded-[14px] border border-slate-800 bg-slate-900 text-[13px] font-bold text-slate-100 disabled:opacity-35"
+              >
+                {w}ª
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onRemoveWeek(moving.id, week);
+              setMoving(null);
+            }}
+            className="h-11 self-start border-0 bg-transparent px-1 text-sm font-semibold text-red-500"
+          >
+            Tirar desta semana
+          </button>
+          <span className="text-xs text-slate-500">O dia de atendimento vem da agenda do médico. Para mudar o dia, edite a agenda.</span>
+        </BottomSheet>
+      )}
+    </>
   );
 }

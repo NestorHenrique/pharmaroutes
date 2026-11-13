@@ -135,7 +135,7 @@ export default function NotificationsSheet({ items, now, allCities, cityNames, a
               <path d="M15 6l-6 6 6 6" />
             </svg>
           </button>
-          <h1 className="m-0 flex-1 text-xl font-bold tracking-tight text-slate-50">Notificações</h1>
+          <h1 className="font-display m-0 flex-1 text-[26px] font-extrabold tracking-tight text-slate-50">Avisos</h1>
           {onSettings && (
             <button type="button" aria-label="Configurar notificações" onClick={onSettings} className="grid size-11 place-items-center rounded-xl border border-slate-800 bg-slate-900 text-slate-100">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -237,19 +237,24 @@ export default function NotificationsSheet({ items, now, allCities, cityNames, a
                             onOpenDoctor(n.doctorId);
                             onClose();
                           }}
-                          className={`flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left ${
-                            n.unread ? tone.card : 'border-slate-800 bg-slate-900 opacity-80'
-                          }`}
+                          className={`flex w-full items-start gap-3 rounded-[20px] border border-slate-800 bg-slate-900 p-3.5 text-left ${n.unread ? '' : 'opacity-80'}`}
                         >
-                          <span className={`grid size-10 shrink-0 place-items-center rounded-full ${n.unread ? tone.circle : `bg-slate-800 ${tone.dim}`}`}>{tone.icon}</span>
+                          <span
+                            className={`mt-1.5 size-2.5 shrink-0 rounded-full ring-4 ring-slate-800 ${
+                              n.type === 'ultimo_paciente' ? 'bg-red-400' : n.type === 'representante_no_consultorio' ? 'bg-sky-400' : n.type === 'aguardando_medico' ? 'bg-amber-400' : 'bg-slate-500'
+                            }`}
+                            aria-hidden="true"
+                          />
                           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className={`text-[13px] font-bold ${n.unread ? tone.labelCls : 'text-slate-400'}`}>{tone.label}</span>
-                            <span className="truncate text-[15px] font-semibold uppercase text-slate-50">{n.doctorName}</span>
-                            <span className="truncate text-xs text-slate-400">
-                              {[n.city ?? n.place, n.repName ? shortName(n.repName).split(' ')[0] : '', ago(n.at, now)].filter(Boolean).join(' · ')}
+                            <span className={`text-sm font-bold ${n.unread ? tone.labelCls : 'text-slate-400'}`}>{tone.label}</span>
+                            <span className="text-[13px] text-slate-400">
+                              <span className="font-semibold uppercase text-slate-100">{n.doctorName}</span>
+                              {[n.place, n.city].filter(Boolean).length > 0 && ` · ${[n.place, n.city].filter(Boolean).join(' · ')}`}
+                              {n.repName ? `. ${shortName(n.repName).split(' ')[0]} avisou.` : ''}
                             </span>
                           </span>
-                          {n.unread && <span className="size-2.5 shrink-0 rounded-full bg-blue-600" role="img" aria-label="Não lido" />}
+                          <span className="shrink-0 whitespace-nowrap text-xs text-slate-500">{ago(n.at, now)}</span>
+                          {n.unread && <span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-blue-600" role="img" aria-label="Não lido" />}
                         </button>
                       </li>
                     );

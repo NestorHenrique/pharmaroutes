@@ -67,6 +67,11 @@ Estados: carregando sem cache = cinco cards em esqueleto; vazio = `EmptyState` c
 - Parada simples da rota (sem status, não visitada) é **linha do tempo**: sem caixa, número em círculo de 36px e uma linha fina ligando as paradas. Não há alça de arrastar (a ordem vem da rota do ciclo). Com status, visitado ou indisponível o card continua com borda e cor.
 - Card **Próximo**: raio 28px, nome em Sora 22px, pílulas de fatos (média do horário e "N locais · hoje em X") e botões de 56px com raio 18px. O botão central da barra de baixo continua sendo o **+** (Novo médico).
 
+## Ficha, Avisos e Organizar rota (protótipo copiloto)
+- **Ficha:** Status (principal) e Ligar; com 1 local, painel "Endereço" com botão de rota de 52px; com 2+ locais, as pílulas. Três números em Sora (média de horário, dias, semana do ciclo), WhatsApp médico e clínica em botões de 56px, observações em painel e barra fixa embaixo: **Editar cadastro** e **Ir até lá**.
+- **Avisos:** cartão por aviso com ponto colorido de halo, título, "NOME · local. Fulano avisou." e a hora à direita.
+- **Organizar rota do ciclo:** cada médico tem ↑ (sobe na rota da semana) e ⇄ (mover para outra semana ou tirar da semana). O dia vem da agenda do médico.
+
 ## Padrões de tela
 **Folha que sobe de baixo** (filtros, novo médico, status, semana, cidades, retorno, editar): alça cinza no topo,
 cantos de cima `rounded-t-[24px]`, título, conteúdo, rodapé fixo com **Cancelar** (esquerda) e **Salvar** (direita).

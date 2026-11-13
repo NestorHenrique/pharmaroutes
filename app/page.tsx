@@ -1125,6 +1125,20 @@ export default function HomePage() {
     return out;
   }, [routeOrder]);
 
+  /** Sobe o médico uma posição na rota da semana (troca de lugar com o anterior do mesmo dia) */
+  const moveUpInWeek = useCallback(
+    (week: number, docId: string, prevId: string) => {
+      const key = cycleWeekKey(week as CycleWeek);
+      const list = [...(routeOrder[key] ?? [])];
+      const a = list.indexOf(docId);
+      const b = list.indexOf(prevId);
+      if (a < 0 || b < 0) return;
+      [list[a], list[b]] = [list[b], list[a]];
+      void saveRouteOrder(key, list);
+    },
+    [routeOrder, saveRouteOrder],
+  );
+
   const setDoctorWeeks = useCallback(
     async (docId: string, weeks: readonly number[] | null | undefined): Promise<boolean> => {
       const want = normalizeCycleWeeks(weeks);
@@ -2774,7 +2788,7 @@ export default function HomePage() {
                 {mapTotal - mapStops.length} {mapTotal - mapStops.length === 1 ? 'médico de hoje não tem' : 'médicos de hoje não têm'} GPS e não {mapTotal - mapStops.length === 1 ? 'aparece' : 'aparecem'} no mapa. Grave o GPS na ficha, em Editar.
               </p>
             )}
-            {heroCard}
+            <div className="relative -mt-4 rounded-[28px] shadow-2xl shadow-black/40">{heroCard}</div>
           </>
         )}
 
@@ -3062,6 +3076,13 @@ export default function HomePage() {
         <CicloSheet
           doctors={panelDoctors}
           weeksByDoctor={weeksByDoctor}
+          orderOf={(w) => routeOrder[cycleWeekKey(w as CycleWeek)] ?? []}
+          onMoveUp={moveUpInWeek}
+          onMoveWeek={(id, from, to) => {
+            const cur = weeksByDoctor.get(id) ?? [];
+            void setDoctorWeeks(id, [...cur.filter((w) => w !== from && w !== to), to]);
+          }}
+          onRemoveWeek={(id, from) => void setDoctorWeeks(id, (weeksByDoctor.get(id) ?? []).filter((w) => w !== from))}
           onClose={() => setShowCiclo(false)}
           onOpen={openSheet}
         />
