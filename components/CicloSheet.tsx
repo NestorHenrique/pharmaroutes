@@ -22,6 +22,8 @@ interface CicloSheetProps {
   onDay: (doc: Doctor, day: string) => boolean;
   /** troca o dia do médico só para este representante */
   onMoveDay: (docId: string, from: string, to: string) => void;
+  /** deixa o médico só neste dia na rota do representante */
+  onKeepOnlyDay: (docId: string, day: string) => void;
   onRemoveWeek: (docId: string, from: number) => void;
   onClose: () => void;
   onOpen: (id: string) => void;
@@ -36,6 +38,10 @@ const DAYS = [
 ] as const;
 
 type DayCode = (typeof DAYS)[number]['code'];
+
+const DAY_LONG: Record<DayCode, string> = { seg: 'segunda', ter: 'terça', qua: 'quarta', qui: 'quinta', sex: 'sexta' };
+/** "na segunda", "no sábado"... (todos os dias úteis são femininos) */
+const naDia = (d: DayCode) => `na ${DAY_LONG[d]}`;
 
 const GAP = 8;
 
@@ -83,6 +89,7 @@ export default function CicloSheet({
   onRemoveWeek,
   onDay,
   onMoveDay,
+  onKeepOnlyDay,
   onClose,
   onOpen,
 }: CicloSheetProps) {
@@ -90,6 +97,9 @@ export default function CicloSheet({
   const [day, setDay] = useState<DayCode>('seg');
   const [moving, setMoving] = useState<Doctor | null>(null);
   const inWeek = (d: Doctor) => (weeksByDoctor.get(d.id) ?? []).includes(week);
+  /** outros dias em que o médico também entra na rota */
+  const otherDays = (doc: Doctor, than: DayCode): DayCode[] =>
+    DAYS.map((x) => x.code).filter((c) => c !== than && onDay(doc, c));
 
   /* ── Cidades da semana: o rep marca onde trabalha; só os médicos dessas cidades entram ── */
   const picked = new Set(citiesOf(week));
@@ -371,30 +381,30 @@ export default function CicloSheet({
                     </span>
                     <button
                       type="button"
-                      onClick={() => {
-                        onClose();
-                        onOpen(doc.id);
-                      }}
+                      onClick={() => onOpen(doc.id)}
                       className="ml-1 flex min-h-11 min-w-0 flex-1 flex-col items-start gap-0.5 border-0 bg-transparent p-0 text-left"
                     >
                       <span className="w-full truncate text-sm font-bold uppercase text-white">{doc.descricao}</span>
                       <span className="w-full truncate text-xs uppercase text-slate-400">
                         {[specialtyCode(doc.especialidade), doc.complemento, doc.cidade].filter(Boolean).join(' · ')}
                       </span>
+                      {otherDays(doc, day).length > 0 && (
+                        <span className="text-[11px] font-semibold text-blue-400">
+                          Também {otherDays(doc, day).map(naDia).join(' e ')} · toque em ⇄
+                        </span>
+                      )}
                       {!inWeek(doc) && (
                         <span className="text-[11px] font-semibold text-slate-500">Fora da {week}ª semana · entra ao ordenar</span>
                       )}
                     </button>
-                    {inWeek(doc) && (
-                      <button
-                        type="button"
-                        aria-label="Mover para outro dia ou semana"
-                        onClick={() => setMoving(doc)}
-                        className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-slate-800 text-base text-slate-100"
-                      >
-                        ⇄
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      aria-label="Mudar o dia ou a semana"
+                      onClick={() => setMoving(doc)}
+                      className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-slate-800 text-base text-slate-100"
+                    >
+                      ⇄
+                    </button>
                   </div>
                 );
               })}
@@ -406,7 +416,24 @@ export default function CicloSheet({
       {moving && (
         <BottomSheet title="Mover médico" onClose={() => setMoving(null)}>
           <span className="-mt-2 truncate text-[13px] uppercase text-slate-400">{moving.descricao}</span>
-          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Outro dia da semana</span>
+          {otherDays(moving, day).length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                onKeepOnlyDay(moving.id, day);
+                setMoving(null);
+              }}
+              className="h-[52px] rounded-[14px] border-0 bg-blue-600 px-4 text-base font-semibold text-white"
+            >
+              Deixar só {naDia(day)}
+            </button>
+          )}
+          {otherDays(moving, day).length > 0 && (
+            <span className="-mt-1 text-xs text-slate-500">
+              Ele aparece também {otherDays(moving, day).map(naDia).join(' e ')}.
+            </span>
+          )}
+          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Passar para outro dia</span>
           <div className="grid grid-cols-5 gap-1.5">
             {DAYS.map((d) => (
               <button
@@ -414,8 +441,8 @@ export default function CicloSheet({
                 type="button"
                 disabled={d.code === day}
                 onClick={() => {
+                  // continua no dia que está sendo organizado; o médico só sai desta lista
                   onMoveDay(moving.id, day, d.code);
-                  setDay(d.code);
                   setMoving(null);
                 }}
                 className="h-14 rounded-[14px] border border-slate-800 bg-slate-900 text-[13px] font-bold text-slate-100 disabled:opacity-35"
@@ -424,6 +451,8 @@ export default function CicloSheet({
               </button>
             ))}
           </div>
+          {inWeek(moving) && (
+          <>
           <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Outra semana do ciclo</span>
           <div className="grid grid-cols-5 gap-1.5">
             {CYCLE_WEEKS.map((w) => (
@@ -451,6 +480,8 @@ export default function CicloSheet({
           >
             Tirar desta semana
           </button>
+          </>
+          )}
           <span className="text-xs text-slate-500">Trocar o dia vale só para você: a agenda do médico não muda para os colegas.</span>
         </BottomSheet>
       )}

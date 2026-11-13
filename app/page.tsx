@@ -1488,6 +1488,30 @@ export default function HomePage() {
     [doctorsWithWeeks, routeOrder, saveRouteOrder],
   );
 
+  /** Deixa o médico só neste dia na rota do representante (tira dos outros dias da agenda) */
+  const keepOnlyDay = useCallback(
+    (docId: string, day: string) => {
+      const doc = doctorsWithWeeks.find((x) => x.id === docId);
+      if (!doc) return;
+      const natural = (d: string) => agendaAllLocations(doc).some((e) => e.day === d);
+      const edit = (key: string, fn: (l: string[]) => string[]) => {
+        const cur = routeOrder[key] ?? [];
+        const next = fn([...cur]);
+        if (next.join(',') !== cur.join(',')) void saveRouteOrder(key, next);
+      };
+      for (const d of ['seg', 'ter', 'qua', 'qui', 'sex']) {
+        if (d === day) {
+          if (natural(d)) edit(`dia_menos_${d}`, (l) => l.filter((x) => x !== docId));
+          else edit(`dia_mais_${d}`, (l) => (l.includes(docId) ? l : [...l, docId]));
+        } else {
+          edit(`dia_mais_${d}`, (l) => l.filter((x) => x !== docId));
+          if (natural(d)) edit(`dia_menos_${d}`, (l) => (l.includes(docId) ? l : [...l, docId]));
+        }
+      }
+    },
+    [doctorsWithWeeks, routeOrder, saveRouteOrder],
+  );
+
   const filteredDoctors = useMemo(() => {
     const q = searchQuery.trim();
     const specSet = new Set(profile?.specialties ?? []);
@@ -3225,7 +3249,9 @@ export default function HomePage() {
         <VisitedSheet dayLabel={visitedDayLabel} items={visitedDayItems} onClose={() => setShowVisited(false)} onOpen={openSheet} />
       )}
 
+      {/* A organização fica montada (escondida) enquanto a ficha está aberta: ao voltar, semana, dia, cidades e rolagem continuam iguais */}
       {showCiclo && (
+        <div style={{ visibility: sheetDoc ? 'hidden' : undefined }} aria-hidden={sheetDoc ? true : undefined}>
         <CicloSheet
           doctors={panelDoctors}
           weeksByDoctor={weeksByDoctor}
@@ -3242,10 +3268,12 @@ export default function HomePage() {
           }}
           onDay={attendsOn}
           onMoveDay={moveDay}
+          onKeepOnlyDay={keepOnlyDay}
           onRemoveWeek={(id, from) => void setDoctorWeeks(id, (weeksByDoctor.get(id) ?? []).filter((w) => w !== from))}
           onClose={() => setShowCiclo(false)}
           onOpen={openSheet}
         />
+        </div>
       )}
 
       {showIA && (
