@@ -1128,19 +1128,6 @@ export default function HomePage() {
     return out;
   }, [routeOrder]);
 
-  /** Sobe o médico uma posição na rota da semana (troca de lugar com o anterior do mesmo dia) */
-  const moveUpInWeek = useCallback(
-    (week: number, docId: string, prevId: string) => {
-      const key = cycleWeekKey(week as CycleWeek);
-      const list = [...(routeOrder[key] ?? [])];
-      const a = list.indexOf(docId);
-      const b = list.indexOf(prevId);
-      if (a < 0 || b < 0) return;
-      [list[a], list[b]] = [list[b], list[a]];
-      void saveRouteOrder(key, list);
-    },
-    [routeOrder, saveRouteOrder],
-  );
 
   const setDoctorWeeks = useCallback(
     async (docId: string, weeks: readonly number[] | null | undefined): Promise<boolean> => {
@@ -3197,7 +3184,12 @@ export default function HomePage() {
           doctors={panelDoctors}
           weeksByDoctor={weeksByDoctor}
           orderOf={(w) => routeOrder[cycleWeekKey(w as CycleWeek)] ?? []}
-          onMoveUp={moveUpInWeek}
+          onReorder={(w, ids) => {
+            const key = cycleWeekKey(w as CycleWeek);
+            void saveRouteOrder(key, mergeVisibleOrder(routeOrder[key], ids));
+          }}
+          citiesOf={weekCityList}
+          onSaveCities={(w, keys) => void weekCities.save(w, keys)}
           onMoveWeek={(id, from, to) => {
             const cur = weeksByDoctor.get(id) ?? [];
             void setDoctorWeeks(id, [...cur.filter((w) => w !== from && w !== to), to]);

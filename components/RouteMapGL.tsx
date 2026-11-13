@@ -78,15 +78,27 @@ export default function RouteMapGL({ stops, onOpen, onFail }: { stops: MapStop[]
       onFailRef.current?.(String((err as Error)?.message ?? err).slice(0, 80));
       return;
     }
-    // Se o mapa não terminar de carregar em 10 s (estilo ou blocos bloqueados), cai no mapa simples
+    // Se o estilo do mapa não chegar em 20 s (chave bloqueada, sem internet...), cai no mapa simples
     let firstError = '';
     map.on('error', (e) => {
       if (!firstError) firstError = String((e as unknown as { error?: Error }).error?.message ?? 'erro').slice(0, 80);
     });
-    const guard = window.setTimeout(() => {
-      if (!map.loaded()) onFailRef.current?.(firstError || 'demorou demais para carregar');
-    }, 10000);
-    map.once('load', () => window.clearTimeout(guard));
+    // Só conta o tempo com a tela visível (no fundo o navegador freia o carregamento)
+    let guard = 0;
+    let loaded = false;
+    const arm = () => {
+      guard = window.setTimeout(() => {
+        if (loaded) return;
+        if (document.visibilityState !== 'visible') return arm();
+        onFailRef.current?.(firstError || 'demorou demais para carregar');
+      }, 20000);
+    };
+    arm();
+    // O estilo chegou: a chave foi aceita e o WebGL funciona; os blocos vêm em seguida
+    map.once('styledata', () => {
+      loaded = true;
+      window.clearTimeout(guard);
+    });
     map.touchZoomRotate.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.on('dragstart', () => setMoved(true));
@@ -148,7 +160,8 @@ export default function RouteMapGL({ stops, onOpen, onFail }: { stops: MapStop[]
 
   return (
     <div className="relative -mx-4 overflow-hidden bg-slate-800 sm:mx-0 sm:rounded-3xl" style={{ height: H }}>
-      <div ref={box} className="absolute inset-0" style={{ touchAction: 'none' }} />
+      {/* posição e altura no style: o CSS do MapLibre põe position:relative em .maplibregl-map e anularia a classe "absolute" (mapa com altura 0, só o fundo cinza) */}
+      <div ref={box} style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', touchAction: 'none' }} />
       {moved && (
         <button
           type="button"
