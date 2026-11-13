@@ -14,6 +14,10 @@ interface CicloSheetProps {
   orderOf: (week: number) => readonly string[];
   onMoveUp: (week: number, docId: string, prevId: string) => void;
   onMoveWeek: (docId: string, from: number, to: number) => void;
+  /** o médico entra na rota deste dia? (agenda + trocas do representante) */
+  onDay: (doc: Doctor, day: string) => boolean;
+  /** troca o dia do médico só para este representante */
+  onMoveDay: (docId: string, from: string, to: string) => void;
   onRemoveWeek: (docId: string, from: number) => void;
   onClose: () => void;
   onOpen: (id: string) => void;
@@ -37,6 +41,7 @@ function getDoctorsForDay(
   week: number,
   day: DayCode,
   order: readonly string[] = [],
+  onDay?: (doc: Doctor, day: string) => boolean,
 ): Doctor[] {
   const pos = (id: string) => {
     const i = order.indexOf(id);
@@ -45,6 +50,7 @@ function getDoctorsForDay(
   const inWeek = (d: Doctor) => (weeksByDoctor.get(d.id) ?? []).includes(week);
   return doctors
     .filter((d) => {
+    if (onDay) return onDay(d, day);
     if (getAgenda(d).some((e) => e.day === day)) return true;
     return (d.locais ?? []).some((l) => l.agenda.some((e) => e.day === day));
     })
@@ -52,21 +58,21 @@ function getDoctorsForDay(
 }
 
 /** Tela de organização do ciclo: semana × dia → lista ordenada de médicos. */
-export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, onMoveWeek, onRemoveWeek, onClose, onOpen }: CicloSheetProps) {
+export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, onMoveWeek, onRemoveWeek, onDay, onMoveDay, onClose, onOpen }: CicloSheetProps) {
   const [week, setWeek] = useState<number>(1);
   const [day, setDay] = useState<DayCode>('seg');
 
   const [moving, setMoving] = useState<Doctor | null>(null);
   const inWeek = (d: Doctor) => (weeksByDoctor.get(d.id) ?? []).includes(week);
-  const list = getDoctorsForDay(doctors, weeksByDoctor, week, day, orderOf(week));
+  const list = getDoctorsForDay(doctors, weeksByDoctor, week, day, orderOf(week), onDay);
   const weekCount = list.filter(inWeek).length;
-  const dayCounts = DAYS.map((d) => getDoctorsForDay(doctors, weeksByDoctor, week, d.code).length);
+  const dayCounts = DAYS.map((d) => getDoctorsForDay(doctors, weeksByDoctor, week, d.code, [], onDay).length);
 
   return (
     <>
     <BottomSheet title="Organizar rota do ciclo" onClose={onClose}>
       {/* semanas */}
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 no-scrollbar pb-1">
+      <div className="-mx-4 flex shrink-0 gap-2 overflow-x-auto px-4 no-scrollbar pb-1">
         {CYCLE_WEEKS.map((w) => (
           <button
             key={w}
@@ -85,7 +91,7 @@ export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, 
       </div>
 
       {/* dias da semana */}
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="grid shrink-0 grid-cols-5 gap-1.5">
         {DAYS.map((d, i) => (
           <button
             key={d.code}
@@ -120,7 +126,7 @@ export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, 
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex shrink-0 flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
               {DAYS.find((d) => d.code === day)?.label} · {list.length} {list.length === 1 ? 'médico' : 'médicos'} · {weekCount} na {week}ª semana
@@ -175,6 +181,24 @@ export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, 
       {moving && (
         <BottomSheet title="Mover médico" onClose={() => setMoving(null)}>
           <span className="-mt-2 truncate text-[13px] uppercase text-slate-400">{moving.descricao}</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Outro dia da semana</span>
+          <div className="grid grid-cols-5 gap-1.5">
+            {DAYS.map((d) => (
+              <button
+                key={d.code}
+                type="button"
+                disabled={d.code === day}
+                onClick={() => {
+                  onMoveDay(moving.id, day, d.code);
+                  setDay(d.code);
+                  setMoving(null);
+                }}
+                className="h-14 rounded-[14px] border border-slate-800 bg-slate-900 text-[13px] font-bold text-slate-100 disabled:opacity-35"
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
           <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Outra semana do ciclo</span>
           <div className="grid grid-cols-5 gap-1.5">
             {CYCLE_WEEKS.map((w) => (
@@ -202,7 +226,7 @@ export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, 
           >
             Tirar desta semana
           </button>
-          <span className="text-xs text-slate-500">O dia de atendimento vem da agenda do médico. Para mudar o dia, edite a agenda.</span>
+          <span className="text-xs text-slate-500">Trocar o dia vale só para você: a agenda do médico não muda para os colegas.</span>
         </BottomSheet>
       )}
     </>

@@ -1459,6 +1459,48 @@ export default function HomePage() {
     return out;
   }, [myVisits, now, selectedTab]);
 
+  /* Dia na rota, por representante: o médico pode ser trocado de dia sem mexer na agenda dele (que é de todos).
+   * Guardado em rep_route_order: dia_mais_<dia> = médicos colocados nesse dia; dia_menos_<dia> = médicos tirados dele. */
+  const dayOverrides = useMemo(() => {
+    const mais = new Map<string, Set<string>>();
+    const menos = new Map<string, Set<string>>();
+    for (const d of ['seg', 'ter', 'qua', 'qui', 'sex']) {
+      mais.set(d, new Set(routeOrder[`dia_mais_${d}`] ?? []));
+      menos.set(d, new Set(routeOrder[`dia_menos_${d}`] ?? []));
+    }
+    return { mais, menos };
+  }, [routeOrder]);
+
+  /** O médico entra na rota deste dia? (agenda em qualquer local, ajustada pelas trocas do representante) */
+  const attendsOn = useCallback(
+    (d: Doctor, day: string): boolean => {
+      if (dayOverrides.mais.get(day)?.has(d.id)) return true;
+      if (dayOverrides.menos.get(day)?.has(d.id)) return false;
+      return agendaAllLocations(d).some((e) => e.day === day);
+    },
+    [dayOverrides],
+  );
+
+  const moveDay = useCallback(
+    (docId: string, from: string, to: string) => {
+      const doc = doctorsWithWeeks.find((x) => x.id === docId);
+      if (!doc) return;
+      const natural = (day: string) => agendaAllLocations(doc).some((e) => e.day === day);
+      const edit = (key: string, fn: (l: string[]) => string[]) => {
+        const cur = routeOrder[key] ?? [];
+        const next = fn([...cur]);
+        if (next.join(',') !== cur.join(',')) void saveRouteOrder(key, next);
+      };
+      // sai do dia de origem
+      if (natural(from)) edit(`dia_menos_${from}`, (l) => (l.includes(docId) ? l : [...l, docId]));
+      edit(`dia_mais_${from}`, (l) => l.filter((x) => x !== docId));
+      // entra no dia de destino
+      if (natural(to)) edit(`dia_menos_${to}`, (l) => l.filter((x) => x !== docId));
+      else edit(`dia_mais_${to}`, (l) => (l.includes(docId) ? l : [...l, docId]));
+    },
+    [doctorsWithWeeks, routeOrder, saveRouteOrder],
+  );
+
   const filteredDoctors = useMemo(() => {
     const q = searchQuery.trim();
     const specSet = new Set(profile?.specialties ?? []);
@@ -1470,7 +1512,7 @@ export default function HomePage() {
       if (selectedTab === 'novos') {
         if (!isNewDoctor(d)) return false;
       } else if (selectedTab) {
-        if (!agenda.some((e) => e.day === selectedTab)) return false;
+        if (!attendsOn(d, selectedTab)) return false;
       }
 
       if (selectedCategory && !matchesLocation(d, selectedCategory)) return false;
@@ -1484,7 +1526,8 @@ export default function HomePage() {
       if (turnoFilter) {
         const entries =
           selectedTab && selectedTab !== 'novos' ? agenda.filter((e) => e.day === selectedTab) : agenda;
-        if (!entries.some((e) => shiftCovers(e.shift, turnoFilter))) return false;
+        const forced = Boolean(selectedTab && selectedTab !== 'novos' && dayOverrides.mais.get(selectedTab)?.has(d.id));
+        if (!forced && !entries.some((e) => shiftCovers(e.shift, turnoFilter))) return false;
       }
 
       // Semana do ciclo: só os médicos marcados nessa semana
@@ -1500,19 +1543,19 @@ export default function HomePage() {
       if (q && !matchDoctor(d, q, searchScope).matched) return false;
       return true;
     });
-  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, selectedSpecs, turnoFilter, searchQuery, searchScope, portfolioActive, profile, portfolio, visitedEarlier]);
+  }, [doctorsWithWeeks, selectedTab, selectedCategory, selectedCities, selectedWeek, selectedSpecs, turnoFilter, searchQuery, searchScope, portfolioActive, profile, portfolio, visitedEarlier, attendsOn, dayOverrides]);
 
   /** Médicos de cada cidade no dia escolhido (para o filtro de cidades); sem dia = sem divisão */
   const cityDayCounts = useMemo(() => {
     if (!selectedTab || selectedTab === 'novos') return undefined;
     const out: Record<string, number> = {};
     for (const d of panelDoctors) {
-      if (!agendaAllLocations(d).some((e) => e.day === selectedTab)) continue;
+      if (!attendsOn(d, selectedTab)) continue;
       const k = cityKey(d.cidade);
       out[k] = (out[k] ?? 0) + 1;
     }
     return out;
-  }, [panelDoctors, selectedTab]);
+  }, [panelDoctors, selectedTab, attendsOn]);
   const dayLongLabel = selectedTab ? DAY_LONG[selectedTab] : undefined;
 
   /** Sugestões ao digitar: acha em TODOS os médicos (não só no dia aberto) e leva direto à ficha */
@@ -3159,6 +3202,8 @@ export default function HomePage() {
             const cur = weeksByDoctor.get(id) ?? [];
             void setDoctorWeeks(id, [...cur.filter((w) => w !== from && w !== to), to]);
           }}
+          onDay={attendsOn}
+          onMoveDay={moveDay}
           onRemoveWeek={(id, from) => void setDoctorWeeks(id, (weeksByDoctor.get(id) ?? []).filter((w) => w !== from))}
           onClose={() => setShowCiclo(false)}
           onOpen={openSheet}
