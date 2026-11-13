@@ -3061,6 +3061,7 @@ export default function HomePage() {
       {showCiclo && (
         <CicloSheet
           doctors={panelDoctors}
+          weeksByDoctor={weeksByDoctor}
           onClose={() => setShowCiclo(false)}
           onOpen={openSheet}
         />

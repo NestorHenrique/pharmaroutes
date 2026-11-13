@@ -3,41 +3,48 @@
 import { useState } from 'react';
 import BottomSheet from '@/components/BottomSheet';
 import type { Doctor } from '@/types/doctor';
-import { normalizeCycleWeeks, CYCLE_WEEKS } from '@/types/doctor';
-import { specialtyCode } from '@/utils';
+import { CYCLE_WEEKS } from '@/types/doctor';
+import { getAgenda, specialtyCode } from '@/utils';
 
 interface CicloSheetProps {
   doctors: Doctor[];
+  /** semanas do ciclo de cada médico (vêm de rep_route_order, por representante) */
+  weeksByDoctor: ReadonlyMap<string, readonly number[]>;
   onClose: () => void;
   onOpen: (id: string) => void;
 }
 
 const DAYS = [
-  { code: 'segunda', label: 'Seg' },
-  { code: 'terca', label: 'Ter' },
-  { code: 'quarta', label: 'Qua' },
-  { code: 'quinta', label: 'Qui' },
-  { code: 'sexta', label: 'Sex' },
+  { code: 'seg', label: 'Seg' },
+  { code: 'ter', label: 'Ter' },
+  { code: 'qua', label: 'Qua' },
+  { code: 'qui', label: 'Qui' },
+  { code: 'sex', label: 'Sex' },
 ] as const;
 
 type DayCode = (typeof DAYS)[number]['code'];
 
-function getDoctorsForWeekDay(doctors: Doctor[], week: number, day: DayCode): Doctor[] {
+function getDoctorsForWeekDay(
+  doctors: Doctor[],
+  weeksByDoctor: ReadonlyMap<string, readonly number[]>,
+  week: number,
+  day: DayCode,
+): Doctor[] {
   return doctors.filter((d) => {
-    const weeks = normalizeCycleWeeks(d.cycle_weeks);
-    if (!weeks.includes(week as (typeof CYCLE_WEEKS)[number])) return false;
-    if (!d.agenda || d.agenda.length === 0) return false;
-    return d.agenda.some((e) => e.day === day);
+    if (!(weeksByDoctor.get(d.id) ?? []).includes(week)) return false;
+    // atende no dia em qualquer um dos locais
+    if (getAgenda(d).some((e) => e.day === day)) return true;
+    return (d.locais ?? []).some((l) => l.agenda.some((e) => e.day === day));
   });
 }
 
 /** Tela de organização do ciclo: semana × dia → lista ordenada de médicos. */
-export default function CicloSheet({ doctors, onClose, onOpen }: CicloSheetProps) {
+export default function CicloSheet({ doctors, weeksByDoctor, onClose, onOpen }: CicloSheetProps) {
   const [week, setWeek] = useState<number>(1);
-  const [day, setDay] = useState<DayCode>('segunda');
+  const [day, setDay] = useState<DayCode>('seg');
 
-  const list = getDoctorsForWeekDay(doctors, week, day);
-  const dayCounts = DAYS.map((d) => getDoctorsForWeekDay(doctors, week, d.code).length);
+  const list = getDoctorsForWeekDay(doctors, weeksByDoctor, week, day);
+  const dayCounts = DAYS.map((d) => getDoctorsForWeekDay(doctors, weeksByDoctor, week, d.code).length);
 
   return (
     <BottomSheet title="Organizar rota do ciclo" onClose={onClose}>
