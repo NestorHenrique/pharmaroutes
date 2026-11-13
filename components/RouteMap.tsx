@@ -15,7 +15,7 @@ export interface MapStop {
 }
 
 const TILE = 256;
-const H = 420;
+const DEFAULT_H = 420;
 
 /** Posição em pixels no mapa-múndi (projeção dos mapas de rua) no zoom z */
 function project(lat: number, lng: number, z: number) {
@@ -34,7 +34,7 @@ function project(lat: number, lng: number, z: number) {
 const RouteMapGL = dynamic(() => import('@/components/RouteMapGL'), { ssr: false });
 
 /** Com a chave do MapTiler usa o mapa vetorial (RouteMapGL); sem ela, o mapa simples abaixo. */
-export default function RouteMap(props: { stops: MapStop[]; onOpen: (id: string) => void }) {
+export default function RouteMap(props: { stops: MapStop[]; onOpen: (id: string) => void; height?: number }) {
   // Se o mapa vetorial não iniciar (WebGL indisponível, estilo bloqueado...), cai no mapa simples e mostra o motivo
   const [glFail, setGlFail] = useState<string | null>(null);
   if (process.env.NEXT_PUBLIC_MAPTILER_KEY && props.stops.length > 0 && !glFail) return <RouteMapGL {...props} onFail={setGlFail} />;
@@ -50,7 +50,8 @@ export default function RouteMap(props: { stops: MapStop[]; onOpen: (id: string)
   );
 }
 
-function RouteMapRaster({ stops, onOpen }: { stops: MapStop[]; onOpen: (id: string) => void }) {
+function RouteMapRaster({ stops, onOpen, height }: { stops: MapStop[]; onOpen: (id: string) => void; height?: number }) {
+  const H = height ?? DEFAULT_H;
   const ref = useRef<HTMLDivElement>(null);
   const [w, setW] = useState(358);
   const [dz, setDz] = useState(0);

@@ -30,6 +30,11 @@ export function todayLocation(locs: readonly DoctorLocation[], date: Date = new 
   return locs.find((l) => l.agenda.some((e) => e.day === code)) ?? locs[0];
 }
 
+/** Local do dia da rota: o que atende nesse dia ("ter", "qua"...); se nenhum atende (dia trocado pelo rep), o Local 1. */
+export function locationForDay(locs: readonly DoctorLocation[], day: string): DoctorLocation {
+  return locs.find((l) => l.agenda.some((e) => e.day === day)) ?? locs[0];
+}
+
 /** "Quinta · Tarde" (primeiro dia da agenda do local) */
 export function locationWhen(loc: DoctorLocation): string {
   const e = loc.agenda[0];

@@ -48,7 +48,7 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { useVisits } from '@/hooks/useVisits';
 import { useAdmin } from '@/hooks/useAdmin';
 import { useLocations } from '@/hooks/useLocations';
-import { agendaAllLocations, getLocations, locationShort } from '@/lib/locations';
+import { agendaAllLocations, getLocations, locationMapsUrl, locationShort } from '@/lib/locations';
 import { maskRep, setPrivacy } from '@/lib/privacy';
 import { useVisitPrompts } from '@/hooks/useVisitPrompts';
 import VisitPromptModal from '@/components/VisitPromptModal';
@@ -96,6 +96,7 @@ import DoctorSheet from '@/components/DoctorSheet';
 import { RepAvatar } from '@/components/RepAvatar';
 import AddDoctorForm from '@/components/AddDoctorForm';
 import BottomSheet from '@/components/BottomSheet';
+import { lockScroll } from '@/lib/scrollLock';
 import { mergeVisibleOrder } from '@/lib/routeOrder';
 import StatusOverview from '@/components/StatusOverview';
 import ProfileSheet from '@/components/ProfileSheet';
@@ -642,6 +643,15 @@ export default function HomePage() {
     changeWeek(null);
     setSelectedCities(weekCityList(week));
   };
+
+  // As cidades da semana atual (marcadas no Organizar rota ou no filtro) valem para a lista de Hoje sem precisar filtrar de novo
+  const activeWeekCitiesSig = activeWeek ? (weekCities.byWeek[activeWeek] ?? []).join('|') : '';
+  useEffect(() => {
+    if (!activeWeek) return;
+    const list = weekCities.byWeek[activeWeek];
+    if (list) setSelectedCities(list);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWeek, activeWeekCitiesSig]);
 
   // Outro aparelho já respondeu "qual semana" nesta segunda-feira: segue a mesma
   useEffect(() => {
@@ -1598,8 +1608,14 @@ export default function HomePage() {
    *        deste representante (rep_route_order), com ▲▼ e arrastar-e-soltar.
    * FIM:   Finalizou / Não veio / Licença / Viagem — esmaecidos.
    */
-  /** Com semana filtrada, a ordem manual é a da semana (ciclo_wN); senão a do dia */
-  const manualKey = selectedWeek ? cycleWeekKey(selectedWeek) : orderKey;
+  /** A ordem da rota é a do "Organizar rota" (ciclo_wN) da semana filtrada ou, sem filtro, da semana atual.
+   *  Se a semana ainda não tem nenhum médico desta lista organizado, usa a ordem antiga do dia. */
+  const orderWeek = selectedWeek ?? activeWeek;
+  const weekOrderKey = orderWeek ? cycleWeekKey(orderWeek) : null;
+  const weekHasOrder = Boolean(
+    weekOrderKey && (routeOrder[weekOrderKey] ?? []).some((id) => filteredDoctors.some((d) => d.id === id)),
+  );
+  const manualKey = weekOrderKey && (selectedWeek || weekHasOrder) ? weekOrderKey : orderKey;
   const manualOrder = routeOrder[manualKey];
   const feed = useDoctorFilters({
     doctors: filteredDoctors,
@@ -1934,6 +1950,35 @@ export default function HomePage() {
   const [showVisited, setShowVisited] = useState(false);
   // Abas da barra de baixo e filtro da aba Médicos
   const [mainTab, setMainTab] = useState<MainTab>('hoje');
+  /* Aba Mapa: a tela se encaixa sem rolar (o mapa fica com a altura que sobra) */
+  const mapTabRef = useRef<HTMLDivElement>(null);
+  const mapAreaRef = useRef<HTMLDivElement>(null);
+  const [mapTabH, setMapTabH] = useState<number | null>(null);
+  const [mapAreaH, setMapAreaH] = useState<number | null>(null);
+  const [showNoGps, setShowNoGps] = useState(false);
+  useEffect(() => {
+    if (mainTab !== 'mapa') return;
+    window.scrollTo(0, 0);
+    const unlock = lockScroll();
+    const measure = () => {
+      const el = mapTabRef.current;
+      if (el) {
+        const top = el.getBoundingClientRect().top + window.scrollY;
+        // 128px = espaço da barra de baixo (pb-32 do main)
+        setMapTabH(Math.max(360, Math.floor(window.innerHeight - top - 128)));
+      }
+      if (mapAreaRef.current) setMapAreaH(mapAreaRef.current.clientHeight);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (mapAreaRef.current) ro.observe(mapAreaRef.current);
+    window.addEventListener('resize', measure);
+    return () => {
+      unlock();
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [mainTab]);
   const [medFilter, setMedFilter] = useState<'todos' | 'falta' | 'novos'>('todos');
   const [medLimit, setMedLimit] = useState(60);
   useEffect(() => {
@@ -2278,45 +2323,55 @@ export default function HomePage() {
         : wkCities.length === 1
           ? wkCities[0]
           : 'Rota de hoje';
-  const heroCard = heroDoc ? (
+  /** card Próximo; compact = versão baixa da aba Mapa */
+  const heroCardFor = (compact: boolean) => heroDoc ? (
     <NextDoctorCard
+      compact={compact}
       doc={heroDoc}
       expected={feed.expected.get(heroDoc.id) ?? null}
       inOffice={Boolean(myOfficeDoc)}
-      onGo={heroNav ? () => openExternal(heroNav) : null}
+      day={routeDay}
+      markedLocationId={
+        (liveStatusMap[heroDoc.id] || []).find((st) => st.status_type === 'representante_no_consultorio' && st.created_by === sessionUserId)
+          ?.location_id ?? null
+      }
+      onGo={
+        heroNav || getLocations(heroDoc).some((l) => locationMapsUrl(l))
+          ? (loc) => {
+              const url = locationMapsUrl(loc) ?? heroNav;
+              if (url) openExternal(url);
+            }
+          : null
+      }
+      onFixLocation={(loc) => void fixStatusLocation(heroDoc.id, loc.principal ? null : loc.id)}
       onOpen={() => openSheet(heroDoc.id)}
       onStatus={() => setHeroStatusOpen(true)}
-      onArrive={() =>
-        myOfficeDoc ? void clearDoctorStatus(heroDoc.id, 'representante_no_consultorio') : void setDoctorStatus(heroDoc.id, 'representante_no_consultorio')
+      onArrive={(loc) =>
+        myOfficeDoc
+          ? void clearDoctorStatus(heroDoc.id, 'representante_no_consultorio')
+          : void setDoctorStatus(heroDoc.id, 'representante_no_consultorio', loc.principal ? undefined : { locationId: loc.id })
       }
       onVisit={() => toggleVisited(heroDoc.id)}
     />
   ) : null;
+  const heroCard = heroCardFor(false);
 
   // Mapa: visitados de hoje (verde) + quem falta, na ordem da rota. Só entra quem tem coordenada no GPS.
   const mapTodo = myOfficeDoc ? [myOfficeDoc, ...routeList] : routeList;
   const mapTotal = visitedList.length + mapTodo.length;
-  // A numeração conta só quem aparece no mapa (tem GPS): o primeiro que falta é o 1, sem contar quem não tem coordenada.
-  const mapStops: MapStop[] = [
-    ...visitedList.map((d) => ({ d, done: true })),
-    ...mapTodo.map((d) => ({ d, done: false })),
-  ]
-    .flatMap(({ d, done }) => {
-      const c = parseLatLng(d.map_link);
-      return c ? [{ id: d.id, name: d.descricao, lat: c.lat, lng: c.lng, done }] : [];
-    })
-    .map((s, _i, all) => {
-      const pending = all.filter((x) => !x.done);
-      const idx = pending.findIndex((x) => x.id === s.id);
-      return {
-        id: s.id,
-        name: s.name,
-        lat: s.lat,
-        lng: s.lng,
-        state: s.done ? ('done' as const) : idx === 0 ? ('next' as const) : ('todo' as const),
-        n: s.done ? undefined : idx + 1,
-      };
-    });
+  // A numeração é a mesma da rota de Hoje (quem falta, na ordem): quem não tem GPS mantém o número e vai para a lista embaixo do mapa.
+  const mapStops: MapStop[] = [];
+  const mapNoGps: { d: Doctor; n: number | null }[] = [];
+  for (const d of visitedList) {
+    const c = parseLatLng(d.map_link);
+    if (c) mapStops.push({ id: d.id, name: d.descricao, lat: c.lat, lng: c.lng, state: 'done' });
+    else mapNoGps.push({ d, n: null });
+  }
+  mapTodo.forEach((d, i) => {
+    const c = parseLatLng(d.map_link);
+    if (c) mapStops.push({ id: d.id, name: d.descricao, lat: c.lat, lng: c.lng, state: i === 0 ? 'next' : 'todo', n: i + 1 });
+    else mapNoGps.push({ d, n: i + 1 });
+  });
 
   // Médicos: a base inteira do painel, com busca e filtro
   const medBase = searchQuery.trim().length >= 2 ? suggestions.map((x) => x.doc) : doctorsWithWeeks;
@@ -2909,44 +2964,71 @@ export default function HomePage() {
         )}
 
         {mainTab === 'mapa' && (
-          <>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+          // Tela fixa: legenda, mapa (altura que sobrar) e o card Próximo, sem rolar
+          <div ref={mapTabRef} className="flex flex-col gap-2" style={{ height: mapTabH ?? undefined }}>
+            <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
               <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-blue-600" aria-hidden="true" /> Próximo</span>
               <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full border-2 border-blue-600" aria-hidden="true" /> Falta</span>
               <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-emerald-500" aria-hidden="true" /> Visitado</span>
             </div>
-            {mapTotal > mapStops.length && (
-              <p className="m-0 text-[13px] leading-snug text-slate-400">
-                {mapTotal - mapStops.length} {mapTotal - mapStops.length === 1 ? 'médico de hoje não tem' : 'médicos de hoje não têm'} GPS e não {mapTotal - mapStops.length === 1 ? 'aparece' : 'aparecem'} no mapa. Grave o GPS na ficha, em Editar.
-              </p>
-            )}
-            <RouteMap stops={mapStops} onOpen={openSheet} />
-            <div className="relative z-10 -mt-7 flex flex-col gap-2.5">
-              <div className="rounded-[28px] shadow-2xl shadow-black/40">{heroCard}</div>
-              {heroDoc && (
-                <button
-                  type="button"
-                  onClick={orderByTimes}
-                  className="flex h-14 items-center justify-center gap-2 rounded-[18px] border border-slate-700 bg-slate-800 text-sm font-bold text-blue-400"
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
-                    <path d="M19 16v4M17 18h4" />
-                  </svg>
-                  Otimizar rota
-                </button>
-              )}
-              {heroDoc && hasBackup && (
-                <button
-                  type="button"
-                  onClick={restoreOrder}
-                  className="flex h-12 items-center justify-center rounded-[18px] border border-slate-700 bg-transparent text-sm font-semibold text-slate-300"
-                >
-                  Voltar à minha ordem
-                </button>
-              )}
+            <div ref={mapAreaRef} className="relative min-h-0 flex-1">
+              <RouteMap stops={mapStops} onOpen={openSheet} height={mapAreaH ?? undefined} />
+              <div className="pointer-events-none absolute left-3 top-3 z-10 flex flex-col gap-2">
+                {heroDoc && (
+                  <button type="button" onClick={orderByTimes} className="pointer-events-auto flex h-11 items-center gap-1.5 self-start rounded-full border border-slate-700 bg-slate-900/95 px-4 text-[13px] font-semibold shadow-lg shadow-black/40 text-blue-400">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+                      <path d="M19 16v4M17 18h4" />
+                    </svg>
+                    Otimizar rota
+                  </button>
+                )}
+                {heroDoc && hasBackup && (
+                  <button type="button" onClick={restoreOrder} className="pointer-events-auto flex h-11 items-center gap-1.5 self-start rounded-full border border-slate-700 bg-slate-900/95 px-4 text-[13px] font-semibold shadow-lg shadow-black/40 text-slate-200">
+                    Voltar à minha ordem
+                  </button>
+                )}
+                {mapNoGps.length > 0 && (
+                  <button type="button" onClick={() => setShowNoGps(true)} className="pointer-events-auto flex h-11 items-center gap-1.5 self-start rounded-full border border-slate-700 bg-slate-900/95 px-4 text-[13px] font-semibold shadow-lg shadow-black/40 text-slate-200">
+                    <span className="size-2.5 rounded-full border-2 border-dashed border-slate-400" aria-hidden="true" />
+                    {mapNoGps.length} sem GPS
+                  </button>
+                )}
+              </div>
             </div>
-          </>
+            {/* card abaixo do mapa (sem sobrepor a borda e os créditos do mapa) */}
+            {heroDoc && <div className="relative z-10 shrink-0 rounded-[28px] shadow-2xl shadow-black/40">{heroCardFor(true)}</div>}
+            {showNoGps && (
+              <BottomSheet title="Sem GPS · fora do mapa" onClose={() => setShowNoGps(false)}>
+                <span className="-mt-2 text-xs text-slate-500">
+                  Eles continuam na rota, no número indicado. Toque para abrir a ficha e gravar o GPS em Editar.
+                </span>
+                  {mapNoGps.map(({ d, n }) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => openSheet(d.id)}
+                      className="flex min-h-[60px] items-center gap-3 rounded-2xl border border-dashed border-slate-700 bg-slate-900 px-3.5 py-2 text-left"
+                    >
+                      <span
+                        className={`font-display grid size-9 shrink-0 place-items-center rounded-full text-[13px] font-bold tabular-nums ${
+                          n === null ? 'bg-emerald-500 text-slate-950' : 'border-2 border-blue-600 text-slate-100'
+                        }`}
+                        aria-label={n === null ? 'Visitado' : `Número ${n} da rota`}
+                      >
+                        {n === null ? '✓' : n}
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-sm font-bold uppercase text-white">{d.descricao}</span>
+                        <span className="truncate text-xs uppercase text-slate-400">
+                          {[specialtyCode(d.especialidade), d.complemento, d.cidade].filter(Boolean).join(' · ')}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+              </BottomSheet>
+            )}
+          </div>
         )}
 
         {mainTab === 'medicos' && (

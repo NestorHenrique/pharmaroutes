@@ -6,6 +6,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import type { MapStop } from '@/components/RouteMap';
 
 const KEY = process.env.NEXT_PUBLIC_MAPTILER_KEY ?? '';
+/** caminho pelas ruas (OSRM) já buscado, por sequência de paradas */
+const roadCache = new Map<string, number[][]>();
 const H = 420;
 
 function styleUrl(): string {
@@ -40,7 +42,18 @@ function pinEl(s: MapStop, onOpen: (id: string) => void): HTMLElement {
  * Mapa da rota com mapa vetorial (MapLibre + MapTiler): arrasta, pinça e gira com os dedos, texto nítido em qualquer zoom.
  * Só é usado quando existe NEXT_PUBLIC_MAPTILER_KEY; sem a chave o app mostra o mapa simples.
  */
-export default function RouteMapGL({ stops, onOpen, onFail }: { stops: MapStop[]; onOpen: (id: string) => void; onFail?: (reason: string) => void }) {
+export default function RouteMapGL({
+  stops,
+  onOpen,
+  onFail,
+  height,
+}: {
+  stops: MapStop[];
+  onOpen: (id: string) => void;
+  onFail?: (reason: string) => void;
+  height?: number;
+}) {
+  const boxH = height ?? H;
   const box = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markers = useRef<maplibregl.Marker[]>([]);
@@ -132,34 +145,86 @@ export default function RouteMapGL({ stops, onOpen, onFail }: { stops: MapStop[]
     markers.current = stops.map((s) =>
       new maplibregl.Marker({ element: pinEl(s, (id) => onOpenRef.current(id)) }).setLngLat([s.lng, s.lat]).addTo(map),
     );
+    // Linha da rota: primeiro reta (tracejada); quando o OSRM devolve o caminho pelas ruas, troca pela linha cheia
+    const straight = stops.filter((s) => s.state !== 'done').map((s) => [s.lng, s.lat]);
+    const key = straight.map((c) => c.join(',')).join(';');
     const draw = () => {
-      const coords = stops.filter((s) => s.state !== 'done').map((s) => [s.lng, s.lat]);
-      const data = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } } as const;
-      const src = map.getSource('rota') as maplibregl.GeoJSONSource | undefined;
-      if (src) {
-        src.setData(data);
-        return;
+      try {
+        drawLine();
+      } catch {
+        /* estilo ainda carregando: o evento style.load chama de novo */
       }
-      map.addSource('rota', { type: 'geojson', data });
-      map.addLayer({
-        id: 'rota-linha',
-        type: 'line',
-        source: 'rota',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#A78BFA', 'line-width': 4, 'line-dasharray': [0.5, 2.2] },
-      });
     };
-    if (map.isStyleLoaded()) draw();
-    else map.once('load', draw);
-    map.on('styledata', () => {
-      if (map.isStyleLoaded() && !map.getSource('rota')) draw();
-    });
+    const drawLine = () => {
+      const road = roadCache.get(key) ?? null;
+      const data = { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: road ?? straight } } as const;
+      const src = map.getSource('rota') as maplibregl.GeoJSONSource | undefined;
+      if (src) src.setData(data);
+      else {
+        map.addSource('rota', { type: 'geojson', data });
+        map.addLayer({
+          id: 'rota-linha',
+          type: 'line',
+          source: 'rota',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#A78BFA', 'line-width': 4, 'line-dasharray': [0.5, 2.2] },
+        });
+        map.addLayer({
+          id: 'rota-estrada',
+          type: 'line',
+          source: 'rota',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#A78BFA', 'line-width': 5, 'line-opacity': 0.9 },
+        });
+      }
+      map.setLayoutProperty('rota-linha', 'visibility', road ? 'none' : 'visible');
+      map.setLayoutProperty('rota-estrada', 'visibility', road ? 'visible' : 'none');
+    };
+    draw();
+    // Troca de tema (setStyle) apaga a linha: redesenha quando o estilo novo terminar de carregar
+    const onStyle = () => {
+      if (!map.getSource('rota')) draw();
+    };
+    map.on('style.load', onStyle);
+    map.on('styledata', onStyle);
+    map.once('load', draw);
+
+    const ctrl = new AbortController();
+    if (straight.length >= 2 && straight.length <= 25 && !roadCache.has(key)) {
+      const timer = window.setTimeout(() => ctrl.abort(), 10000);
+      fetch(`https://router.project-osrm.org/route/v1/driving/${key}?overview=full&geometries=geojson`, { signal: ctrl.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j: { code?: string; routes?: { geometry?: { coordinates?: number[][] } }[] } | null) => {
+          const coords = j?.code === 'Ok' ? j.routes?.[0]?.geometry?.coordinates : undefined;
+          if (coords && coords.length > 1) {
+            roadCache.set(key, coords);
+            if (mapRef.current === map) draw();
+          }
+        })
+        .catch(() => { /* sem rota pelas ruas: fica a linha reta */ })
+        .finally(() => window.clearTimeout(timer));
+    }
     fit(false);
     setMoved(false);
+    return () => {
+      ctrl.abort();
+      map.off('styledata', onStyle);
+      map.off('style.load', onStyle);
+      map.off('load', draw);
+    };
   }, [stops]);
 
+  // A altura muda (tela que se encaixa): o mapa precisa recalcular o tamanho
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.resize();
+    fit(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boxH]);
+
   return (
-    <div className="relative -mx-4 overflow-hidden bg-slate-800 sm:mx-0 sm:rounded-3xl" style={{ height: H }}>
+    <div className="relative -mx-4 overflow-hidden bg-slate-800 sm:mx-0 sm:rounded-3xl" style={{ height: boxH }}>
       {/* posição e altura no style: o CSS do MapLibre põe position:relative em .maplibregl-map e anularia a classe "absolute" (mapa com altura 0, só o fundo cinza) */}
       <div ref={box} style={{ position: 'absolute', inset: 0, height: '100%', width: '100%', touchAction: 'none' }} />
       {moved && (
