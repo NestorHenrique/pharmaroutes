@@ -247,6 +247,10 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
   };
 
   const code = specialtyCode(form.especialidade);
+  const groupCls = 'rounded-2xl border border-slate-800 bg-slate-950 p-3.5 flex flex-col gap-3';
+  const [moreOpen, setMoreOpen] = useState(false);
+  // Rascunho com e-mail, link ou observação: já abre o bloco
+  const showMore = moreOpen || Boolean(form.email || form.map_link || form.observacoes);
 
   return (
     <div className={embedded ? 'flex flex-col gap-3' : 'bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col gap-3'}>
@@ -361,34 +365,69 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
 
       {!existing && (
         <>
-      {/* Nome */}
-      <input
-        type="text"
-        placeholder="Nome do Médico *"
-        value={form.descricao}
-        onChange={(e) => setField('descricao', e.target.value.toUpperCase())}
-        className={inputCls}
-      />
-
-      {/* Especialidade + sigla */}
-      <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
-        <ComboBox
-          value={form.especialidade}
-          onChange={(v) => setField('especialidade', v)}
-          options={SPECIALTY_OPTIONS}
-          placeholder="Especialidade"
+      {/* Médico: nome e especialidade */}
+      <section className={groupCls}>
+        <input
+          type="text"
+          placeholder="Nome do Médico *"
+          value={form.descricao}
+          onChange={(e) => setField('descricao', e.target.value.toUpperCase())}
+          className={inputCls}
         />
-        <span className="text-[10px] px-1.5 py-1 rounded-sm font-bold bg-rose-900 text-rose-200 min-w-9 text-center">
-          {code ?? '—'}
-        </span>
-      </div>
-
-      {/* Categoria do Local */}
-      <div>
-        <div className="mb-1.5">
-          <FormTitle>Categoria do local</FormTitle>
+        <div className="grid grid-cols-[1fr_auto] gap-1.5 items-center">
+          <ComboBox
+            value={form.especialidade}
+            onChange={(v) => setField('especialidade', v)}
+            options={SPECIALTY_OPTIONS}
+            placeholder="Especialidade"
+          />
+          <span className="text-[10px] px-1.5 py-1 rounded-sm font-bold bg-rose-900 text-rose-200 min-w-9 text-center">
+            {code ?? '—'}
+          </span>
         </div>
-        <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Categoria do local">
+      </section>
+
+      {/* Agenda: dias, turno e semanas do ciclo */}
+      <section className={groupCls}>
+        <AgendaEditor value={form.agenda || []} onChange={(a) => setField('agenda', a)} />
+        <div className="flex flex-col gap-1.5">
+          <FormTitle>Semana do ciclo · só para você</FormTitle>
+          <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="Semanas do ciclo">
+            {CYCLE_WEEKS.map((w) => {
+              const on = (form.cycle_weeks ?? []).includes(w);
+              return (
+                <button
+                  key={w}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setField('cycle_weeks', normalizeCycleWeeks(on ? (form.cycle_weeks ?? []).filter((x) => x !== w) : [...(form.cycle_weeks ?? []), w]))}
+                  className={`h-11 rounded-xl text-sm font-semibold ${
+                    on ? 'border border-blue-600 bg-blue-900 font-bold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-400'
+                  }`}
+                >
+                  {cycleWeekLabel(w)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Contato */}
+      <section className={groupCls}>
+        <WhatsAppFields
+          medico={form.whatsapp_medico}
+          clinica={form.whatsapp_clinica}
+          onChange={(k, v) => setField(k, v)}
+          showErrors={waTouched}
+          inputCls={inputCls}
+        />
+      </section>
+
+      {/* Local de atendimento */}
+      <section className={groupCls}>
+        <FormTitle>Local de atendimento</FormTitle>
+        <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 no-scrollbar" role="group" aria-label="Categoria do local">
           {CATEGORIAS.map((c) => {
             const on = form.categoria === c.value;
             return (
@@ -397,7 +436,7 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
                 type="button"
                 aria-pressed={on}
                 onClick={() => setField('categoria', c.value)}
-                className={`h-11 rounded-xl text-sm ${
+                className={`h-11 shrink-0 rounded-full px-4 text-sm ${
                   on ? 'border border-blue-600 bg-blue-900 font-semibold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-300'
                 }`}
               >
@@ -406,86 +445,21 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
             );
           })}
         </div>
-      </div>
-
-      {/* Clínica / Local */}
-      <input
-        type="text"
-        placeholder="Clínica / Local (PSM, SAMU, Hospital...)"
-        value={form.complemento}
-        onChange={(e) => setField('complemento', e.target.value)}
-        className={inputCls}
-      />
-
-      {/* Dias + turno por dia */}
-      <AgendaEditor value={form.agenda || []} onChange={(a) => setField('agenda', a)} />
-
-      {/* Semanas do ciclo */}
-      <div>
-        <div className="mb-1.5">
-          <FormTitle>Semanas do ciclo</FormTitle>
-        </div>
-        <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="Semanas do ciclo">
-          {CYCLE_WEEKS.map((w) => {
-            const on = (form.cycle_weeks ?? []).includes(w);
-            return (
-              <button
-                key={w}
-                type="button"
-                aria-pressed={on}
-                onClick={() => setField('cycle_weeks', normalizeCycleWeeks(on ? (form.cycle_weeks ?? []).filter((x) => x !== w) : [...(form.cycle_weeks ?? []), w]))}
-                className={`h-11 rounded-xl text-sm font-semibold ${
-                  on ? 'border border-blue-600 bg-blue-900 font-bold text-blue-200' : 'border border-slate-700 bg-slate-950 text-slate-400'
-                }`}
-              >
-                {cycleWeekLabel(w)}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Endereço + Número */}
-      <FormTitle>Endereço</FormTitle>
-      <div className="grid grid-cols-[2fr_1fr] gap-1.5">
-        <input type="text" placeholder="Endereço" value={form.endereco} onChange={(e) => setField('endereco', e.target.value)} className={inputCls} />
-        <input type="text" placeholder="Número" value={form.numero} onChange={(e) => setField('numero', e.target.value)} className={inputCls} />
-      </div>
-
-      {/* Bairro + Cidade */}
-      <div className="grid grid-cols-2 gap-1.5">
-        <input type="text" placeholder="Bairro" value={form.bairro} onChange={(e) => setField('bairro', e.target.value)} className={inputCls} />
-        <ComboBox
-          value={form.cidade}
-          onChange={(v) => setField('cidade', v)}
-          options={cityOptions}
-          placeholder="Cidade"
-        />
-      </div>
-
-      {/* WhatsApps (médico e clínica, separados) */}
-      <WhatsAppFields
-        medico={form.whatsapp_medico}
-        clinica={form.whatsapp_clinica}
-        onChange={(k, v) => setField(k, v)}
-        showErrors={waTouched}
-        inputCls={inputCls}
-      />
-
-      {/* Email */}
-      <div className="grid grid-cols-1 gap-1.5">
-        <input type="email" placeholder="Email" value={form.email} onChange={(e) => setField('email', e.target.value)} className={inputCls} />
-      </div>
-
-      {/* Link GPS */}
-      <div className="flex gap-1.5">
         <input
           type="text"
-          placeholder="Link GPS Maps"
-          value={form.map_link}
-          onChange={(e) => setField('map_link', e.target.value)}
-          className={`${inputCls} flex-1`}
+          placeholder="Clínica / local (PSM, SAMU, hospital...)"
+          value={form.complemento}
+          onChange={(e) => setField('complemento', e.target.value)}
+          className={inputCls}
         />
+        <div className="grid grid-cols-[2fr_1fr] gap-1.5">
+          <input type="text" placeholder="Endereço" value={form.endereco} onChange={(e) => setField('endereco', e.target.value)} className={inputCls} />
+          <input type="text" placeholder="Número" value={form.numero} onChange={(e) => setField('numero', e.target.value)} className={inputCls} />
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          <input type="text" placeholder="Bairro" value={form.bairro} onChange={(e) => setField('bairro', e.target.value)} className={inputCls} />
+          <ComboBox value={form.cidade} onChange={(v) => setField('cidade', v)} options={cityOptions} placeholder="Cidade" />
+        </div>
         <button
           type="button"
           disabled={gps.loading}
@@ -498,44 +472,51 @@ export default function AddDoctorForm({ onAdd, onAddToPanel, isHidden, currentWe
               onAddress: (a) => setForm((prev) => mergeAddress(prev, a)),
             })
           }
-          className="bg-green-700 text-white border-none px-3 rounded text-[11px] font-semibold shrink-0 hover:bg-green-600 disabled:opacity-50"
+          className="flex h-[52px] items-center justify-center gap-2 rounded-xl border border-blue-800 bg-blue-950 text-sm font-semibold text-blue-600 disabled:opacity-50"
         >
-          {gps.loading ? '...' : 'GPS'}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 21s-7-6.2-7-12a7 7 0 0 1 14 0c0 5.8-7 12-7 12z" />
+            <circle cx="12" cy="9" r="2.5" />
+          </svg>
+          {gps.loading ? 'Buscando…' : form.map_link ? 'GPS salvo · usar de novo' : 'Usar minha localização (GPS)'}
         </button>
-      </div>
-      {gps.status && (
-        <div role="status" className={`text-[10px] ${gps.status.type === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
-          {gps.status.text}
-        </div>
-      )}
-      {gps.needsActivation && (
-        <button
-          type="button"
-          disabled={gps.loading}
-          onClick={gps.retry}
-          className="self-start rounded border border-sky-500 bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
-        >
-          {GPS_ACTIVATE_LABEL}
-        </button>
-      )}
-      {gps.fallbackUrl && (
-        <button
-          type="button"
-          onClick={gps.applyAddressFallback}
-          className="self-start rounded border border-slate-600 bg-slate-800 px-3 py-1.5 text-[11px] font-semibold text-slate-200 hover:text-white"
-        >
-          🗺️ {GPS_ADDRESS_FALLBACK_LABEL}
-        </button>
-      )}
+        {gps.status && (
+          <div role="status" className={`text-xs ${gps.status.type === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>
+            {gps.status.text}
+          </div>
+        )}
+        {(gps.needsActivation || gps.fallbackUrl) && (
+          <div className="flex flex-wrap gap-2">
+            {gps.needsActivation && (
+              <button type="button" disabled={gps.loading} onClick={gps.retry} className="h-11 rounded-xl border border-blue-600 bg-transparent px-4 text-sm font-semibold text-blue-400 disabled:opacity-50">
+                {GPS_ACTIVATE_LABEL}
+              </button>
+            )}
+            {gps.fallbackUrl && (
+              <button type="button" onClick={gps.applyAddressFallback} className="h-11 rounded-xl border border-slate-700 bg-transparent px-4 text-sm text-slate-200">
+                {GPS_ADDRESS_FALLBACK_LABEL}
+              </button>
+            )}
+          </div>
+        )}
+      </section>
 
-      {/* Observações */}
-      <input
-        type="text"
-        placeholder="Observações do Propagandista"
-        value={form.observacoes}
-        onChange={(e) => setField('observacoes', e.target.value)}
-        className={inputCls}
-      />
+      {/* E-mail, link do mapa e observações (recolhido) */}
+      <button
+        type="button"
+        aria-expanded={showMore}
+        onClick={() => setMoreOpen((o) => !o)}
+        className="flex h-11 items-center gap-2 self-start border-0 bg-transparent px-1 text-sm font-semibold text-blue-600"
+      >
+        <span aria-hidden="true">{showMore ? '−' : '+'}</span> E-mail e observações
+      </button>
+      {showMore && (
+        <section className={groupCls}>
+          <input type="email" placeholder="E-mail" value={form.email} onChange={(e) => setField('email', e.target.value)} className={inputCls} />
+          <input type="text" placeholder="Link do Google Maps" value={form.map_link} onChange={(e) => setField('map_link', e.target.value)} className={inputCls} />
+          <input type="text" placeholder="Observações do propagandista" value={form.observacoes} onChange={(e) => setField('observacoes', e.target.value)} className={inputCls} />
+        </section>
+      )}
 
         </>
       )}
