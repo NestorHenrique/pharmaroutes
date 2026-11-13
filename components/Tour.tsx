@@ -134,7 +134,7 @@ function CardExample() {
         hour="09:40"
       />
       <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-sm text-slate-300">
-        <li><strong className="text-slate-100">Alça com número</strong> (à esquerda): a posição na rota. Segure e arraste para mudar a ordem.</li>
+        <li><strong className="text-slate-100">Número</strong> (à esquerda): a posição na rota.</li>
         <li><strong className="text-slate-100">Horário médio</strong> (à direita): quando os colegas costumam chegar nesse médico.</li>
         <li><strong className="text-slate-100">Bandeira</strong> (a etiqueta colorida): o status que alguém marcou.</li>
       </ul>

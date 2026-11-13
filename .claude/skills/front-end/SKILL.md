@@ -64,7 +64,7 @@ Estados: carregando sem cache = cinco cards em esqueleto; vazio = `EmptyState` c
 
 ## Fonte e linha do tempo (protótipo "copiloto")
 - Títulos de aba, nome do médico no card Próximo, números grandes e o número da rota usam **Sora** (`font-display`); o resto do app segue em Inter.
-- Parada simples da rota (sem status, não visitada) é **linha do tempo**: sem caixa, número na alça de arrastar e uma linha fina ligando as paradas. Com status, visitado ou indisponível o card continua com borda e cor.
+- Parada simples da rota (sem status, não visitada) é **linha do tempo**: sem caixa, número em círculo de 36px e uma linha fina ligando as paradas. Não há alça de arrastar (a ordem vem da rota do ciclo). Com status, visitado ou indisponível o card continua com borda e cor.
 - Card **Próximo**: raio 28px, nome em Sora 22px, pílulas de fatos (média do horário e "N locais · hoje em X") e botões de 56px com raio 18px. O botão central da barra de baixo continua sendo o **+** (Novo médico).
 
 ## Padrões de tela
