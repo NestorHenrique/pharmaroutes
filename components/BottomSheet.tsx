@@ -77,7 +77,7 @@ export default function BottomSheet({
                 </span>
               </div>
             ) : title ? (
-              <h2 className="m-0 text-xl font-bold tracking-tight text-slate-50">{title}</h2>
+              <h2 className="font-display m-0 text-xl font-extrabold tracking-tight text-slate-50">{title}</h2>
             ) : (
               <span />
             )}

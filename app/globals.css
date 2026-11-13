@@ -348,3 +348,8 @@
 :root:not([data-theme="marfim"]) .map-tiles {
   filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9);
 }
+
+/* Fonte dos títulos e números grandes (Sora); o resto do app segue em Inter */
+.font-display {
+  font-family: var(--font-sora), var(--font-inter), system-ui, -apple-system, sans-serif;
+}

@@ -43,7 +43,7 @@ export default function MeTab(p: MeTabProps) {
         <span className="flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-[20px] border border-blue-800 bg-blue-950 text-lg font-bold text-blue-600">{p.avatar}</span>
         <div className="flex min-w-0 flex-col">
           <span className="text-xs font-medium text-slate-400">Representante</span>
-          <span className="truncate text-[26px] font-extrabold leading-tight tracking-tight text-white">{p.name}</span>
+          <span className="font-display truncate text-[26px] font-extrabold leading-tight tracking-tight text-white">{p.name}</span>
         </div>
       </div>
 
@@ -51,7 +51,7 @@ export default function MeTab(p: MeTabProps) {
         <ProgressRing value={p.todayDone} total={p.todayTotal} size={88} />
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">Ciclo{p.weekLabel ? ` · ${p.weekLabel}` : ''}</span>
-          <span className="text-xl font-extrabold tracking-tight text-white">{pct}% do ciclo</span>
+          <span className="font-display text-xl font-extrabold tracking-tight text-white">{pct}% do ciclo</span>
           <span className="text-[13px] text-slate-400">
             {p.cycleDone} de {p.cycleTotal} visitados · faltam {Math.max(0, p.cycleTotal - p.cycleDone)}
           </span>
@@ -65,7 +65,7 @@ export default function MeTab(p: MeTabProps) {
           [String(p.cities), p.cities === 1 ? 'cidade' : 'cidades'],
         ].map(([v, l]) => (
           <div key={l} className="flex flex-col rounded-[18px] border border-slate-800 bg-slate-900 p-3">
-            <span className="text-[22px] font-extrabold tabular-nums leading-tight text-white">{v}</span>
+            <span className="font-display text-[22px] font-extrabold tabular-nums leading-tight text-white">{v}</span>
             <span className="text-[11px] text-slate-400">{l}</span>
           </div>
         ))}

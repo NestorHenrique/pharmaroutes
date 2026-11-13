@@ -405,14 +405,20 @@ function DoctorCard({
           : `${ago}${who ? ` · ${who.split(' ')[0]}` : ''}`;
     }
     const showFlag = !muted && !visitedAt;
+    // Parada simples da rota: linha do tempo (sem caixa), como no protótipo; status, visitado e indisponível mantêm o card
+    const timeline = tier === 'middle' && !tone && !muted && !visitedAt;
 
     return (
       <div
         id={`doc-${doc.id}`}
-        className={`relative rounded-2xl border px-3.5 py-3 flex items-center gap-3 transition-colors active:bg-slate-800 ${
-          muted
-            ? 'border-dashed border-slate-700 bg-slate-950 opacity-70'
-            : `${tone?.bg ?? 'bg-slate-900'} ${tone?.border ?? 'border-slate-800'}`
+        className={`relative flex items-center gap-3 transition-colors ${
+          timeline
+            ? "px-0 py-2 after:pointer-events-none after:absolute after:-top-[5px] after:-bottom-[5px] after:left-[14px] after:w-0.5 after:bg-slate-800 after:content-['']"
+            : `rounded-2xl border px-3.5 py-3 active:bg-slate-800 ${
+                muted
+                  ? 'border-dashed border-slate-700 bg-slate-950 opacity-70'
+                  : `${tone?.bg ?? 'bg-slate-900'} ${tone?.border ?? 'border-slate-800'}`
+              }`
         }`}
       >
         {onDragHandleTouchStart && (
@@ -423,7 +429,7 @@ function DoctorCard({
             style={{ touchAction: 'none', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
             className="relative z-10 select-none -ml-1 h-11 w-[30px] shrink-0 rounded-lg bg-slate-800 text-slate-400 active:bg-slate-700 flex flex-col items-center justify-center gap-[3px]"
           >
-            {routeNumber !== undefined && <span className="text-xs font-bold leading-none">{routeNumber}</span>}
+            {routeNumber !== undefined && <span className="font-display text-[13px] font-bold leading-none">{routeNumber}</span>}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.8" /><circle cx="15" cy="6" r="1.8" /><circle cx="9" cy="12" r="1.8" /><circle cx="15" cy="12" r="1.8" /><circle cx="9" cy="18" r="1.8" /><circle cx="15" cy="18" r="1.8" /></svg>
           </button>
         )}

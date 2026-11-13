@@ -25,7 +25,7 @@ export default function ProgressRing({ value, total, size = 56, label }: { value
           className="stroke-emerald-500 transition-[stroke-dashoffset] duration-500"
         />
       </svg>
-      <span className={`relative font-bold tabular-nums text-slate-100 ${size >= 80 ? 'text-lg' : 'text-[13px]'}`}>
+      <span className={`font-display relative font-bold tabular-nums text-slate-100 ${size >= 80 ? 'text-lg' : 'text-[13px]'}`}>
         {value}/{total}
       </span>
     </span>

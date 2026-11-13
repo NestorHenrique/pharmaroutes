@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Sora } from 'next/font/google';
 import './globals.css';
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
+// Títulos e números grandes (protótipo "copiloto")
+const sora = Sora({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-sora', display: 'swap' });
 
 // Sem zoom automático do iOS ao tocar em campos: maximumScale 1 + inputs de 16px (globals.css).
 // O iOS continua permitindo o zoom de pinça do usuário.
@@ -89,7 +91,7 @@ export default function RootLayout({
     <html
       lang="pt-BR"
       data-theme="onix"
-      className={`${inter.variable} bg-slate-950`}
+      className={`${inter.variable} ${sora.variable} bg-slate-950`}
       style={{ backgroundColor: 'var(--background)' }}
       suppressHydrationWarning
     >

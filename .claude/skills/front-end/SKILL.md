@@ -62,6 +62,11 @@ Título de aba: linha pequena de contexto (12px, `text-slate-400`) e embaixo o t
 
 Estados: carregando sem cache = cinco cards em esqueleto; vazio = `EmptyState` com ícone de traço (`busca`, `medico`, `agenda`), nunca emoji. Todo botão afunda de leve ao toque (`scale(0.97)`).
 
+## Fonte e linha do tempo (protótipo "copiloto")
+- Títulos de aba, nome do médico no card Próximo, números grandes e o número da rota usam **Sora** (`font-display`); o resto do app segue em Inter.
+- Parada simples da rota (sem status, não visitada) é **linha do tempo**: sem caixa, número na alça de arrastar e uma linha fina ligando as paradas. Com status, visitado ou indisponível o card continua com borda e cor.
+- Card **Próximo**: raio 28px, nome em Sora 22px, pílulas de fatos (média do horário e "N locais · hoje em X") e botões de 56px com raio 18px. O botão central da barra de baixo continua sendo o **+** (Novo médico).
+
 ## Padrões de tela
 **Folha que sobe de baixo** (filtros, novo médico, status, semana, cidades, retorno, editar): alça cinza no topo,
 cantos de cima `rounded-t-[24px]`, título, conteúdo, rodapé fixo com **Cancelar** (esquerda) e **Salvar** (direita).

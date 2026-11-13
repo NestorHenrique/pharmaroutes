@@ -2216,7 +2216,7 @@ export default function HomePage() {
                     <path d="M6 9l6 6 6-6" />
                   </svg>
                 </button>
-                <h1 className="m-0 flex items-center gap-2 text-[26px] font-extrabold leading-tight tracking-tight text-white">
+                <h1 className="font-display m-0 flex items-center gap-2 text-[26px] font-extrabold leading-tight tracking-tight text-white">
                   <span className="truncate">{hojeTitle}</span>
                   <span
                     title={realtimeOn ? 'Tempo real conectado' : 'Tempo real desconectado (atualiza a cada 8 s)'}
@@ -2312,7 +2312,7 @@ export default function HomePage() {
             <span className="text-xs font-medium text-slate-400">
               {todayLabel(now)} · {mapStops.length} de {mapTotal} com GPS
             </span>
-            <h1 className="m-0 text-[26px] font-extrabold leading-tight tracking-tight text-white">Mapa da rota</h1>
+            <h1 className="font-display m-0 text-[26px] font-extrabold leading-tight tracking-tight text-white">Mapa da rota</h1>
           </div>
         )}
 
@@ -2331,7 +2331,7 @@ export default function HomePage() {
               </button>
               <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="text-xs font-medium text-slate-400">Sua base · {panelDoctors.length} médicos</span>
-                <h1 className="m-0 text-[26px] font-extrabold leading-tight tracking-tight text-white">Médicos</h1>
+                <h1 className="font-display m-0 text-[26px] font-extrabold leading-tight tracking-tight text-white">Médicos</h1>
               </div>
             </div>
             <label className="flex h-12 min-w-0 items-center gap-2.5 rounded-2xl border border-slate-800 bg-slate-900 px-3.5 focus-within:border-blue-600">
