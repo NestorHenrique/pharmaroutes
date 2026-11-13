@@ -1652,14 +1652,26 @@ export default function HomePage() {
   );
 
   /** Ordena a rota do dia pelos horários médios (quem não tem horário fica no fim, na ordem atual) */
+  const backupKey = `ordem_antes_${manualKey}`;
+  const backupOrder = routeOrder[backupKey] ?? [];
+  const hasBackup = backupOrder.length > 0;
   const orderByTimes = useCallback(() => {
     const key = (d: Doctor) => feed.expected.get(d.id)?.startMinutes ?? 100000;
     if (feed.middle.filter((d) => feed.expected.has(d.id)).length < 2) {
-      showToast('Ainda não há horários médios suficientes para ordenar.');
+      showToast('Ainda não há horários médios suficientes para otimizar a rota.');
       return;
     }
+    // Guarda a ordem do painel antes (só na primeira vez), para "Voltar à minha ordem"
+    if (!hasBackup) void saveRouteOrder(backupKey, manualOrder ?? feed.middle.map((d) => d.id));
     applyMiddleOrder([...feed.middle].sort((a, b) => key(a) - key(b)).map((d) => d.id));
-  }, [feed.middle, feed.expected, applyMiddleOrder, showToast]);
+  }, [feed.middle, feed.expected, applyMiddleOrder, showToast, hasBackup, saveRouteOrder, backupKey, manualOrder]);
+  /** Volta à ordem que o representante tinha antes de otimizar */
+  const restoreOrder = useCallback(() => {
+    if (!hasBackup) return;
+    void saveRouteOrder(manualKey, backupOrder);
+    void saveRouteOrder(backupKey, []);
+    showToast('Sua ordem anterior foi restaurada.');
+  }, [hasBackup, backupOrder, manualKey, backupKey, saveRouteOrder, showToast]);
 
   /* Arrastar e soltar (só no bloco do meio, modo manual) */
   const dragId = useRef<string | null>(null);
@@ -2911,6 +2923,15 @@ export default function HomePage() {
                     <path d="M19 16v4M17 18h4" />
                   </svg>
                   Otimizar rota
+                </button>
+              )}
+              {heroDoc && hasBackup && (
+                <button
+                  type="button"
+                  onClick={restoreOrder}
+                  className="flex h-12 items-center justify-center rounded-[18px] border border-slate-700 bg-transparent text-sm font-semibold text-slate-300"
+                >
+                  Voltar à minha ordem
                 </button>
               )}
             </div>
