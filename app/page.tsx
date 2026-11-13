@@ -78,6 +78,8 @@ import { parseLatLng } from '@/lib/coords';
 import { specialtyCode as specCodeOf } from '@/utils';
 import NotificationsSheet, { type ApprovalItem, type NoticeItem } from '@/components/NotificationsSheet';
 import CicloSheet from '@/components/CicloSheet';
+import VisitedSheet from '@/components/VisitedSheet';
+import type { VisitedItem } from '@/components/VisitedSheet';
 import IASheet from '@/components/IASheet';
 import { getFlag, setFlag } from '@/lib/repFlags';
 import { shouldSignOutOnReopen } from '@/lib/auth';
@@ -1853,6 +1855,7 @@ export default function HomePage() {
   /** folha "Marcar status" aberta pelo "Outro status" do card Próximo */
   const [heroStatusOpen, setHeroStatusOpen] = useState(false);
   const [showCiclo, setShowCiclo] = useState(false);
+  const [showVisited, setShowVisited] = useState(false);
   // Abas da barra de baixo e filtro da aba Médicos
   const [mainTab, setMainTab] = useState<MainTab>('hoje');
   const [medFilter, setMedFilter] = useState<'todos' | 'falta' | 'novos'>('todos');
@@ -2121,6 +2124,35 @@ export default function HomePage() {
   }
 
   const todayCode = getTodayDayCode();
+
+  // Visitados do dia que está no filtro (hoje, ou o dia escolhido na semana atual), respeitando o filtro de cidades.
+  // O número do topo mostra quantos são e abre a lista.
+  const visitedDayCode = selectedTab && selectedTab !== 'novos' ? selectedTab : todayCode;
+  const visitedDayItems: VisitedItem[] = (() => {
+    const offset = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'].indexOf(visitedDayCode);
+    if (offset < 0) return [];
+    const target = new Date(`${mondayOf()}T00:00:00`);
+    target.setDate(target.getDate() + offset);
+    const dayStr = target.toDateString();
+    const cities = new Set(selectedCities);
+    const byId = new Map(panelDoctors.map((d) => [d.id, d]));
+    const out: VisitedItem[] = [];
+    for (const [id, at] of myVisits) {
+      const d = byId.get(id);
+      if (!d || new Date(at).toDateString() !== dayStr) continue;
+      if (cities.size > 0 && !cities.has(cityKey(d.cidade))) continue;
+      out.push({ doc: d, at });
+    }
+    return out.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  })();
+  const visitedDayTotal =
+    visitedDayCode === todayCode
+      ? Math.max(sortedDoctors.length, visitedDayItems.length)
+      : Math.max(
+          panelDoctors.filter((d) => agendaAllLocations(d).some((e) => e.day === visitedDayCode) && (selectedCities.length === 0 || selectedCities.includes(cityKey(d.cidade)))).length,
+          visitedDayItems.length,
+        );
+  const visitedDayLabel = visitedDayCode === todayCode ? 'hoje' : `na ${DAY_LONG[visitedDayCode] ?? 'semana'}`;
   // Card "Próximo": onde eu já estou (marquei Rep. no consultório) ou o primeiro da rota de hoje
   const heroAllowed = routeDay === todayCode && selectedTab !== 'novos' && !isCategoryMode && searchQuery.trim() === '';
   const myOfficeDoc = heroAllowed
@@ -2276,7 +2308,14 @@ export default function HomePage() {
               >
                 ?
               </button>
-              <ProgressRing value={visitedList.length} total={sortedDoctors.length} size={56} />
+              <button
+                type="button"
+                onClick={() => setShowVisited(true)}
+                aria-label={`${visitedDayItems.length} visitados ${visitedDayLabel}. Ver a lista`}
+                className="shrink-0 rounded-full border-0 bg-transparent p-0"
+              >
+                <ProgressRing value={visitedDayItems.length} total={visitedDayTotal} size={56} label={`${visitedDayItems.length} de ${visitedDayTotal} visitados`} />
+              </button>
             </div>
 
             <nav data-tour="days" aria-label="Dias da semana" className="grid grid-cols-5 gap-1.5">
@@ -3104,6 +3143,10 @@ export default function HomePage() {
           }}
           onClose={() => setHeroStatusOpen(false)}
         />
+      )}
+
+      {showVisited && (
+        <VisitedSheet dayLabel={visitedDayLabel} items={visitedDayItems} onClose={() => setShowVisited(false)} onOpen={openSheet} />
       )}
 
       {showCiclo && (

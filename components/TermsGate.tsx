@@ -1,5 +1,6 @@
 'use client';
 
+import { lockScroll } from '@/lib/scrollLock';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { TERMS_SECTIONS, TERMS_VERSION } from '@/lib/terms';
@@ -17,10 +18,9 @@ export default function TermsGate({ saving = false, onAccept, onLogout }: TermsG
   const boxRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     return () => {
-      document.body.style.overflow = prev;
+      unlock();
     };
   }, []);
 

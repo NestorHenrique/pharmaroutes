@@ -1,5 +1,6 @@
 'use client';
 
+import { lockScroll } from '@/lib/scrollLock';
 import { useEffect, useState, type ReactNode } from 'react';
 import type { ChangeLine } from '@/lib/editProposals';
 import { shortName } from '@/lib/visits';
@@ -116,11 +117,10 @@ export default function NotificationsSheet({ items, now, allCities, cityNames, a
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      unlock();
     };
   }, [onClose]);
 

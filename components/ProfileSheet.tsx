@@ -1,5 +1,6 @@
 'use client';
 
+import { lockScroll } from '@/lib/scrollLock';
 import { useEffect, useState, type ReactNode } from 'react';
 import CityFilter from '@/components/CityFilter';
 import { RepAvatar } from '@/components/RepAvatar';
@@ -86,11 +87,10 @@ export default function ProfileSheet(p: ProfileSheetProps) {
       if (e.key === 'Escape') p.onClose();
     };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      unlock();
     };
   }, [p]);
 

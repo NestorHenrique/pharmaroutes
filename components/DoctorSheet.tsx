@@ -1,5 +1,6 @@
 'use client';
 
+import { lockScroll } from '@/lib/scrollLock';
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Doctor, DoctorLocation, ExpectedVisit } from '@/types/doctor';
@@ -174,11 +175,10 @@ export default function DoctorSheet({
       if (e.key === 'Escape') onClose();
     };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      unlock();
     };
   }, [onClose]);
 

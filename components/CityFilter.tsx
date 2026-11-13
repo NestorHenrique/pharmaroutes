@@ -1,5 +1,6 @@
 'use client';
 
+import { lockScroll } from '@/lib/scrollLock';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { CityOption } from '@/utils';
@@ -42,11 +43,10 @@ export default function CityFilter({ options, selected, onChange, dayCounts, day
       if (e.key === 'Escape') setOpen(false);
     };
     document.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
+      unlock();
     };
   }, [open]);
 
