@@ -1,5 +1,6 @@
 'use client';
 
+import { lockScroll } from '@/lib/scrollLock';
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -25,11 +26,10 @@ export default function VisitPromptModal({ doctorName, statusLabel, startedAt, c
   const yesRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     yesRef.current?.focus();
     return () => {
-      document.body.style.overflow = prev;
+      unlock();
     };
   }, []);
 

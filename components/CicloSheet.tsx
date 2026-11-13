@@ -29,7 +29,9 @@ const DAYS = [
 
 type DayCode = (typeof DAYS)[number]['code'];
 
-function getDoctorsForWeekDay(
+/** Todos os médicos que atendem no dia (em qualquer local), qualquer que seja o status ou a semana do ciclo.
+ *  Os da semana escolhida vêm primeiro, na ordem da rota; os outros vêm depois. */
+function getDoctorsForDay(
   doctors: Doctor[],
   weeksByDoctor: ReadonlyMap<string, readonly number[]>,
   week: number,
@@ -40,14 +42,13 @@ function getDoctorsForWeekDay(
     const i = order.indexOf(id);
     return i < 0 ? Number.MAX_SAFE_INTEGER : i;
   };
+  const inWeek = (d: Doctor) => (weeksByDoctor.get(d.id) ?? []).includes(week);
   return doctors
     .filter((d) => {
-    if (!(weeksByDoctor.get(d.id) ?? []).includes(week)) return false;
-    // atende no dia em qualquer um dos locais
     if (getAgenda(d).some((e) => e.day === day)) return true;
     return (d.locais ?? []).some((l) => l.agenda.some((e) => e.day === day));
     })
-    .sort((a, b) => pos(a.id) - pos(b.id));
+    .sort((a, b) => Number(inWeek(b)) - Number(inWeek(a)) || pos(a.id) - pos(b.id));
 }
 
 /** Tela de organização do ciclo: semana × dia → lista ordenada de médicos. */
@@ -56,8 +57,10 @@ export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, 
   const [day, setDay] = useState<DayCode>('seg');
 
   const [moving, setMoving] = useState<Doctor | null>(null);
-  const list = getDoctorsForWeekDay(doctors, weeksByDoctor, week, day, orderOf(week));
-  const dayCounts = DAYS.map((d) => getDoctorsForWeekDay(doctors, weeksByDoctor, week, d.code).length);
+  const inWeek = (d: Doctor) => (weeksByDoctor.get(d.id) ?? []).includes(week);
+  const list = getDoctorsForDay(doctors, weeksByDoctor, week, day, orderOf(week));
+  const weekCount = list.filter(inWeek).length;
+  const dayCounts = DAYS.map((d) => getDoctorsForDay(doctors, weeksByDoctor, week, d.code).length);
 
   return (
     <>
@@ -111,7 +114,7 @@ export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, 
             <path d="M3 10h18M8 2v4M16 2v4" />
           </svg>
           <p className="text-[13px] text-slate-500">
-            Nenhum médico neste dia.
+            Nenhum médico atende neste dia.
             <br />
             Edite a agenda do médico para adicioná-lo.
           </p>
@@ -120,13 +123,13 @@ export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, 
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-400">
-              {DAYS.find((d) => d.code === day)?.label} · {list.length} {list.length === 1 ? 'médico' : 'médicos'}
+              {DAYS.find((d) => d.code === day)?.label} · {list.length} {list.length === 1 ? 'médico' : 'médicos'} · {weekCount} na {week}ª semana
             </span>
             <span className="text-[11px] text-slate-500">Toque para abrir a ficha</span>
           </div>
           <div className="flex flex-col gap-2">
             {list.map((doc, i) => (
-              <div key={doc.id} className="flex min-h-[60px] items-center gap-2.5 rounded-2xl border border-slate-800 bg-slate-900 py-1.5 pl-3.5 pr-2">
+              <div key={doc.id} className={`flex min-h-[60px] items-center gap-2.5 rounded-2xl border border-slate-800 bg-slate-900 py-1.5 pl-3.5 pr-2 ${inWeek(doc) ? '' : 'opacity-75'}`}>
                 <span className="font-display grid size-9 shrink-0 place-items-center rounded-full border-[1.5px] border-slate-700 text-[13px] font-bold tabular-nums text-slate-100">
                   {i + 1}
                 </span>
@@ -139,24 +142,29 @@ export default function CicloSheet({ doctors, weeksByDoctor, orderOf, onMoveUp, 
                   <span className="w-full truncate text-xs uppercase text-slate-400">
                     {[specialtyCode(doc.especialidade), doc.complemento, doc.cidade].filter(Boolean).join(' · ')}
                   </span>
+                  {!inWeek(doc) && <span className="text-[11px] font-semibold text-slate-500">Fora da {week}ª semana</span>}
                 </button>
-                <button
-                  type="button"
-                  aria-label="Subir na rota"
-                  disabled={i === 0}
-                  onClick={() => onMoveUp(week, doc.id, list[i - 1].id)}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-slate-800 text-base text-slate-100 disabled:opacity-30"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  aria-label="Mover para outra semana"
-                  onClick={() => setMoving(doc)}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-slate-800 text-base text-slate-100"
-                >
-                  ⇄
-                </button>
+                {inWeek(doc) && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Subir na rota"
+                      disabled={i === 0 || !inWeek(list[i - 1])}
+                      onClick={() => onMoveUp(week, doc.id, list[i - 1].id)}
+                      className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-slate-800 text-base text-slate-100 disabled:opacity-30"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Mover para outra semana"
+                      onClick={() => setMoving(doc)}
+                      className="flex size-11 shrink-0 items-center justify-center rounded-xl border-0 bg-slate-800 text-base text-slate-100"
+                    >
+                      ⇄
+                    </button>
+                  </>
+                )}
               </div>
             ))}
           </div>

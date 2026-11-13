@@ -1,5 +1,6 @@
 'use client';
 
+import { lockScroll } from '@/lib/scrollLock';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -228,10 +229,9 @@ export default function Tour({ onFinish, onSkip }: TourProps) {
   // A página fica parada no topo durante as dicas (o cabeçalho é fixo, o recorte acompanha)
   useEffect(() => {
     window.scrollTo(0, 0);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    const unlock = lockScroll();
     return () => {
-      document.body.style.overflow = prev;
+      unlock();
     };
   }, []);
 
